@@ -112,7 +112,7 @@ assets/<pixl>/
   "species": "Red-eyed tree frog",
   "canvas": { "w": 104, "h": 76 },
   "anchor": { "x": 50, "y": 70 },
-  "hitbox": { "x": 22, "y": 30, "w": 62, "h": 42 },
+  "hitbox": { "x": 22, "y": 30, "w": 62, "h": 40 },
   "movement": "hop",
   "sticky": true,
   "aura": "dew",
@@ -135,7 +135,7 @@ assets/<pixl>/
 | Field | Meaning |
 |---|---|
 | `anchor` | The ground-contact pixel, in apx from the frame's top left. The world places the Pixl by this point. |
-| `hitbox` | Rect used for world collisions and keep-out checks (§6.4). Mouse hits use the frame's actual opaque pixels. |
+| `hitbox` | Rect used for world collisions and keep-out checks (§6.4). Must end at or above `anchor.y`, so a standing Pixl can perch on the focused window's title bar. Mouse hits use the frame's actual opaque pixels. |
 | `movement` | `hop` · `walk` · `float` (ignores gravity) · `climb` (walls and threads). |
 | `sticky` | Can hang from undersides and cling to window sides (Frogg's toe pads). |
 | `physics.gravity` | apx/s². Multiplied by `scale` on screen. |
@@ -334,7 +334,7 @@ Heavy typing comes from the opt-in Input Monitoring count (D12), which never rea
 
 | Kind | Source | Use |
 |---|---|---|
-| **Ground** | Bottom of `visibleFrame` of each display (top of the Dock when it's at the bottom) | Always present; the floor of last resort |
+| **Ground** | Bottom edge of each display, except where the Dock is (there the Dock top is the floor) | Always present; the floor of last resort |
 | **Dock top** | The Dock's top edge, from `frame` vs `visibleFrame` | Platform |
 | **Window tops** | Top edge of every normal (layer 0) on-screen window | Platforms |
 | **Window sides** | Left/right edges of windows | Cling surfaces (sticky/climb species) |
@@ -353,7 +353,14 @@ A window top counts as a platform only where it isn't covered by a window above 
 
 ### 7.3 Reachability
 
-A platform is reachable from the current spot by one hop if the hop parabola (within `hopApex` and `hopDistance`) clears every window in between and lands on a visible interval. Sticky species can also reach a window top by climbing its side: hop to the side, cling (perch frame 1), climb, sit (perch frame 2).
+A platform is reachable from the current spot by one hop if:
+- it is within `hopDistance.max` horizontally and rises at most `hopDistance.max` (a Pixl jumps as high as it jumps far);
+- it is on the same display;
+- the whole arc keeps the hitbox below the menu bar and out of the keep-out rect (§6.4).
+
+Other windows don't block a hop: the Pixl is drawn above every window, so passing in front of one looks right.
+
+Sticky species can also reach a window top by climbing its side: hop to the side, cling (perch frame 1), climb, sit (perch frame 2). This needs the side to be visible from the top corner down to within one hop of the Pixl.
 
 ---
 

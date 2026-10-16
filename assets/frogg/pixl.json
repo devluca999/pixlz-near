@@ -4,7 +4,7 @@
   "species": "Red-eyed tree frog",
   "canvas": { "w": 104, "h": 76 },
   "anchor": { "x": 50, "y": 70 },
-  "hitbox": { "x": 22, "y": 30, "w": 62, "h": 42 },
+  "hitbox": { "x": 22, "y": 30, "w": 62, "h": 40 },
   "movement": "hop",
   "sticky": true,
   "aura": "dew",

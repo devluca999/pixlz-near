@@ -76,6 +76,8 @@ public enum ManifestValidator {
         if hb.w <= 0 || hb.h <= 0 || hb.x < 0 || hb.y < 0 || hb.x + hb.w > m.canvas.w || hb.y + hb.h > m.canvas.h {
             fail("hitbox outside canvas")
         }
+        // A standing Pixl's hitbox must end at its feet, or it could never perch on the focused window (SPEC §6.4).
+        if hb.y + hb.h > m.anchor.y { fail("hitbox must end at or above anchor.y") }
         if m.physics.gravity <= 0 && m.movement != .float { fail("gravity must be positive") }
         for (name, range) in [("hopApex", m.physics.hopApex), ("hopDistance", m.physics.hopDistance)] {
             if range.count != 2 || range[0] > range[1] || range[0] < 0 { fail("\(name) must be [min, max]") }
