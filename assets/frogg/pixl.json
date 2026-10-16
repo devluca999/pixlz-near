@@ -1,0 +1,24 @@
+{
+  "id": "frogg",
+  "name": "Frogg",
+  "species": "Red-eyed tree frog",
+  "canvas": { "w": 104, "h": 76 },
+  "anchor": { "x": 50, "y": 70 },
+  "hitbox": { "x": 22, "y": 30, "w": 62, "h": 42 },
+  "movement": "hop",
+  "sticky": true,
+  "aura": "dew",
+  "physics": { "gravity": 900, "hopApex": [18, 30], "hopDistance": [40, 90], "walkSpeed": 0 },
+  "slots": {
+    "idle":      { "holds": [6, 2, 8], "loop": "all" },
+    "move":      { "holds": [3, 0, 3], "loop": "none" },
+    "rest":      { "holds": [6, 6, 12], "loop": "last" },
+    "poke":      { "holds": [2, 4, 6], "loop": "none" },
+    "grab":      { "holds": [2, 6, 3], "loop": "middle" },
+    "file_ride": { "holds": [3, 3, 6], "loop": "last" },
+    "perch":     { "holds": [4, 4, 8], "loop": "last" },
+    "signature": { "holds": [4, 2, 8], "loop": "none" },
+    "mischief":  { "holds": [6, 12, 4], "loop": "none" }
+  },
+  "props": { "signature": ["fly"], "mischief": ["pond"] }
+}
