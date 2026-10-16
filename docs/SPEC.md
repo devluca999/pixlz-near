@@ -523,9 +523,9 @@ protocol PetTransport {
 |---|---|
 | `decline`, or no `ack` within 8 s | Sender sends `abort`; the Pixl plays an `annoyed` shrug and stays. Receiver discards any pending state |
 | Transfer > 1.5 s | A tiny silhouette bobs in the menu bar / iPhone status area (D9) |
-| Sender crashes before `commit` | On restart it's still `.owned` (it never saved `.away`). Receiver's pending state expires after 8 s |
-| Receiver has `.pendingArrival` but never got `commit` (crash, disconnect) | It keeps the pending state, doesn't show the Pixl, and sends `status` to the sender on the next connection. If the sender says committed at that epoch → promote to `.owned`. If the sender says it still owns it → discard |
-| Sender committed, receiver never confirmed | Sender is `.away` with a tombstone. On the next connection it sends `status`; if the receiver has neither owned nor pending state, the sender restores from the tombstone with `epoch + 2` |
+| Sender crashes before `commit` | On restart it's still `.owned` (it never saved `.away`). The receiver keeps its pending state hidden and resolves it with `status` (next row) |
+| Receiver has `.pendingArrival` but never got `commit` (crash, disconnect) | It keeps the pending state, doesn't show the Pixl, and sends `status` after its 10 s timeout and on the next connection. If the sender says committed at that epoch → promote to `.owned`. If the sender says it still owns it and isn't mid-trip → discard |
+| Sender committed, receiver never confirmed | Sender is `.away` with a tombstone. On the next connection it sends `status`. Receiver pending → the sender re-sends `commit`. Receiver has neither owned nor pending state → the sender restores from the tombstone with `epoch + 2` |
 
 ### 10.5 Never losing the Pixl
 
