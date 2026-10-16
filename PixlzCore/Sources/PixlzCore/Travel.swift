@@ -263,8 +263,10 @@ public struct TravelNode: Sendable {
             switch held {
             case .pending where peerEpoch == e:
                 return [.send(envelope(.commit, to: peer, petId: id, epoch: e, at: now), to: peer)]
-            case .none, .away where peerEpoch <= e:
-                // The receiver never got it: come home from the safety copy.
+            case .none, .away:
+                // The receiver never got it (it holds nothing, or only an older away record):
+                // come home from the safety copy.
+                guard held == .none || peerEpoch <= e else { return [] }
                 var restored = t
                 restored.epoch = e + 1
                 restored.owner = me
