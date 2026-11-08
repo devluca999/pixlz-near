@@ -47,6 +47,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let bridge = BridgeServer()
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
+    lazy var presence = PresenceController(app: self)
     /// The Pixl is on another device (by name) and this one waits to call it back.
     var awayOn: String?
     /// Where the selection came from: Accessibility, or the browser extension (the bridge).
@@ -124,6 +125,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         E2EState.install(self)
         travel.start()
+        if !CommandLine.arguments.contains("--selftest") { presence.start() }  // the self-test posts its own events: it would look idle
         // a second copy of the app (PIXL_DEVICE_ID, for trying trips on one Mac) shares the
         // bridge and the service with the first: it doesn't start its own
         let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil
@@ -589,7 +591,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Calm enough for idle life: perched, still, idle frame, no menu, nothing in the air.
-    var restingIdle: Bool { mode == .perched && !moving && !busy && !menu.isOpen && frogg.frameName == "idle_0" }
+    var restingIdle: Bool { mode == .perched && !moving && !busy && !menu.isOpen && frogg.frameName == "idle_0" && !presence.typing }
 
     func idleQuirk() {
         guard restingIdle else { scheduleIdle(); return }
