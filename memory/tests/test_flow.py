@@ -22,7 +22,7 @@ class FakeNear:
     """Serves /models, /attestation/report, /chat/completions and /signature/{id}."""
 
     def __init__(self, captured, *, reply="The quick brown fox jumps.", sign_with=None, kind="provider_tee",
-                 attest_nonce_override=None):
+                 attest_nonce_override=None, no_credits=False):
         self.report = captured["report"]
         self.model_key = Account.create()
         self.gw_key = Account.create()
@@ -30,6 +30,7 @@ class FakeNear:
         self.kind = kind
         self.reply = reply
         self.attest_nonce_override = attest_nonce_override
+        self.no_credits = no_credits
         self.calls: list[str] = []
         self.completions: dict[str, tuple[bytes, bytes]] = {}
 
@@ -46,6 +47,9 @@ class FakeNear:
             return httpx.Response(200, json=rebind(self.report, nonce, self.model_key.address.lower(),
                                                    self.gw_key.address.lower()))
         if path == "/chat/completions":
+            if self.no_credits:
+                return httpx.Response(402, json={"error": {"message": "No spending limit configured.",
+                                                           "type": "no_limit_configured"}})
             assert request.headers["authorization"] == "Bearer sk-test"
             body = json.loads(request.content)
             assert body["stream"] is False and body["model"] == MODEL
@@ -163,3 +167,11 @@ def test_cors_allows_only_extensions(tmp_path, captured):
     assert r.headers.get("access-control-allow-origin") == ext
     r = tc.options("/highlights", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert "access-control-allow-origin" not in r.headers
+
+
+def test_no_credits_is_a_clear_402(tmp_path, captured):
+    tc, store = make(tmp_path, FakeNear(captured, no_credits=True))
+    r = tc.post("/polish", json={"text": "hello"})
+    assert r.status_code == 402
+    assert r.json()["error"] == "no_credits" and "cloud.near.ai" in r.json()["message"]
+    assert store.list_drafts() == []

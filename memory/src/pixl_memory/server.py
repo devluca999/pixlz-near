@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import polish
-from .nearai import AttestationFailed, NearAIClient, NoApiKey, NotPrivateModel, UpstreamError
+from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, UpstreamError
 from .store import Store
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
@@ -112,6 +112,8 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             # The text was never sent. Show the user why.
             return JSONResponse({"error": "attestation_failed", "message": str(e),
                                  "verification": e.verification.to_dict()}, status_code=409)
+        except NoCredits as e:
+            return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
         except UpstreamError as e:
             return JSONResponse({"error": "upstream", "message": str(e)}, status_code=502)
 

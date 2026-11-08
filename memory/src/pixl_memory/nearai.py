@@ -48,6 +48,10 @@ class UpstreamError(NearAIError):
     pass
 
 
+class NoCredits(NearAIError):
+    """NEAR AI returned 402: no credits or no spending limit on the account."""
+
+
 class AttestationFailed(NearAIError):
     def __init__(self, verification: Verification):
         super().__init__(verification.to_dict()["summary"])
@@ -157,6 +161,13 @@ class NearAIClient:
             r = self.http.post(f"{self.base_url}/chat/completions", content=req_bytes, headers=headers)
         except httpx.HTTPError as e:
             raise UpstreamError(f"completion failed: {e}") from e
+        if r.status_code == 402:
+            try:
+                msg = r.json()["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                msg = r.text[:200]
+            raise NoCredits(f"NEAR AI account can't pay for this request: {msg} "
+                            "(add credits and a spend limit at cloud.near.ai)")
         if r.status_code != 200:
             raise UpstreamError(f"completion returned {r.status_code}: {r.text[:300]}")
         resp_bytes = r.content
