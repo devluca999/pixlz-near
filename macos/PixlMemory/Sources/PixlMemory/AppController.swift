@@ -61,6 +61,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var flight: ThrowFlight?
     var animTimers: [Timer] = []
     var idleTimer: Timer?
+    var blinkTimer: Timer?
+    var breathTimer: Timer?
     var bubbleTimer: Timer?
     var permissionTimer: Timer?
     var clickTimer: Timer?
@@ -553,23 +555,83 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleIdle()
     }
 
+    /// Idle life, after the research notes (docs/PRODUCT-NOTES.md §3): three independent rhythms
+    /// so nothing pulses like a metronome, all on slow timers (no display link, ~0 % CPU).
+    /// - blink: a closed-eye frame for ~100 ms every 2–8 s, one in six a double blink;
+    /// - breath: a one-art-pixel rise every ~3 s, held ~0.5 s;
+    /// - quirk: one of the Pixl's own idle frames every 6–14 s (and, rarely, its signature).
     func scheduleIdle() {
         idleTimer?.invalidate()
+        blinkTimer?.invalidate()
+        breathTimer?.invalidate()
         guard !paused else { return }
-        idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 3...8), repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.mode == .perched, !self.moving, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
-                // the signature as an idle quirk: rare, never twice within 5 min, never during Focus or a menu
-                if self.focusUntil == nil, !self.menu.isOpen, Date().timeIntervalSince(self.lastSignature) > 300, Int.random(in: 0..<40) == 0 {
-                    self.signature()
-                    return
-                }
-                let next = Bool.random() ? "idle_1" : "idle_2"  // blink or throat puff
-                self.frogg.frameName = next
-                self.after(next == "idle_1" ? 0.17 : 0.66) { [weak self] in self?.backToIdle() }
-            }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 6...14), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.idleQuirk() }
         }
         idleTimer?.tolerance = 0.5
+        scheduleBlink()
+        scheduleBreath()
+    }
+
+    /// Calm enough for idle life: perched, still, idle frame, no menu, nothing in the air.
+    var restingIdle: Bool { mode == .perched && !moving && !busy && !menu.isOpen && frogg.frameName == "idle_0" }
+
+    func idleQuirk() {
+        guard restingIdle else { scheduleIdle(); return }
+        // the signature as an idle quirk: rare, never twice within 5 min, never during Focus
+        if focusUntil == nil, Date().timeIntervalSince(lastSignature) > 300, Int.random(in: 0..<40) == 0 {
+            signature()
+            return
+        }
+        let next = Bool.random() ? "idle_1" : "idle_2"
+        frogg.frameName = next
+        after(next == "idle_1" ? 0.6 : 0.9) { [weak self] in self?.backToIdle() }
+    }
+
+    func scheduleBlink() {
+        blinkTimer?.invalidate()
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 2...8), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.restingIdle, FroggArt.shared.frames["blink"] != nil {
+                    let double = Int.random(in: 0..<6) == 0
+                    self.frogg.frameName = "blink"
+                    self.later(0.1) { [weak self] in
+                        guard let self, self.frogg.frameName == "blink" else { return }
+                        self.frogg.frameName = "idle_0"
+                        if double {
+                            self.later(0.16) { [weak self] in
+                                guard let self, self.restingIdle else { return }
+                                self.frogg.frameName = "blink"
+                                self.later(0.09) { [weak self] in if self?.frogg.frameName == "blink" { self?.frogg.frameName = "idle_0" } }
+                            }
+                        }
+                    }
+                }
+                self.scheduleBlink()
+            }
+        }
+        blinkTimer?.tolerance = 0.3
+    }
+
+    func scheduleBreath() {
+        breathTimer?.invalidate()
+        breathTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 2.8...3.6), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.restingIdle, self.frogg.squash == CGSize(width: 1, height: 1) {
+                    // one art pixel taller (the view snaps squash to whole art pixels), feet planted
+                    let h = max(FroggArt.shared.size("idle_0").height, 1)
+                    self.frogg.squash = CGSize(width: 1, height: (h + 1) / h)
+                    self.later(0.5) { [weak self] in
+                        guard let self, self.frogg.squash.height > 1, !self.moving else { return }
+                        self.frogg.squash = CGSize(width: 1, height: 1)
+                    }
+                }
+                self.scheduleBreath()
+            }
+        }
+        breathTimer?.tolerance = 0.3
     }
 
     // MARK: mouse (SPEC §11.1)
@@ -762,6 +824,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 show(v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed", for: 4)
                 let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
                 say(r.receipt.map { verdict + "\n" + $0.bubble } ?? verdict, for: 5)
+                if let rc = r.receipt, rc.status == "paid", let amt = rc.amountNear { coinPop(amt) }
                 showResult(.result(r, instruction: ins.title, app: sel.app))
                 menu.refreshWallet()
             } catch {
@@ -891,6 +954,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let r = try await client.ask(question, name: settings.name, personality: ui.personality)
                 lastVerdict = "\(r.verification.badge) · \(r.verification.passed)/\(r.verification.checks.count)"
                 show(r.verification.verdict == "verified" ? "emotion_proud" : "emotion_curious", for: 3)
+                if let rc = r.receipt, rc.status == "paid", let amt = rc.amountNear { coinPop(amt) }
                 completion(.success(r))
             } catch {
                 show("emotion_annoyed", for: 3)
@@ -1087,6 +1151,42 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 self.say("Hi, I'm \(self.settings.name)!", for: 2.5)
                 if reopenSettings { self.toggleMiniMenu() }
+            }
+        })
+    }
+
+    /// The Pixl just paid for a request: a small accent pill ("−0.0021 Ⓝ") rises from its head
+    /// and fades, so you see the wallet being used at the moment it is (no display link: the
+    /// system animator runs it).
+    func coinPop(_ amount: String) {
+        guard !userHidden, !fullscreenHidden else { return }
+        let label = NSTextField(labelWithString: "−\(amount) Ⓝ")
+        label.font = Theme.mono(11, .bold)
+        label.textColor = Accent.onAccent
+        label.sizeToFit()
+        let size = NSSize(width: label.frame.width + 16, height: label.frame.height + 8)
+        let pill = CoinPill(frame: NSRect(origin: .zero, size: size))
+        label.frame.origin = NSPoint(x: 8, y: 4)
+        pill.addSubview(label)
+        let panel = OverlayPanel(size: size)
+        panel.ignoresMouseEvents = true
+        panel.contentView = pill
+        let b = froggBox
+        panel.setFrameOrigin(NSPoint(x: b.maxX - size.width / 2, y: b.maxY - 6))
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        Debug.log("coin pop \(amount)")
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            panel.animator().alphaValue = 1
+        }, completionHandler: {
+            MainActor.assumeIsolated {
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 1.1
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    panel.animator().setFrameOrigin(NSPoint(x: panel.frame.minX, y: panel.frame.minY + 22))
+                    panel.animator().alphaValue = 0
+                }, completionHandler: { MainActor.assumeIsolated { panel.orderOut(nil) } })
             }
         })
     }
@@ -1527,6 +1627,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             print("SKIP  cross-display hop (one display)")
         }
 
+        // idle life: a blink and a breath happen on their own while resting (within ~9 s)
+        cancelMotion()
+        if let spot = target() { place(at: spot.foot) }
+        frogg.frameName = "idle_0"
+        frogg.squash = CGSize(width: 1, height: 1)
+        paused = false
+        scheduleIdle()
+        var sawBlink = false, sawBreath = false
+        let tIdle = now
+        while now - tIdle < 20 && !(sawBlink && sawBreath) {  // blinks every 2–8 s, skipped during a quirk
+            if frogg.frameName == "blink" { sawBlink = true }
+            if frogg.squash.height > 1 { sawBreath = true }
+            await wait(0.02)
+        }
+        check("idle: blinks on its own (closed-eye frame)", sawBlink)
+        check("idle: breathes (one art pixel, then back)", sawBreath)
+        coinPop("0.0021")
+        await wait(0.3)
+        let pill = NSApp.windows.first { $0.isVisible && $0.contentView is CoinPill }
+        check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
+
         let failed = results.filter { !$0.1 }.count
         print("\(results.count - failed)/\(results.count) passed")
         exit(failed == 0 ? 0 : 1)
@@ -1538,5 +1659,22 @@ extension NSView {
     func firstSub<T: NSView>(_ type: T.Type) -> T? {
         for v in subviews { if let t = v as? T { return t }; if let t = v.firstSub(type) { return t } }
         return nil
+    }
+}
+
+/// The coin pill: the Pixl's accent, a hard 2 pt drop, rounded (the C10 primary button look).
+@MainActor
+final class CoinPill: NSView {
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        let r = bounds.insetBy(dx: 1, dy: 1)
+        MaterialTokens.solidLight.border.setFill()
+        NSBezierPath(roundedRect: r.offsetBy(dx: 0, dy: 1.5), xRadius: r.height / 2, yRadius: r.height / 2).fill()
+        Accent.color.setFill()
+        let p = NSBezierPath(roundedRect: r.insetBy(dx: 0, dy: 1).offsetBy(dx: 0, dy: -0.5), xRadius: r.height / 2, yRadius: r.height / 2)
+        p.fill()
+        p.lineWidth = 1.5
+        MaterialTokens.solidLight.border.setStroke()
+        p.stroke()
     }
 }

@@ -70,6 +70,11 @@ function posesFor(pet) {
     });
   }
   for (const [label, pose] of X.emotions[pet]) out["emotion_" + label.toLowerCase()] = { pose };
+  // blink: the exact idle pose with the eyes shut (spiders don't blink: half-lidded), so a
+  // blink never shifts the body
+  const idle = out.idle_0.pose;
+  out.blink = { pose: Object.assign({ v: "F" }, typeof idle === "object" ? idle : {}, { eyes: pet === "widow" ? "half" : "closed" }) };
+  if (pet === "widow") delete out.blink.pose.fore;  // both forelegs down while it rests its eyes
   return out;
 }
 
