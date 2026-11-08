@@ -88,6 +88,8 @@ public final class BonjourTransport: @unchecked Sendable {
 
     /// Sends `envelope` to `peer`, opening a connection if needed.
     public func send(_ envelope: Envelope, to peer: DeviceRef) {
+        var envelope = envelope
+        envelope.payload.fromName = me.deviceName   // so a peer that can't browse still knows who we are
         queue.async {
             guard let data = try? Framing.encode(envelope) else { return }
             let c: NWConnection
@@ -135,8 +137,10 @@ public final class BonjourTransport: @unchecked Sendable {
 
     private func deliver(_ env: Envelope, on c: NWConnection) {
         guard env.to == me.deviceId else { return }
-        // the sender is who it says it is only if we found it advertising that id (same network)
-        guard let peer = found[env.from]?.ref ?? inboundPeer[ObjectIdentifier(c)] else { return }
+        // who sent it: a device we found advertising that id, or (if our own browsing is held
+        // back, e.g. Local Network not allowed yet) the name it advertised in the envelope
+        let advertised = env.payload.fromName.map { DeviceRef(deviceId: env.from, deviceName: $0) }
+        guard let peer = found[env.from]?.ref ?? inboundPeer[ObjectIdentifier(c)] ?? advertised else { return }
         inboundPeer[ObjectIdentifier(c)] = peer
         if conns[peer.deviceId] == nil { conns[peer.deviceId] = c }
         DispatchQueue.main.async { self.onEnvelope?(env, peer) }
@@ -152,7 +156,10 @@ public final class BonjourTransport: @unchecked Sendable {
 
 /// This device's identity for trips: a stable id and the computer's name.
 public enum ThisDevice {
-    public static func ref(defaults: UserDefaults = .standard, env: [String: String] = ProcessInfo.processInfo.environment) -> DeviceRef {
+    /// - Parameter name: the device's name (the iPhone app passes UIDevice's; the Mac uses its
+    ///   computer name).
+    public static func ref(name: String? = nil, defaults: UserDefaults = .standard,
+                           env: [String: String] = ProcessInfo.processInfo.environment) -> DeviceRef {
         // PIXL_DEVICE_ID / PIXL_DEVICE_NAME: a second copy of the app on one Mac (tests, demos)
         if let id = env["PIXL_DEVICE_ID"] { return DeviceRef(deviceId: id, deviceName: env["PIXL_DEVICE_NAME"] ?? id) }
         let key = "PixlMemory.deviceId"
@@ -161,6 +168,11 @@ public enum ThisDevice {
             defaults.set(new, forKey: key)
             return new
         }()
-        return DeviceRef(deviceId: id, deviceName: Host.current().localizedName ?? "This Mac")
+        #if os(macOS)
+        let fallback = Host.current().localizedName ?? "This Mac"
+        #else
+        let fallback = "iPhone"
+        #endif
+        return DeviceRef(deviceId: id, deviceName: name ?? fallback)
     }
 }

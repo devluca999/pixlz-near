@@ -24,6 +24,9 @@ public struct Payload: Codable, Equatable, Sendable {
     public var name: String?
     /// decline, abort
     public var reason: String?
+    /// Any message: the sender's device name, for a receiver that can't browse for it
+    /// (its Local Network permission isn't granted yet). Optional, so older peers still parse.
+    public var fromName: String?
     /// transfer
     public var state: PetState?
     /// ack
