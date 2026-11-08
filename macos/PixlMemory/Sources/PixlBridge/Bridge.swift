@@ -153,15 +153,15 @@ public enum LineFraming {
 /// The service routes the extension may reach through the host. Anything else (drafts,
 /// wallet setup, attestation internals) is refused before it leaves the host.
 public enum ServiceRoutes {
-    static let exact: Set<String> = ["GET /health", "GET /highlights", "POST /highlights", "POST /ask", "POST /polish", "GET /wallet"]
+    static let exact: Set<String> = ["GET /health", "GET /highlights", "POST /highlights", "POST /ask", "POST /polish", "GET /wallet", "GET /folders"]
 
     public static func allowed(method: String, path: String) -> Bool {
         let m = method.uppercased()
         guard path.hasPrefix("/"), !path.contains(".."), !path.contains("//"), path.count < 512 else { return false }
         let bare = String(path.split(separator: "?", maxSplits: 1).first ?? "")
         if exact.contains("\(m) \(bare)") { return true }
-        // DELETE /highlights/<id>: one opaque id segment
-        if m == "DELETE", bare.hasPrefix("/highlights/") {
+        // DELETE or PATCH (move to a folder) /highlights/<id>: one opaque id segment
+        if m == "DELETE" || m == "PATCH", bare.hasPrefix("/highlights/") {
             let id = bare.dropFirst("/highlights/".count)
             return !id.isEmpty && id.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         }

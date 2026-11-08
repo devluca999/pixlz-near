@@ -265,9 +265,15 @@ final class ReceiptRow: NSView {
 @MainActor
 public final class MemoryCard: PixlCard {
     public var onOpenURL: ((URL) -> Void)?
+    /// Save a note: (text, folder). The app writes it and reopens the card.
+    public var onSaveNote: ((String, String?) -> Void)?
     let all: [HighlightItem]
     let list = NSStackView()
     public let search: PixlField
+    let folderRow = NSStackView()
+    public private(set) var folder: String?
+    var query = ""
+    var composer: PixlField?
 
     public init(highlights: [HighlightItem], look: SurfaceView.Look) {
         all = highlights
@@ -278,12 +284,68 @@ public final class MemoryCard: PixlCard {
         search.onChange = { [weak self] q in self?.filter(q) }
         search.onEscape = { [weak self] in self?.onClose?() }
         stack.addArrangedSubview(search)
+        // folders: All, then every folder path (subfolders shown as "Parent › Child")
+        folderRow.spacing = 6
+        folderRow.alignment = .centerY
+        let names = Array(Set(highlights.compactMap(\.folder))).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        if !names.isEmpty {
+            let scroll = NSScrollView()
+            scroll.drawsBackground = false
+            scroll.hasHorizontalScroller = false
+            scroll.documentView = folderRow
+            scroll.translatesAutoresizingMaskIntoConstraints = false
+            scroll.heightAnchor.constraint(equalToConstant: 34).isActive = true
+            scroll.widthAnchor.constraint(equalToConstant: inner).isActive = true
+            folderRow.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(scroll)
+            renderFolders(names)
+        }
         list.orientation = .vertical
         list.alignment = .leading
         list.spacing = 4
         stack.addArrangedSubview(list)
         render(highlights)
-        setFooter([], hint: highlights.isEmpty ? "encrypted on this Mac" : "click one to reopen the page there")
+        let note = PixelButton(title: "+ Note", style: .secondary) { [weak self] in self?.startNote() }
+        note.setAccessibilityLabel("New note")
+        setFooter([note], hint: highlights.isEmpty ? "encrypted on this Mac" : "click one to reopen it")
+    }
+
+    var folderNames: [String] = []
+    func renderFolders(_ names: [String]) {
+        folderNames = names
+        folderRow.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for name in [nil] + names.map(Optional.some) {
+            let label = name.map { $0.replacingOccurrences(of: "/", with: " › ") } ?? "All"
+            let on = name == folder
+            let chip = PixelButton(title: label, style: on ? .primary : .secondary) { [weak self] in self?.choose(folder: name) }
+            chip.setAccessibilityLabel("Folder \(label)\(on ? ", selected" : "")")
+            folderRow.addArrangedSubview(chip)
+        }
+        folderRow.layoutSubtreeIfNeeded()
+        folderRow.setFrameSize(folderRow.fittingSize)
+    }
+
+    public func choose(folder f: String?) {
+        folder = f
+        renderFolders(folderNames)
+        filter(query)
+    }
+
+    /// A one-line composer for a note or a to-do, saved into the current folder (or "Notes").
+    func startNote() {
+        guard composer == nil else { window?.makeFirstResponder(composer?.field); return }
+        let c = PixlField(placeholder: "A note, a to-do… ↵ to save", icon: "memory", look: look, label: "New note")
+        c.widthAnchor.constraint(equalToConstant: inner).isActive = true
+        c.onReturn = { [weak self, weak c] in
+            guard let self, let text = c?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+            Debug.log("note saved (\(text.count) chars) to \(self.folder ?? "Notes")")
+            self.onSaveNote?(text, self.folder ?? "Notes")
+        }
+        c.onEscape = { [weak self] in self?.composer?.removeFromSuperview(); self?.composer = nil; self?.fit() }
+        stack.insertArrangedSubview(c, at: 1)
+        composer = c
+        fit()
+        window?.makeFirstResponder(c.field)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -306,8 +368,10 @@ public final class MemoryCard: PixlCard {
     }
 
     func filter(_ q: String) {
+        query = q
         let q = q.lowercased()
-        render(q.isEmpty ? all : all.filter { $0.text.lowercased().contains(q) || ($0.title ?? "").lowercased().contains(q) })
+        let inFolder = folder.map { f in all.filter { $0.folder == f || ($0.folder ?? "").hasPrefix(f + "/") } } ?? all
+        render(q.isEmpty ? inFolder : inFolder.filter { $0.text.lowercased().contains(q) || ($0.title ?? "").lowercased().contains(q) })
         fit()
     }
 }
@@ -412,15 +476,25 @@ public final class AskCard: PixlCard {
     func submit() {
         let q = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
+        lastQuestion = q
         hint.stringValue = "checking the enclave…"
         hint.textColor = tokens.text2
         Debug.log("ask submitted (\(q.count) chars)")
         onAsk?(q)
     }
 
+    /// Save the answer into memory (folder "Answers"), with its sources' links.
+    public var onSaveAnswer: ((String, String, [HighlightItem]) -> Void)?
+    var lastQuestion = ""
+
     public func show(_ r: AskResult) {
         answer.stringValue = r.answer
         answer.isHidden = false
+        let saveB = PixelButton(title: "Save answer", style: .secondary) { [weak self] in
+            guard let self else { return }
+            self.onSaveAnswer?(self.lastQuestion, r.answer, r.highlights ?? [])
+        }
+        setFooter([askButton, saveB], hint: nil)
         let v = r.verification
         hint.stringValue = (v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count)" + (r.receipt.map { " · " + $0.bubble } ?? "")
         hint.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed

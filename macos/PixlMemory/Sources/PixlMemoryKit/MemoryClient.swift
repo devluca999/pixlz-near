@@ -67,6 +67,16 @@ public struct MemoryClient: Sendable {
         throw Self.error(data: data, status: status)
     }
 
+    /// Saves a note (or an answer) into memory, encrypted like a highlight. No URL: it's yours.
+    public func saveNote(_ text: String, title: String?, folder: String?) async throws(MemoryError) -> HighlightItem {
+        var body = ["text": text]
+        if let title { body["title"] = title }
+        if let folder { body["folder"] = folder }
+        let (d, s) = try await send(try request("/highlights", method: "POST", body: body))
+        if (200..<300).contains(s), let h = try? JSONDecoder().decode(HighlightItem.self, from: d) { return h }
+        throw Self.error(data: d, status: s)
+    }
+
     public func highlights(limit: Int = 30) async -> [HighlightItem] {
         struct List: Decodable { let highlights: [HighlightItem] }
         guard let r = try? request("/highlights?limit=\(limit)"), let (d, s) = try? await send(r), s == 200 else { return [] }

@@ -88,7 +88,8 @@ async function save(tab, fallbackText) {
   try {
     await api("/highlights", {
       method: "POST",
-      body: { text, url: tab.url || null, title: tab.title || null, fragment_url: fragmentUrl },
+      body: { text, url: tab.url || null, title: tab.title || null, fragment_url: fragmentUrl,
+              folder: (await chrome.storage.local.get("folder")).folder || null },
     });
     flash(tab.id, "✓", "#2f9e44", "Saved to Pixl Memory");
   } catch (e) {

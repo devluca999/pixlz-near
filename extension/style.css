@@ -36,3 +36,5 @@ footer { font-size: 12px; text-align: right; }
 .options .row { display: flex; gap: 12px; align-items: center; }
 .options button { border: 3px solid var(--ink); background: var(--accent); padding: 6px 12px; box-shadow: 4px 4px 0 var(--ink); }
 .options button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+.popup .folder { display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 0 0 8px; color: #4a5447; }
+.popup .folder select { flex: 1; font: inherit; padding: 3px 4px; border-radius: 6px; }

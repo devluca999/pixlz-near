@@ -12,6 +12,11 @@
       <p id="status" class="muted">Checking…</p>
     </div>
   </header>
+  <label class="folder">Saving to
+    <select id="folder"><option value="">No folder</option></select>
+    <button id="newFolder" class="link" type="button">New folder…</button>
+  </label>
+  <input id="folderName" type="text" placeholder="Folder name, e.g. Research/Frogs ↵" hidden autocomplete="off">
   <input id="q" type="search" placeholder="Search highlights" autocomplete="off">
   <ul id="list"></ul>
   <p id="empty" class="muted" hidden>No highlights yet. Select text on a page, right-click, <b>Save to Pixl Memory</b> (or ⌥⇧S).</p>

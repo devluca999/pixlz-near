@@ -235,3 +235,29 @@ def test_ask_refuses_before_sending_when_attestation_fails(tmp_path, captured):
     tc, _ = make(tmp_path, fake)
     r = tc.post("/ask", json={"question": "secret?"})
     assert r.status_code == 409 and "/chat/completions" not in fake.calls
+
+
+def test_folders_nest_filter_move_and_stay_encrypted(tmp_path, captured):
+    tc, store = make(tmp_path, FakeNear(captured))
+    a = tc.post("/highlights", json={"text": "Glass frogs hide their blood", "folder": " Research / Glass  frogs "}).json()
+    tc.post("/highlights", json={"text": "Tree frogs change colour", "folder": "Research"})
+    tc.post("/highlights", json={"text": "Invoice due Friday", "folder": "Work"})
+    tc.post("/highlights", json={"text": "No folder at all"})
+    assert a["folder"] == "Research/Glass frogs"                              # trimmed, spaces collapsed
+    assert tc.get("/folders").json()["folders"] == [{"name": "Research", "count": 1}, {"name": "Research/Glass frogs", "count": 1},
+                                                    {"name": "Work", "count": 1}]
+    research = [h["text"] for h in tc.get("/highlights", params={"folder": "Research"}).json()["highlights"]]
+    assert sorted(research) == ["Glass frogs hide their blood", "Tree frogs change colour"]   # includes subfolders
+    assert tc.patch(f"/highlights/{a['id']}", json={"folder": "Work/Frogs"}).json()["folder"] == "Work/Frogs"
+    work = {h["text"] for h in tc.get("/highlights", params={"folder": "Work"}).json()["highlights"]}
+    assert work == {"Glass frogs hide their blood", "Invoice due Friday"}      # moved in, subfolder included
+    assert tc.patch("/highlights/nope", json={"folder": "x"}).status_code == 404
+    raw = (tmp_path / "memory.db").read_bytes()
+    assert b"Research" not in raw and b"Work/Frogs" not in raw                 # folder names are encrypted too
+
+
+def test_folder_paths_are_tamed():
+    from pixl_memory.store import normalize_folder
+    assert normalize_folder("  ") is None and normalize_folder(None) is None
+    assert normalize_folder("a/../b//c/./d/e/f") == "a/b/c/d"                 # no traversal, at most 4 levels
+    assert normalize_folder("x" * 60) == "x" * 40

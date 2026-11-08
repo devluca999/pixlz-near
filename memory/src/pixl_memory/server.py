@@ -23,6 +23,11 @@ class HighlightIn(BaseModel):
     url: str | None = Field(default=None, max_length=4096)
     title: str | None = Field(default=None, max_length=1000)
     fragment_url: str | None = Field(default=None, max_length=8192)
+    folder: str | None = Field(default=None, max_length=200)
+
+
+class MoveIn(BaseModel):
+    folder: str | None = Field(default=None, max_length=200)
 
 
 class PolishIn(BaseModel):
@@ -102,11 +107,23 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
 
     @app.post("/highlights", dependencies=guarded, status_code=201)
     def add_highlight(h: HighlightIn) -> dict[str, Any]:
-        return store.add_highlight(h.text, h.url, h.title, h.fragment_url).to_dict()
+        return store.add_highlight(h.text, h.url, h.title, h.fragment_url, h.folder).to_dict()
 
     @app.get("/highlights", dependencies=guarded)
-    def list_highlights(q: str | None = None, limit: int = 50) -> dict[str, Any]:
-        return {"highlights": [h.to_dict() for h in store.list_highlights(q, min(max(limit, 1), 500))]}
+    def list_highlights(q: str | None = None, limit: int = 50, folder: str | None = None) -> dict[str, Any]:
+        return {"highlights": [h.to_dict() for h in store.list_highlights(q, min(max(limit, 1), 500), folder)]}
+
+    @app.get("/folders", dependencies=guarded)
+    def list_folders() -> dict[str, Any]:
+        return {"folders": store.folders()}
+
+    @app.patch("/highlights/{hid}", dependencies=guarded)
+    def move_highlight(hid: str, m: MoveIn) -> dict[str, Any]:
+        if not store.move_highlight(hid, m.folder):
+            raise HTTPException(404, "no such highlight")
+        h = store.get_highlight(hid)
+        assert h is not None
+        return h.to_dict()
 
     @app.delete("/highlights/{hid}", dependencies=guarded, status_code=204)
     def delete_highlight(hid: str) -> None:

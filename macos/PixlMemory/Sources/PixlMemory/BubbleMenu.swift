@@ -309,6 +309,17 @@ final class BubbleMenu {
         card.fit()
         card.onClose = { [weak self] in self?.closeCard() }
         card.onOpenURL = { NSWorkspace.shared.open($0) }  // the text-fragment link reopens the passage, highlighted
+        card.onSaveAnswer = { [weak self] question, answer, sources in
+            // the answer goes into memory with the links it was built from, so it can be found again
+            let links = sources.compactMap { $0.fragmentUrl ?? $0.url }
+            let text = answer + (links.isEmpty ? "" : "\n\nSources:\n" + links.map { "• " + $0 }.joined(separator: "\n"))
+            Task { @MainActor in
+                do {
+                    _ = try await self?.app.client.saveNote(text, title: question, folder: "Answers")
+                    self?.app.say("Saved to Answers.", for: 2)
+                } catch { self?.app.say("Couldn't save it", for: 2.5) }
+            }
+        }
         card.onAsk = { [weak self, weak card] q in
             guard let self, let card else { return }
             self.app.ask(q) { result in
@@ -339,12 +350,21 @@ final class BubbleMenu {
     func showMemory() {
         let gen = cardGen
         Task { @MainActor in
-            let items = await app.client.highlights()
+            let items = await app.client.highlights(limit: 200)
             guard gen == cardGen else { Debug.log("highlights fetched after something else opened: dropped"); return }
             let card = MemoryCard(highlights: items, look: cardLook)
             card.fit()
             card.onClose = { [weak self] in self?.closeCard() }
             card.onOpenURL = { NSWorkspace.shared.open($0) }
+            card.onSaveNote = { [weak self] text, folder in
+                Task { @MainActor in
+                    do {
+                        _ = try await self?.app.client.saveNote(text, title: nil, folder: folder)
+                        self?.app.say("Saved to \(folder ?? "Notes").", for: 2)
+                        self?.showMemory()
+                    } catch { self?.app.say("Couldn't save the note", for: 2.5) }
+                }
+            }
             showCard(card, name: "memory (\(items.count))")
         }
     }

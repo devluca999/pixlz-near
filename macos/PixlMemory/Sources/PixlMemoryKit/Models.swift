@@ -179,9 +179,11 @@ public struct HighlightItem: Codable, Sendable, Equatable {
     public let url: String?
     public let title: String?
     public let fragmentUrl: String?
-    enum CodingKeys: String, CodingKey { case id, text, url, title, fragmentUrl = "fragment_url" }
-    public init(id: String, text: String, url: String?, title: String?, fragmentUrl: String?) {
-        self.id = id; self.text = text; self.url = url; self.title = title; self.fragmentUrl = fragmentUrl
+    /// A folder path like "Research/Glass frogs" (nil: not filed).
+    public var folder: String? = nil
+    enum CodingKeys: String, CodingKey { case id, text, url, title, folder, fragmentUrl = "fragment_url" }
+    public init(id: String, text: String, url: String?, title: String?, fragmentUrl: String?, folder: String? = nil) {
+        self.id = id; self.text = text; self.url = url; self.title = title; self.fragmentUrl = fragmentUrl; self.folder = folder
     }
     public var link: URL? { (fragmentUrl ?? url).flatMap(URL.init(string:)) }
 }

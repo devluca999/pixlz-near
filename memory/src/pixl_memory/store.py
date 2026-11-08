@@ -57,6 +57,16 @@ CREATE TABLE IF NOT EXISTS payments (
 """
 
 
+def normalize_folder(folder: str | None) -> str | None:
+    """A folder path like "Research/Glass frogs": trimmed parts, no empty parts, at most
+    4 levels and 40 characters a part. None or blank means no folder."""
+    if folder is None:
+        return None
+    parts = [" ".join(p.split())[:40] for p in folder.replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")][:4]
+    return "/".join(parts) or None
+
+
 def write_secret(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -81,6 +91,7 @@ class Highlight:
     url: str | None
     title: str | None
     fragment_url: str | None
+    folder: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -115,6 +126,9 @@ class Store:
             self._db = sqlite3.connect(data_dir / "memory.db", check_same_thread=False, isolation_level=None)
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
+            cols = [r[1] for r in self._db.execute("PRAGMA table_info(highlights)")]
+            if "folder" not in cols:  # added with folders; older stores get the column empty
+                self._db.execute("ALTER TABLE highlights ADD COLUMN folder BLOB")
         finally:
             os.umask(old_umask)
 
@@ -134,36 +148,57 @@ class Store:
     # -- highlights --
 
     def add_highlight(self, text: str, url: str | None = None, title: str | None = None,
-                      fragment_url: str | None = None) -> Highlight:
-        h = Highlight(str(uuid.uuid4()), time.time(), text, url, title, fragment_url)
+                      fragment_url: str | None = None, folder: str | None = None) -> Highlight:
+        h = Highlight(str(uuid.uuid4()), time.time(), text, url, title, fragment_url, normalize_folder(folder))
         s = lambda col, v: self._seal("highlights", h.id, col, v)  # noqa: E731
         self._db.execute(
-            "INSERT INTO highlights VALUES (?,?,?,?,?,?)",
-            (h.id, h.created_at, s("text", text), s("url", url), s("title", title), s("fragment_url", fragment_url)),
+            "INSERT INTO highlights (id, created_at, text, url, title, fragment_url, folder) VALUES (?,?,?,?,?,?,?)",
+            (h.id, h.created_at, s("text", text), s("url", url), s("title", title), s("fragment_url", fragment_url),
+             s("folder", h.folder)),
         )
         return h
 
+    _COLS = "id, created_at, text, url, title, fragment_url, folder"
+
     def _row_to_highlight(self, row: tuple) -> Highlight:
         hid, created, *blobs = row
-        cols = ["text", "url", "title", "fragment_url"]
+        cols = ["text", "url", "title", "fragment_url", "folder"]
         vals = [self._open("highlights", hid, c, b) for c, b in zip(cols, blobs)]
         return Highlight(hid, created, *vals)
 
-    def list_highlights(self, query: str | None = None, limit: int = 50) -> list[Highlight]:
+    def list_highlights(self, query: str | None = None, limit: int = 50, folder: str | None = None) -> list[Highlight]:
+        """Newest first. `folder` includes its subfolders ("Research" matches "Research/Frogs")."""
         # Rows are encrypted, so search happens after decryption. Fine for a personal library.
-        rows = self._db.execute("SELECT * FROM highlights ORDER BY created_at DESC").fetchall()
+        rows = self._db.execute(f"SELECT {self._COLS} FROM highlights ORDER BY created_at DESC").fetchall()
         out = []
         q = (query or "").casefold()
+        f = normalize_folder(folder)
         for row in rows:
             h = self._row_to_highlight(row)
+            if f and not (h.folder == f or (h.folder or "").startswith(f + "/")):
+                continue
             if not q or q in h.text.casefold() or q in (h.title or "").casefold() or q in (h.url or "").casefold():
                 out.append(h)
                 if len(out) >= limit:
                     break
         return out
 
+    def folders(self) -> list[dict[str, Any]]:
+        """Every folder path with how many highlights are directly in it, sorted by name."""
+        counts: dict[str, int] = {}
+        for row in self._db.execute(f"SELECT {self._COLS} FROM highlights").fetchall():
+            h = self._row_to_highlight(row)
+            if h.folder:
+                counts[h.folder] = counts.get(h.folder, 0) + 1
+        return [{"name": k, "count": v} for k, v in sorted(counts.items(), key=lambda kv: kv[0].casefold())]
+
+    def move_highlight(self, hid: str, folder: str | None) -> bool:
+        f = normalize_folder(folder)
+        return self._db.execute("UPDATE highlights SET folder=? WHERE id=?",
+                                (self._seal("highlights", hid, "folder", f), hid)).rowcount > 0
+
     def get_highlight(self, hid: str) -> Highlight | None:
-        row = self._db.execute("SELECT * FROM highlights WHERE id=?", (hid,)).fetchone()
+        row = self._db.execute(f"SELECT {self._COLS} FROM highlights WHERE id=?", (hid,)).fetchone()
         return self._row_to_highlight(row) if row else None
 
     def delete_highlight(self, hid: str) -> bool:

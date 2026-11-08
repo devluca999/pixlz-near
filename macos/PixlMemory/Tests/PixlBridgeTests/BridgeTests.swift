@@ -56,13 +56,15 @@ struct FramingTests {
 struct RoutingTests {
     @Test func onlyAllowlistedServiceRoutesPass() {
         for (m, p) in [("GET", "/health"), ("GET", "/highlights?limit=5&q=frog"), ("POST", "/highlights"), ("post", "/ask"),
-                       ("POST", "/polish"), ("GET", "/wallet"), ("DELETE", "/highlights/h_01J9ZK-x")] {
+                       ("POST", "/polish"), ("GET", "/wallet"), ("DELETE", "/highlights/h_01J9ZK-x"), ("GET", "/folders"),
+                       ("PATCH", "/highlights/h_01J9ZK-x")] {
             #expect(ServiceRoutes.allowed(method: m, path: p), "\(m) \(p)")
         }
         for (m, p) in [("GET", "/drafts"), ("GET", "/wallet/setup"), ("POST", "/wallet/setup"), ("GET", "/attestation"),
                        ("DELETE", "/highlights/../drafts"), ("DELETE", "/highlights/"), ("DELETE", "/highlights/a/b"),
                        ("GET", "highlights"), ("GET", "//evil.example/highlights"), ("PUT", "/highlights"),
-                       ("GET", "/highlights/../../token"), ("DELETE", "/highlights/a%2Fb")] {
+                       ("GET", "/highlights/../../token"), ("DELETE", "/highlights/a%2Fb"), ("POST", "/wallet/limits"),
+                       ("PATCH", "/folders")] {
             #expect(!ServiceRoutes.allowed(method: m, path: p), "\(m) \(p)")
         }
     }

@@ -61,9 +61,29 @@ async function load() {
 
 $("q").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 200); });
 
-const { token } = await getSettings();
-if (!token) {
-  $("status").innerHTML = 'Not connected. Open <a href="options.html" target="_blank">Settings</a>.';
-} else {
-  load();
+// Folders: where ⌥⇧S / right-click saves go ("Research/Glass frogs" nests).
+async function loadFolders() {
+  const sel = $("folder");
+  const { folder = "" } = await chrome.storage.local.get("folder");
+  let names = [];
+  try { names = (await api("/folders")).folders.map((f) => f.name); } catch { /* not connected yet */ }
+  if (folder && !names.includes(folder)) names.push(folder);
+  sel.replaceChildren(new Option("No folder", ""), ...names.sort().map((n) => new Option(n.replaceAll("/", " › "), n)));
+  sel.value = folder;
 }
+$("folder").addEventListener("change", (e) => chrome.storage.local.set({ folder: e.target.value }));
+$("newFolder").addEventListener("click", () => { $("folderName").hidden = false; $("folderName").focus(); });
+$("folderName").addEventListener("keydown", async (e) => {
+  if (e.key === "Escape") { e.target.hidden = true; return; }
+  if (e.key !== "Enter") return;
+  const name = e.target.value.trim();
+  e.target.value = ""; e.target.hidden = true;
+  if (!name) return;
+  await chrome.storage.local.set({ folder: name });  // created on the first save into it
+  loadFolders();
+});
+
+// With the Mac app installed the native host connects without a token; otherwise the
+// options page's token is used. Either way, just try.
+loadFolders();
+load();
