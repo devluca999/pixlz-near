@@ -10,6 +10,13 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 
 ## Screenshots
 
+![Frogg, Nox, Mochi, Boo and Silk, each with its menu open](docs/screenshots/pixlz-lineup.png)
+Five Pixls, each with its own accent, menu detail, signature move and voice (switch under More ▸ Change Pixl or in settings; memory, wallet and position carry over). Rendered from the Claude Design pixel engine.
+
+![Ask, Memory, Wallet and Change Pixl cards, light](docs/screenshots/cards-light.png)
+![The same cards, dark](docs/screenshots/cards-dark.png)
+The cards on the C10 Solid material (Liquid Glass is the ghost's alone): header with grip and ×, fields with the Pixl's accent ring, receipts, the Pixl picker.
+
 | | |
 |---|---|
 | ![Frogg perched on the active window with a verified bubble](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) |
@@ -20,8 +27,8 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 | Chrome extension: a saved passage, reopened from its link, scrolled and highlighted. | The link picks the right "the frog" out of 35 on the page. |
 | ![Double-click or right-click: the option bubbles](docs/screenshots/bubbles-white-doc.png) | ![More: the mini list](docs/screenshots/more-list.png) |
 | ![Bubbles over a dark editor](docs/screenshots/bubbles-dark-editor.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
-| Right-click Frogg: Polish, Focus, Hide, Settings (Chat and Mic are marked coming soon). | ⌃⌥P: name, size, behaviour, Focus apps, hotkeys, service and wallet status. |
-| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) |
+| Double-click or right-click the Pixl: Polish (with a selection) or Ask, Memory, Wallet, More. | More: Ask, Memory, Wallet, Focus, Do your thing, Change Pixl, settings, Hide. ⌃⌥P: the settings card. |
+| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) (and [`cat`](docs/screenshots/cat-frames.png), [`shiba`](docs/screenshots/shiba-frames.png), [`ghost`](docs/screenshots/ghost-frames.png), [`widow`](docs/screenshots/widow-frames.png)) |
 | `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's 25 frames (idle, hop, poke, grab, signature, nap, emotions), exported from the Claude Design C7 engine. |
 
 App screenshots are rendered offscreen from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.

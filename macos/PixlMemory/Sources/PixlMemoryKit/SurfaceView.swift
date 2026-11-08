@@ -30,20 +30,20 @@ public final class SurfaceView: NSView {
         /// For surfaces with text: the variant and dim that keep 4.5:1 over any backdrop
         /// (we never see the screen), never below the design's own fill.
         public static func text(designFill: Double, prefersDark: Bool, glass: Bool = glassAvailable) -> Look {
-            guard glass else { return Look(glass: false, variant: .light, dim: 1) }
+            guard glass else { return Look(glass: false, variant: prefersDark ? .dark : .light, dim: 0.94) }
             let pick = Legibility.pick(backdrop: 0...1, prefersDark: prefersDark, floor: designFill)
             return Look(glass: true, variant: pick.variant, dim: CGFloat(pick.alpha))
         }
 
         /// For icon-only bubbles (non-text, self-outlined icons): the design's glass fill.
         public static func icon(prefersDark: Bool, glass: Bool = glassAvailable) -> Look {
-            guard glass else { return Look(glass: false, variant: .light, dim: 1) }
+            guard glass else { return Look(glass: false, variant: prefersDark ? .dark : .light, dim: 0.94) }
             return Look(glass: true, variant: prefersDark ? .dark : .light, dim: prefersDark ? 0.32 : 0.18)
         }
 
-        public var textColor: NSColor { glass ? NSColor(rgb: Legibility.text(variant)) : Theme.ink }
-        public var mutedColor: NSColor { textColor.withAlphaComponent(0.72) }
-        public var appearance: NSAppearance? { NSAppearance(named: glass && variant == .dark ? .darkAqua : .aqua) }
+        public var textColor: NSColor { tokens.text }
+        public var mutedColor: NSColor { tokens.text2 }
+        public var appearance: NSAppearance? { NSAppearance(named: variant == .dark ? .darkAqua : .aqua) }
     }
 
     public let shape: Shape
@@ -197,16 +197,40 @@ final class SurfaceOverlay: NSView {
                            ending: NSColor.white.withAlphaComponent(0))?.draw(in: NSBezierPath(ovalIn: gloss), relativeCenterPosition: NSPoint(x: -0.1, y: -0.2))
             }
         } else {
-            // paper fallback: fill, 2 pt ink ring; the hard 3 pt shadow is drawn by the parent's inset
-            let body = r
-            Theme.ink.setFill()
-            path(body.offsetBy(dx: 0, dy: pressed ? 1 : 3)).fill()
-            (lit ? Theme.selected : Theme.paper).setFill()
-            let face = path(body.offsetBy(dx: 0, dy: pressed ? 2 : 0))
-            face.fill()
-            face.lineWidth = 2
-            Theme.ink.setStroke()
-            face.stroke()
+            // C10 Solid (every Pixl but the ghost): hard 3 pt shadow, 94 % fill with a 2 px
+            // ordered-dither grain, 2 pt outline with a 1 pt halo, inner top light / bottom shade
+            let t = look.tokens
+            let face = r.insetBy(dx: 0.5, dy: 0).offsetBy(dx: 0, dy: pressed ? 2 : 0)
+            t.shadow.setFill()
+            path(r.offsetBy(dx: 0, dy: pressed ? 1 : 3)).fill()
+            let body = path(face)
+            (lit ? (t.fill.blended(withFraction: 0.1, of: accent) ?? t.fill) : t.fill).setFill()
+            body.fill()
+            if let grain = t.grain {
+                NSGraphicsContext.saveGraphicsState()
+                body.addClip()
+                grain.setFill()
+                let bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+                for y in stride(from: Int(face.minY), to: Int(face.maxY), by: 2) {
+                    for x in stride(from: Int(face.minX), to: Int(face.maxX), by: 2) where bayer[(y / 2) & 3][(x / 2) & 3] < 4 {
+                        NSRect(x: x, y: y, width: 2, height: 2).fill()
+                    }
+                }
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            // inner light along the top, shade along the bottom
+            NSGraphicsContext.saveGraphicsState()
+            body.addClip()
+            t.highlight.setFill(); NSRect(x: face.minX, y: face.minY + 2, width: face.width, height: 2).fill()
+            t.lowlight.setFill(); NSRect(x: face.minX, y: face.maxY - 4, width: face.width, height: 2).fill()
+            NSGraphicsContext.restoreGraphicsState()
+            body.lineWidth = 2
+            t.outline.setStroke()
+            body.stroke()
+            let halo = path(face.insetBy(dx: -0.5, dy: -0.5))
+            halo.lineWidth = 1
+            t.halo.setStroke()
+            halo.stroke()
         }
         if focused {
             let ring = path(bounds.insetBy(dx: 0.5, dy: 0.5))

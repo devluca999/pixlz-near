@@ -19,13 +19,15 @@ public enum BubbleIcons {
                  "............", "............", "............", "............", "............"],
         "settings": [".....kk.....", "..k.kaak.k..", ".kakaaaakak.", "..kaakkaak..", ".kaakwwkaak.", "kaakwwwwkaak", "kaakwwwwkaak",
                      ".kaakwwkaak.", "..kaakkaak..", ".kakaaaakak.", "..k.kaak.k..", ".....kk....."],
+        "search": ["..kkkk......", ".kwwwwk.....", "kwwaawwk....", "kwaawwwk....", "kwawwwwk....", "kwwwwwwk....", ".kwwwwk.....",
+                   "..kkkkkk....", "......kak...", ".......kak..", "........kak.", ".........kk."],
         "hide": ["............", "............", "..kkkkkkkk..", ".kwwwwwwwwk.", "kwwkkwwkkwwk", "kwwkkwwkkwwk", "kwwwwwwwwwwk",
                  ".kwwwwwwwwk.", "..kkkkkkkk..", "...k....k...", "..k......k..", "............"],
     ]
     /// Token accents (tokens/colors.css): frogg for Ask, flame-2 for Polish and Wallet, dew for Memory, dragon for Send.
     static let accents: [String: [String]] = [
         "ask": ["#7CD93A"], "polish": ["#FFD23F"], "memory": ["#2F6FE0"], "wallet": ["#FFD23F", "#FF8A1F"],
-        "send": ["#2FB3A6"], "more": [], "settings": ["#9AA295"], "hide": [],
+        "send": ["#2FB3A6"], "more": [], "settings": ["#9AA295"], "hide": [], "search": ["#86C5F0"],
     ]
 
     public static var names: [String] { grids.keys.sorted() }

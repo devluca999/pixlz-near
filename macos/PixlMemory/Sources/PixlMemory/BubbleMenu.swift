@@ -30,9 +30,11 @@ final class BubbleMenu {
     // MARK: looks (legibility: text surfaces dim enough for 4.5:1 over anything)
 
     var prefersDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
-    var iconLook: SurfaceView.Look { .icon(prefersDark: prefersDark) }
-    var labelLook: SurfaceView.Look { .text(designFill: prefersDark ? 0.66 : 0.62, prefersDark: prefersDark) }
-    var cardLook: SurfaceView.Look { .text(designFill: prefersDark ? 0.42 : 0.26, prefersDark: prefersDark) }
+    /// C10: Liquid Glass is the ghost's alone (its body is glass); every other Pixl uses Solid.
+    var glass: Bool { SurfaceView.Look.glassAvailable && ui.glassBody }
+    var iconLook: SurfaceView.Look { .icon(prefersDark: prefersDark, glass: glass) }
+    var labelLook: SurfaceView.Look { .text(designFill: prefersDark ? 0.66 : 0.62, prefersDark: prefersDark, glass: glass) }
+    var cardLook: SurfaceView.Look { .text(designFill: prefersDark ? 0.42 : 0.26, prefersDark: prefersDark, glass: glass) }
     var accent: NSColor { let c = RGB(hex: ui.accent); return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1) }
 
     // MARK: geometry (top-left global coordinates)

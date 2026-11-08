@@ -105,7 +105,7 @@ final class ListRow: NSView {
         self.row = row
         self.look = look
         super.init(frame: frame)
-        if let name = row.icon, let img = BubbleIcons.image(name, dark: look.glass && look.variant == .dark) {
+        if let name = row.icon, let img = BubbleIcons.image(name, dark: look.variant == .dark) {
             let iv = NSImageView(image: img)
             iv.frame = NSRect(x: 8, y: (frame.height - 24) / 2, width: 24, height: 24)
             addSubview(iv)

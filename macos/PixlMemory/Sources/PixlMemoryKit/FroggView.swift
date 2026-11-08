@@ -88,13 +88,17 @@ public final class BubbleView: NSView {
     public init(text: String, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1)) {
         self.text = text
         self.look = look
-        let size = Self.size(for: text)
+        // room on the edge where the Pixl's decal sits, so it never covers a word
+        let r = DecalArt.reserve(PixlData.ui)
+        let text0 = Self.size(for: text)
+        let size = NSSize(width: text0.width + r.left + r.right, height: text0.height + r.top + r.bottom)
         let body = NSRect(x: 0, y: 0, width: size.width, height: size.height - Self.tail)
         surface = SurfaceView(frame: body, shape: .rounded(10), look: look)
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = Self.font
         label.textColor = look.textColor
-        label.frame = body.insetBy(dx: Self.pad, dy: Self.pad - 2).offsetBy(dx: 0, dy: 1)
+        let textBox = NSRect(x: r.left, y: r.top, width: body.width - r.left - r.right, height: body.height - r.top - r.bottom)
+        label.frame = textBox.insetBy(dx: Self.pad, dy: Self.pad - 2).offsetBy(dx: 0, dy: 1)
         surface.content.addSubview(label)
         DecalArt.attach(to: surface.content, ui: PixlData.ui, look: look)
         super.init(frame: NSRect(origin: .zero, size: size))

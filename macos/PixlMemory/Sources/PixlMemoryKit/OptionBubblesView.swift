@@ -202,8 +202,8 @@ final class BubbleButton: NSView {
         self.slot = slot
         let s = BubbleMenuModel.bubbleSize
         surface = SurfaceView(frame: NSRect(x: 0, y: 0, width: s, height: s + (look.glass ? 0 : 3)), shape: .circle, look: look)
-        icon = NSImageView(image: BubbleIcons.image(slot.id, dark: look.glass && look.variant == .dark)
-                           ?? BubbleIcons.image("more", dark: look.glass && look.variant == .dark) ?? NSImage())
+        icon = NSImageView(image: BubbleIcons.image(slot.id, dark: look.variant == .dark)
+                           ?? BubbleIcons.image("more", dark: look.variant == .dark) ?? NSImage())
         icon.imageScaling = .scaleNone
         // label pill: "Wallet  4.20 NEAR"
         let text = NSMutableAttributedString(string: slot.label, attributes: [.font: Theme.mono(11, .bold), .foregroundColor: labelLook.textColor])

@@ -336,59 +336,103 @@ final class SuggestionCard: NSView, NSDraggingSource {
 /// Small pixel-style button: ink border, hard shadow.
 @MainActor
 final class PixelButton: NSView {
+    /// C10 buttons: `.primary` (accent fill, hard drop), `.secondary` (chip), `.plain` (the × in headers).
+    enum Style { case primary, secondary, plain }
     var title: String { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
-    let primary: Bool
+    let style: Style
+    /// A key hint drawn after the title ("↵").
+    var hint: String? { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     let action: () -> Void
-    private var pressed = false
+    private var pressed = false { didSet { needsDisplay = true } }
+    private var hovering = false { didSet { needsDisplay = true } }
+    var primary: Bool { style == .primary }
 
     init(title: String, primary: Bool, action: @escaping () -> Void) {
-        self.title = title
-        self.primary = primary
+        let close = title == "✕" || title == "×"
+        self.title = close ? "×" : title
+        self.style = close ? .plain : (primary ? .primary : .secondary)
         self.action = action
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel(title == "✕" ? "Close" : title)
+        setAccessibilityLabel(close ? "Close" : title)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    convenience init(title: String, style: Style, hint: String? = nil, action: @escaping () -> Void) {
+        self.init(title: title, primary: style == .primary, action: action)
+        self.hint = hint
     }
 
     override func accessibilityPerformPress() -> Bool { action(); return true }
-
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    static let font = Theme.mono(12, .bold)
+    static let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    static let plainFont = Theme.mono(15, .bold)
+    static let hintFont = Theme.mono(9)
     override var isFlipped: Bool { true }
 
+    private var titleFont: NSFont { style == .plain ? Self.plainFont : Self.font }
+
     override var intrinsicContentSize: NSSize {
-        let s = (title as NSString).size(withAttributes: [.font: Self.font])
-        return NSSize(width: ceil(s.width) + 28 + 3, height: ceil(s.height) + 14 + 3)
+        let s = (title as NSString).size(withAttributes: [.font: titleFont])
+        if style == .plain { return NSSize(width: 26, height: 26) }
+        let h = hint.map { ($0 as NSString).size(withAttributes: [.font: Self.hintFont]).width + 8 } ?? 0
+        return NSSize(width: ceil(s.width + h) + 26, height: 30 + 2)   // 5 × 11 padding, 2 pt line, 2 pt drop
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let o: CGFloat = pressed ? 1 : 3
-        let card = NSRect(x: pressed ? 2 : 0, y: pressed ? 2 : 0, width: bounds.width - 3, height: bounds.height - 3)
-        Theme.ink.setFill()
-        NSBezierPath(rect: NSRect(x: 3, y: 3, width: bounds.width - 3, height: bounds.height - 3)).fill()
-        (primary ? Theme.accent : NSColor.white).setFill()
-        NSBezierPath(rect: card).fill()
-        Theme.ink.setStroke()
-        let p = NSBezierPath(rect: card.insetBy(dx: 1, dy: 1))
+        let t = MaterialTokens.forAppearance(effectiveAppearance)
+        if style == .plain {
+            if hovering || pressed {
+                (pressed ? t.line : t.chip).setFill()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8).fill()
+            }
+            let s = (title as NSString).size(withAttributes: [.font: titleFont])
+            (title as NSString).draw(at: NSPoint(x: (bounds.width - s.width) / 2, y: (bounds.height - s.height) / 2 - 1),
+                                     withAttributes: [.font: titleFont, .foregroundColor: hovering ? t.text : t.text2])
+            return
+        }
+        let drop: CGFloat = style == .primary ? 2 : 0
+        let sink: CGFloat = pressed ? drop : 0
+        let face = NSRect(x: 1, y: 1 + sink, width: bounds.width - 2, height: bounds.height - 4)
+        if style == .primary, !pressed {
+            t.border.setFill()
+            NSBezierPath(roundedRect: face.offsetBy(dx: 0, dy: drop), xRadius: 9, yRadius: 9).fill()
+        }
+        let p = NSBezierPath(roundedRect: face, xRadius: 9, yRadius: 9)
+        let fill: NSColor
+        if style == .primary {
+            fill = hovering ? (Accent.color.blended(withFraction: 0.12, of: .white) ?? Accent.color) : Accent.color
+        } else {
+            fill = hovering ? t.line : t.chip
+        }
+        fill.setFill()
+        p.fill()
         p.lineWidth = 2
+        (style == .primary ? t.border : t.line).setStroke()
         p.stroke()
-        _ = o
+        let fg = style == .primary ? Accent.onAccent : t.text
         let s = (title as NSString).size(withAttributes: [.font: Self.font])
-        (title as NSString).draw(at: NSPoint(x: card.midX - s.width / 2, y: card.midY - s.height / 2),
-                                 withAttributes: [.font: Self.font, .foregroundColor: Theme.ink])
+        var x = face.minX + 12
+        if hint == nil { x = face.midX - s.width / 2 }
+        (title as NSString).draw(at: NSPoint(x: x, y: face.midY - s.height / 2), withAttributes: [.font: Self.font, .foregroundColor: fg])
+        if let hint {
+            let hs = (hint as NSString).size(withAttributes: [.font: Self.hintFont])
+            (hint as NSString).draw(at: NSPoint(x: x + s.width + 8, y: face.midY - hs.height / 2),
+                                    withAttributes: [.font: Self.hintFont, .foregroundColor: fg.withAlphaComponent(0.75)])
+        }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
     override func mouseDown(with event: NSEvent) {
         pressed = true
-        needsDisplay = true
         Debug.log("button down \(title)")
     }
     override func mouseUp(with event: NSEvent) {
         pressed = false
-        needsDisplay = true
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         Debug.log("button up \(title) inside=\(inside)")
         if inside { action() }
