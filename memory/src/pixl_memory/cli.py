@@ -18,7 +18,7 @@ def print_verification(v: Verification) -> None:
     d = v.to_dict()
     print(f"\n{d['verdict'].upper()}: {d['summary']}\n")
     for c in v.checks:
-        print(f"  {MARK[c.status]} {c.label:<34} {c.detail}")
+        print(f"  {MARK[c.status]} {c.label:<38} {c.detail}")
     if v.model_signing_address:
         print(f"\n  model signer   {v.model_signing_address}")
     if v.gateway_signing_address:
