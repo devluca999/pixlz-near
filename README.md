@@ -30,6 +30,7 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 | `cp .env.example .env`, set `NEAR_AI_API_KEY`, then `uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
 | `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
 | Load `extension/` unpacked in Chrome, paste the token from `uv run pixl-memory token`, select text → right-click **Save to Pixl Memory** | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
+| `scripts/build-mac-app.sh --open`, allow Accessibility, select text in any app, click Frogg → **Polish this** | Frogg hops onto the active window; the panel shows the word diff, the verdict and all 17 checks; drag the green-edged card into your text |
 | `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
 
 Full details: [`memory/README.md`](memory/README.md).
@@ -47,24 +48,24 @@ Full details: [`memory/README.md`](memory/README.md).
                 ▼
         NEAR AI Cloud  ── gateway TEE ── model TEE (z-ai/glm-5.3-flash)
                 │
-        Frogg's wallet  frogg.<you>.testnet  ── transfer(cost) ─▶ payee (allowlisted)
+        Frogg's wallet  frogg.sylversurferr.testnet  ── transfer(cost) ─▶ payee (allowlisted)
 ```
 
 | Part | Status |
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
-| Frogg's wallet: funded `frogg.<you>.testnet`, pays per request | next |
-| `macos/PixlMemory/`: overlay app: perch, polish, diff, drag | in progress |
+| Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | next (account names and checks in place, 8 tests) |
+| `macos/PixlMemory/`: overlay app: Frogg perches on the active window; click → polish → diff → drag the result into your text | built, 16 tests; `scripts/build-mac-app.sh --open` |
 | `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
 
 ## Frogg's wallet: why your funds stay untouchable
 
-**Choice: a plain NEAR sub-account that you fund, e.g. `frogg.<you>.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
+**Choice: a plain NEAR sub-account that the owner funds: `frogg.sylversurferr.testnet`, under the owner's testnet account `sylversurferr.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
 
 **How it works:**
-- **You create `frogg.<you>.testnet` from your own wallet or CLI and send it a small amount.** Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
+- **The owner creates `frogg.sylversurferr.testnet` from their own wallet (Meteor) and sends it a small amount.** The owner approves every transaction from their account in Meteor; the app never asks for a recovery phrase or private key. Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
 - **The app holds only Frogg's own key, for Frogg's account.** The most a stolen key can spend is the balance you chose to give Frogg. That balance is the hard cap, enforced by NEAR itself.
 - **Frogg pays per request with a plain NEAR transfer.** The recipient is the account that holds the NEAR AI credits (you, or whoever runs the service). There is no documented way to buy NEAR AI credits on-chain; they're bought in its dashboard. The amount is the request's real cost from `/v1/billing/costs`, converted at a rate you set. The app refuses to pay any other recipient.
 - **Your balance and receipts appear in Frogg's thought bubble.** On chain is only the amount and transaction. The receipt itself (model, cost, verification verdict) stays in the local encrypted store.
@@ -107,7 +108,7 @@ Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR inte
 **Diff of all hackathon work:** https://github.com/devluca999/pixlz/compare/pre-hackathon...hackathon-submission
 
 - **Baseline:** `PixlzCore/` (pet needs, behavior, world map, physics, PetState, Mac↔iPhone travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`, `assets/`.
-- **New in the hackathon:** `memory/`, `macos/PixlMemory/`, `extension/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
+- **New in the hackathon:** `memory/`, `macos/PixlMemory/` (including the generated `FroggSpriteData.swift`), `extension/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
 
 Pixlz also plans a **Solana** layer. It is not part of this submission.
 
@@ -136,7 +137,9 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 **`extension/`:** no libraries, no build step (plain JavaScript modules; tests use Node's built-in `node --test`).
 
-The wallet code and `macos/` will list their libraries here as they land.
+**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. Frogg's frames are exported from the baseline Claude Design engine (`design/explorations/c3`) by `scripts/render-frogg.mjs` and embedded as text: no PNGs.
+
+The wallet code will list its libraries here when it lands.
 
 **AI-generated content:**
 - The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
@@ -147,7 +150,7 @@ The wallet code and `macos/` will list their libraries here as they land.
 
 ```
 memory/      Hackathon: local service, NEAR AI private inference + verification
-macos/       macOS app; PixlMemory/ overlay is hackathon work (in progress)
+macos/       macOS app; PixlMemory/ overlay is hackathon work
 extension/   Hackathon: Chrome extension (highlight → save → backlink)
 PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)
 docs/        SPEC.md, DECISIONS.md, RESEARCH.md (baseline); PLAN-pixl-memory.md (hackathon)

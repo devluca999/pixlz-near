@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import sys
 from dataclasses import dataclass
@@ -35,6 +36,52 @@ def read_secret(name: str, env_file: Path | None = None) -> str | None:
     if path is None:
         return None
     return (dotenv_values(path).get(name) or "").strip() or None
+
+
+WALLET_SETTINGS = ("NEAR_NETWORK", "FROGG_PARENT_ACCOUNT", "FROGG_ACCOUNT")
+_ACCOUNT_RE = re.compile(r"^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$")  # NEAR account-id rules
+
+
+class WalletConfigError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class WalletConfig:
+    """Frogg's NEAR account. Public names only: no keys here (Frogg's key lives in the
+    data directory; the parent's keys never touch this machine)."""
+
+    network: str
+    parent: str
+    frogg: str
+
+    @classmethod
+    def from_env(cls, env_file: Path | None = None) -> "WalletConfig | None":
+        from dotenv import dotenv_values
+
+        path = env_file or find_env_file()
+        values = dotenv_values(path) if path else {}
+        got = {k: (values.get(k) or "").strip() for k in WALLET_SETTINGS}
+        if not any(got.values()):
+            return None
+        return cls.validated(got["NEAR_NETWORK"] or "testnet", got["FROGG_PARENT_ACCOUNT"], got["FROGG_ACCOUNT"])
+
+    @classmethod
+    def validated(cls, network: str, parent: str, frogg: str) -> "WalletConfig":
+        if network != "testnet":
+            raise WalletConfigError(f"NEAR_NETWORK must be testnet for now (got {network!r})")
+        for name, acct in (("FROGG_PARENT_ACCOUNT", parent), ("FROGG_ACCOUNT", frogg)):
+            if not (2 <= len(acct) <= 64 and _ACCOUNT_RE.match(acct)):
+                raise WalletConfigError(f"{name} is not a valid NEAR account id: {acct!r}")
+        if not parent.endswith(".testnet"):
+            raise WalletConfigError(f"FROGG_PARENT_ACCOUNT must be a .testnet account (got {parent!r})")
+        if frogg != f"frogg.{parent}":
+            raise WalletConfigError(f"FROGG_ACCOUNT must be frogg.{parent} (a direct sub-account of the parent), got {frogg!r}")
+        return cls(network, parent, frogg)
+
+    @property
+    def explorer(self) -> str:
+        return f"https://testnet.nearblocks.io/address/{self.frogg}"
 
 
 def default_data_dir() -> Path:

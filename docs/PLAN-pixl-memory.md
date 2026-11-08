@@ -72,7 +72,8 @@ Facts that decided it:
   - Per-API-key USD spend limits exist (`PATCH /v1/workspaces/{id}/api-keys/{key}/spend-limit`, session token only), so the user sets them in the dashboard.
 
 Design:
-- **Setup.** The user creates `frogg.<user>.testnet` and funds it with a small balance from their own wallet or CLI. The app generates Frogg's key pair locally and shows the public key; the user adds it when creating the account. The private key stays in the data directory (0600), never in the repo and never in `.env`.
+- **Accounts.** Owner: `sylversurferr.testnet` (created in Meteor). Frogg: `frogg.sylversurferr.testnet`. Testnet only; set in `.env` (`NEAR_NETWORK`, `FROGG_PARENT_ACCOUNT`, `FROGG_ACCOUNT`) and validated in `memory/` (`WalletConfig`).
+- **Setup.** The owner creates `frogg.sylversurferr.testnet` and funds it with a small balance from their own wallet or CLI. The app generates Frogg's key pair locally and shows the public key; the user adds it when creating the account. The private key stays in the data directory (0600), never in the repo and never in `.env`.
 - **Payment.** Per polish, after the result is shown:
   - cost = `costNanoUsd` × `PIXL_NEAR_PER_USD`, or a flat fallback price if billing hasn't caught up;
   - one `Transfer` from Frogg to the allowlisted payee;
@@ -127,7 +128,7 @@ A logged script, saved in `docs/ATTACKS.md`, plays a compromised Pixl Memory. Ea
 | Day | Work |
 |---|---|
 | Nov 8 | Plan, tag, branch. `memory/` core: verification, store, polish, server, CLI, tests. `pixl-memory attest` works with no key. |
-| Nov 9 | Wallet: signing spike, payments, receipts, caps (tests offline). **Ask owner → create and fund `frogg.<user>.testnet`.** Extension. |
+| Nov 9 | Wallet: signing spike, payments, receipts, caps (tests offline). **Owner approves in Meteor → create and fund `frogg.sylversurferr.testnet`.** Extension. |
 | Nov 10 | `memory/` payments and receipts, end to end on testnet. Live polish with an API key. |
 | Nov 11–12 | macOS overlay: perch, click menu, AX selection, polish panel, diff, drag, thought bubble. |
 | Nov 13 | Attack demo log, README, screenshots, demo video. |
@@ -145,7 +146,7 @@ A logged script, saved in `docs/ATTACKS.md`, plays a compromised Pixl Memory. Ea
 
 ## Things only the owner can do
 
-- Create and fund `frogg.<user>.testnet` (I'll prepare the exact commands and ask first).
+- Create and fund `frogg.sylversurferr.testnet` from `sylversurferr.testnet`, approved in Meteor (exact steps provided; never share the recovery phrase or private key).
 - Create a NEAR AI Cloud API key and buy credits (cloud.near.ai → Credits → API Keys).
 - Make the repo public before Nov 14 23:59 UTC; write and publish the X post (@NEARProtocol, #NEARHackathon, video); submit the form with a mainnet payout address.
 

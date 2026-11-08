@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from pixl_memory.config import Config, find_env_file, read_secret
+from pixl_memory.config import SECRET_NAMES, WALLET_SETTINGS, Config, find_env_file, read_secret
 
 REPO = Path(__file__).resolve().parents[2]
 NAME = "NEAR_AI_API_KEY"
@@ -35,10 +35,16 @@ def test_env_files_are_ignored_and_template_is_empty():
                              capture_output=True, text=True).stdout.split()
     assert ignored == [".env", ".env.local", "memory/.env"]
     assert subprocess.run(["git", "check-ignore", "-q", ".env.example"], cwd=REPO).returncode == 1
+    names = []
     for line in (REPO / ".env.example").read_text().splitlines():
         if line and not line.startswith("#"):
             name, _, value = line.partition("=")
-            assert value == "", f"{name} must be empty in .env.example"
+            names.append(name)
+            if name in SECRET_NAMES:
+                assert value == "", f"{name} must be empty in .env.example"
+            else:
+                assert name in WALLET_SETTINGS, f"unexpected setting {name} in .env.example"
+    assert set(SECRET_NAMES) <= set(names)
 
 
 def test_no_secrets_in_tracked_files():
