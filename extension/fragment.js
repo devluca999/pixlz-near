@@ -30,7 +30,9 @@ export function trimPartialWords(text, before = "", after = "") {
   if (t && after && WORD_CHAR.test(after[0]) && WORD_CHAR.test(t.slice(-1))) {
     t = t.replace(/[\p{L}\p{N}_]+$/u, "");
   }
-  return normalize(t);
+  // Punctuation stranded at the edges (e.g. the "(" left after dropping "(aposemat")
+  // adds nothing to the match and only makes it more fragile.
+  return normalize(t).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 }
 
 function firstWords(s, n) {

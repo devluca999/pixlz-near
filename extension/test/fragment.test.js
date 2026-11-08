@@ -20,6 +20,9 @@ test("partial words at the edges are dropped", () => {
   assert.equal(trimPartialWords("quick brown fox", "the ", " jumps"), "quick brown fox");
   assert.equal(trimPartialWords("brown", "quick ", ", fox"), "brown");
   assert.equal(buildDirective({ text: "ick", before: "qu", after: "ly" }), null);
+  // from a live test on en.wikipedia.org/wiki/Frog: "…ward off predators (aposemat" + "ism)"
+  assert.equal(trimPartialWords("ward off predators (aposemat", "and ", "ism)"), "ward off predators");
+  assert.equal(trimPartialWords("“Frogs are", "", ""), "Frogs are");
 });
 
 test("long selections use start and end terms", () => {
@@ -44,7 +47,7 @@ test("nothing linkable returns the plain URL", () => {
 });
 
 test("non-Latin text and punctuation", () => {
-  assert.equal(buildDirective({ text: "Grüße – よろしく" }), "text=" + encodeURIComponent("Grüße – よろしく"));
+  assert.equal(buildDirective({ text: "Grüße – よろしく。" }), "text=" + encodeURIComponent("Grüße – よろしく"));
   assert.equal(trimPartialWords("üße aus", "Gr", " Berlin"), "aus");
 });
 
