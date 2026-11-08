@@ -31,6 +31,7 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 | `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
 | Load `extension/` unpacked in Chrome, paste the token from `uv run pixl-memory token`, select text → right-click **Save to Pixl Memory** | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
 | `scripts/build-mac-app.sh --open`, allow Accessibility, select text in any app, click Frogg → **Polish this** | Frogg hops onto the active window; the panel shows the word diff, the verdict and all 17 checks; drag the green-edged card into your text |
+| `cd memory && uv run python attack_demo.py` | 21 attacks against the real code: forged/stale/debug enclaves, models outside a TEE, tampered or unattested replies, a compromised app holding Frogg's key, a malicious web page, a leaked key in a commit. All blocked; one (stolen key file) limited to Frogg's own balance. Log: [`docs/ATTACKS.md`](docs/ATTACKS.md) |
 | `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
 
 Full details: [`memory/README.md`](memory/README.md).

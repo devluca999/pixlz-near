@@ -22,7 +22,7 @@ class FakeNear:
     """Serves /models, /attestation/report, /chat/completions and /signature/{id}."""
 
     def __init__(self, captured, *, reply="The quick brown fox jumps.", sign_with=None, kind="provider_tee",
-                 attest_nonce_override=None, no_credits=False):
+                 attest_nonce_override=None, no_credits=False, tamper=None):
         self.report = captured["report"]
         self.model_key = Account.create()
         self.gw_key = Account.create()
@@ -31,6 +31,7 @@ class FakeNear:
         self.reply = reply
         self.attest_nonce_override = attest_nonce_override
         self.no_credits = no_credits
+        self.tamper = tamper  # called on each attestation report after binding, to simulate attacks
         self.calls: list[str] = []
         self.completions: dict[str, tuple[bytes, bytes]] = {}
 
@@ -44,8 +45,10 @@ class FakeNear:
             ]})
         if path == "/attestation/report":
             nonce = self.attest_nonce_override or request.url.params["nonce"]
-            return httpx.Response(200, json=rebind(self.report, nonce, self.model_key.address.lower(),
-                                                   self.gw_key.address.lower()))
+            report = rebind(self.report, nonce, self.model_key.address.lower(), self.gw_key.address.lower())
+            if self.tamper:
+                self.tamper(report)
+            return httpx.Response(200, json=report)
         if path == "/chat/completions":
             if self.no_credits:
                 return httpx.Response(402, json={"error": {"message": "No spending limit configured.",
@@ -71,10 +74,10 @@ class FakeNear:
         return httpx.Response(404)
 
 
-def make(tmp_path, fake, api_key="sk-test", wallet=None):
+def make(tmp_path, fake, api_key="sk-test", wallet=None, gpu_ok=True):
     http = httpx.Client(transport=httpx.MockTransport(fake.handler))
     client = NearAIClient(api_key, "https://cloud-api.near.ai/v1", http=http, quote_verifier=FakeQuoteVerifier(),
-                          gpu_verifier=FakeGpuVerifier(), sleep=lambda s: None)
+                          gpu_verifier=FakeGpuVerifier(ok=gpu_ok), sleep=lambda s: None)
     store = wallet.store if wallet else Store(tmp_path)
     app = create_app(store, client, TOKEN, MODEL, wallet)
     return TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}), store
