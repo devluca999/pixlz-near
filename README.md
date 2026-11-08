@@ -8,6 +8,8 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 
 > Published publicly for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
 
+**Why does Frogg have a wallet?** So it can pay, per request, for the private inference it does for you, out of a purse with a hard bottom. You set a weekly limit (or pause it) in the Wallet bubble; every payment has an on-chain receipt; the app only ever holds Frogg's key. Use cases, controls and what's next: [`docs/PRODUCT-NOTES.md`](docs/PRODUCT-NOTES.md).
+
 ## Screenshots
 
 ![Frogg, Nox, Mochi, Boo and Silk, each with its menu open](docs/screenshots/pixlz-lineup.png)
