@@ -1,5 +1,7 @@
-// Talks to the local pixl-memory service. The token stays in chrome.storage.local
-// (this browser profile only) and is sent only to 127.0.0.1.
+// Talks to the local pixl-memory service: through the Mac app's native host when it's installed
+// (no token in the extension), else directly with a token pasted in the options page (kept in
+// chrome.storage.local, this profile only, sent only to 127.0.0.1).
+import { call } from "./native.js";
 
 export const DEFAULT_PORT = 7341;
 
@@ -9,8 +11,13 @@ export async function getSettings() {
 }
 
 export async function api(path, { method = "GET", body } = {}) {
+  try {
+    return await call(method, path, body);
+  } catch (e) {
+    if (e.message !== "no native host") throw e;  // the host answered: its error is the real one
+  }
   const { token, port } = await getSettings();
-  if (!token) throw new Error("no token: open the extension options");
+  if (!token) throw new Error("install the Pixl Memory app, or paste a token in the extension options");
   let res;
   try {
     res = await fetch(`http://127.0.0.1:${port}${path}`, {

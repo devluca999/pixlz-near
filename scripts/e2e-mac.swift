@@ -207,6 +207,122 @@ sleep(2.0)
 var s = state()
 record("Fresh launch with PIXL_DEBUG=1", launched && (frogg(s)["visible"] as? Bool ?? false), "log: \(launched ? "launch seen" : "no launch line")")
 
+// MARK: --bridge: Chrome extension ↔ app (highlight → ask Frogg → open the backlink; polish a rich editor)
+
+func service(_ method: String, _ path: String) -> Any? {
+    guard let token = try? String(contentsOf: home.appending(path: "Library/Application Support/PixlMemory/token"), encoding: .utf8) else { return nil }
+    var req = URLRequest(url: URL(string: "http://127.0.0.1:7341\(path)")!)
+    req.httpMethod = method
+    req.setValue("Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
+    let sem = DispatchSemaphore(value: 0); var out: Any?
+    URLSession.shared.dataTask(with: req) { d, _, _ in out = d.flatMap { try? JSONSerialization.jsonObject(with: $0) }; sem.signal() }.resume()
+    sem.wait()
+    return out
+}
+func chromeTab(_ url: String) {
+    osa("tell application \"Google Chrome\" to tell window 1 to make new tab with properties {URL:\"\(url)\"}")
+    _ = front("Google Chrome", bundle: "com.google.Chrome")
+    sleep(1.5)
+}
+func chromeURL() -> String { osa(#"tell application "Google Chrome" to get URL of active tab of window 1"#) ?? "" }
+func chromeTexts(limit: Int = 4000) -> [String] {
+    guard let cp = pid("com.google.Chrome"), let w: AXUIElement = ax(AXUIElementCreateApplication(cp), kAXFocusedWindowAttribute) else { return [] }
+    var out: [String] = [], n = 0
+    func walk(_ e: AXUIElement, _ d: Int) {
+        n += 1; if n > limit || d > 40 { return }
+        if (ax(e, kAXRoleAttribute) as String?) == kAXStaticTextRole, let v: String = ax(e, kAXValueAttribute) { out.append(v) }
+        for c in (ax(e, kAXChildrenAttribute) as [AXUIElement]?) ?? [] { walk(c, d + 1) }
+    }
+    walk(w, 0)
+    return out
+}
+
+if args.contains("--bridge") {
+    let pages = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "scripts/e2e-pages").path
+    let server = Process(); server.launchPath = "/usr/bin/python3"
+    server.arguments = ["-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", pages]
+    server.standardOutput = FileHandle.nullDevice; server.standardError = FileHandle.nullDevice
+    try? server.run()
+    defer { server.terminate() }
+    sleep(0.8)
+
+    // 1. the extension reached the app through the native host
+    let connected = waitLog("bridge: browser host connected", timeout: 8)
+    record("Extension ↔ app connected through the native host", connected, connected ? "" : "reload the extension in chrome://extensions")
+
+    // 2. highlight in Chrome (the page selects the passage, the extension saves it with ⌥⇧S)
+    chromeTab("http://127.0.0.1:8765/article.html#select")
+    key(1, [.maskAlternate, .maskShift])   // S
+    var saved: [String: Any]?
+    for _ in 0..<50 where saved == nil {
+        sleep(0.1)
+        saved = (dict(service("GET", "/highlights?q=transparent&limit=5"))["highlights"] as? [[String: Any]])?.first
+    }
+    let frag = saved?["fragment_url"] as? String ?? ""
+    record("Highlight saved from Chrome through the bridge (no token in the extension)", saved != nil && frag.contains("#:~:text="), frag.isEmpty ? "nothing saved" : String(frag.suffix(70)))
+    shot("chrome-highlight", panels: [], extra: CGRect(x: 0, y: 0, width: 900, height: 420))
+
+    // 3. ask Frogg about it (from TextEdit: no selection, so slot 1 is Ask)
+    osa(#"tell application "TextEdit" to make new document with properties {text:"notes"}"#)
+    _ = front("TextEdit", bundle: "com.apple.TextEdit"); sleep(1.0)
+    if let teP = pid("com.apple.TextEdit"), let w: AXUIElement = ax(AXUIElementCreateApplication(teP), kAXFocusedWindowAttribute),
+       let area = find(w, role: kAXTextAreaRole) {
+        var none = CFRange(location: 0, length: 0)
+        AXUIElementSetAttributeValue(area, kAXSelectedTextRangeAttribute as CFString, AXValueCreate(.cfRange, &none)!)
+    }
+    markLog()
+    if let card = openSlot("Ask"), let field = control(card, "card", "Question") {
+        click(center(field))
+        if let appPID = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.pixlz.PixlMemory").first?.processIdentifier {
+            let app = AXUIElementCreateApplication(appPID)
+            var tf: AXUIElement?
+            for w in (ax(app, kAXWindowsAttribute) as [AXUIElement]?) ?? [] { if let f = find(w, role: kAXTextFieldRole) { tf = f; break } }
+            if let tf { AXUIElementSetAttributeValue(tf, kAXValueAttribute as CFString, "What did I save about glass frogs?" as CFString) }
+        }
+        if let st = waitState(timeout: 2, { control($0, "card", "Ask privately") != nil }), let b = control(st, "card", "Ask privately") { click(center(b)) }
+        let answered = waitState(timeout: 90) { controls($0, "card").contains { ($0["role"] as? String) == "AXLink" } }
+        let link = answered.flatMap { controls($0, "card").first { ($0["role"] as? String) == "AXLink" } }
+        record("Ask Frogg: answer cites the Chrome highlight", link != nil, (link?["label"] as? String).map { String($0.prefix(70)) } ?? "no source row")
+        if let answered { _ = answered; sleep(0.3); shot("ask-with-source") }
+        // 4. open the backlink: Chrome reopens the page at the passage, highlighted
+        if let link {
+            click(center(link))
+            sleep(2.5)
+            let url = chromeURL()
+            record("Backlink reopens the page at the passage", url.contains("article.html") && url.contains("#:~:text="), String(url.suffix(70)))
+            shot("backlink-opened", panels: [], extra: CGRect(x: 0, y: 0, width: 1000, height: 520))
+        }
+    } else {
+        record("Ask Frogg: answer cites the Chrome highlight", false, "Ask card didn't open")
+    }
+    key(K.esc)
+
+    // 5. polish in a rich editor (contenteditable): Replace goes through the extension
+    chromeTab("http://127.0.0.1:8765/editor.html#select")
+    markLog()
+    if openPolishList(nil, bundle: "com.google.Chrome", app: "Google Chrome"), let row = controls(state(), "list").first {
+        click(center(row))
+        if let r = waitState(timeout: 60, { control($0, "result", "Replace") != nil }), let rep = control(r, "result", "Replace") {
+            click(center(rep)); sleep(1.0)
+            let texts = chromeTexts()
+            let viaExt = waitLog("replace: written by the extension", timeout: 2)
+            let line = texts.first { $0.lowercased().contains("meeting") } ?? ""
+            let events = texts.firstIndex(of: "Input events seen: ").map { texts.indices.contains($0 + 1) ? texts[$0 + 1] : "?" } ?? texts.first { Int($0) != nil } ?? "?"
+            record("Rich editor: Replace through the extension (input events fire)", viaExt && !line.isEmpty, "“\(line.prefix(60))”, input events \(events)")
+            shot("editor-after-replace", panels: [], extra: CGRect(x: 0, y: 0, width: 900, height: 420))
+        } else { record("Rich editor: Replace through the extension (input events fire)", false, "no result") }
+    } else { record("Rich editor: Replace through the extension (input events fire)", false, "Polish wasn't offered (\(logSince().contains("via the extension") ? "read via extension" : "selection not read"))") }
+
+    // cleanup: test tabs, test doc, the test highlight
+    osa(#"tell application "Google Chrome" to close (tabs of window 1 whose title starts with "Pixl e2e")"#)
+    osa(#"tell application "TextEdit" to close (documents whose name starts with "Untitled") saving no"#)
+    if let id = saved?["id"] as? String { _ = service("DELETE", "/highlights/\(id)") }
+
+    print("\n| Step | Result | Note |\n|---|---|---|")
+    for (step, r, note) in results { print("| \(step) | \(r) | \(note.replacingOccurrences(of: "|", with: "/")) |") }
+    exit(results.contains { $0.1 == "FAIL" } ? 1 : 0)
+}
+
 // Probe: three quick pokes make Frogg say something; capture the speech bubble.
 if args.contains("--say-probe") {
     _ = front("TextEdit", bundle: "com.apple.TextEdit"); sleep(1.5)

@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "PixlMemory", targets: ["PixlMemory"]),
         .executable(name: "pixl-snapshots", targets: ["PixlSnapshots"]),
+        .executable(name: "pixl-native-host", targets: ["PixlNativeHost"]),
     ],
     dependencies: [
         .package(path: "../../PixlzCore"),
@@ -14,11 +15,16 @@ let package = Package(
     targets: [
         // Everything testable without a screen: art, geometry, API models, views.
         .target(name: "PixlMemoryKit", dependencies: ["PixlzCore"]),
+        // The Chrome extension bridge: protocol, routing, host manifest (no UI, fully testable).
+        .target(name: "PixlBridge"),
+        // Chrome starts this for the extension (native messaging); it relays to the service and the app.
+        .executableTarget(name: "PixlNativeHost", dependencies: ["PixlBridge"]),
         // The overlay app: panels, Accessibility, motion, menus.
-        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore"]),
+        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge"]),
         // Renders the app's views offscreen to PNGs for docs (no screen recording needed).
         .executableTarget(name: "PixlSnapshots", dependencies: ["PixlMemoryKit"]),
         .testTarget(name: "PixlMemoryKitTests", dependencies: ["PixlMemoryKit"],
                     resources: [.copy("Fixtures")]),
+        .testTarget(name: "PixlBridgeTests", dependencies: ["PixlBridge"]),
     ]
 )

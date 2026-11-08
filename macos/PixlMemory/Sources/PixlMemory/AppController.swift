@@ -1,6 +1,7 @@
 import AppKit
 import PixlMemoryKit
 import PixlzCore
+import PixlBridge
 
 /// A borderless panel that never becomes key or main (SPEC R5): the app you're
 /// typing in keeps focus and its selection while you use Frogg.
@@ -42,6 +43,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
     lazy var menu = BubbleMenu(app: self)
+    let bridge = BridgeServer()
+    /// Where the selection came from: Accessibility, or the browser extension (the bridge).
+    var selectionFromWeb = false
     let ui = PixlData.ui
     var selfTestAvoid: [CGRect] = []
     var lastSignature = Date.distantPast
@@ -111,6 +115,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             permissionTimer?.tolerance = 1
         }
         E2EState.install(self)
+        bridge.start()
         watcher.onChange = { [weak self] change in self?.windowChanged(change) }
         watcher.start()
         let ws = NSWorkspace.shared.notificationCenter
@@ -683,10 +688,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var pendingSelection: (text: String, app: String?)? { didSet { if pendingSelection == nil { selectionPID = nil } } }
     var selectionPID: pid_t?
     var polishedText: String?
+    var polishedBrowser = false
     var selectionElement: AXUIElement?
     var polishedElement: AXUIElement?
 
     @discardableResult
+    /// A selection the browser extension read (rich editors, Google Docs).
+    func setWebSelection(_ text: String, app front: NSRunningApplication?, title: String?) {
+        pendingSelection = (text, front?.localizedName ?? "Browser")
+        selectionPID = front?.processIdentifier
+        selectionElement = nil
+        selectionFromWeb = true
+        Debug.log("selection read from \(front?.localizedName ?? "browser") via the extension: \(text.count) chars")
+    }
+
     func readSelection() -> String? {
         let front = NSWorkspace.shared.frontmostApplication
         if AX.trusted, AX.enableWebAccessibility(for: front) {
@@ -696,6 +711,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let text = AX.trusted ? AX.selectedText(pid: front?.processIdentifier ?? 0) : nil
         pendingSelection = text.map { ($0, front?.localizedName) }
         selectionPID = text == nil ? nil : front?.processIdentifier
+        selectionFromWeb = false
         selectionElement = text == nil ? nil : front.flatMap { AX.focusedElement(pid: $0.processIdentifier) }
         Debug.log("selection read from \(front?.localizedName ?? "?"): \(text.map { "\($0.count) chars" } ?? "none")")
         return text
@@ -727,6 +743,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let sel = pendingSelection, instructions.indices.contains(index) else { return }
         let ins = instructions[index]
         polishedText = sel.text
+        polishedBrowser = selectionFromWeb || AX.isChromium(NSWorkspace.shared.runningApplications.first { $0.processIdentifier == selectionPID })
         polishedElement = selectionElement
         busy = true
         resultPanel?.orderOut(nil)
@@ -758,6 +775,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func replaced(_ r: PolishResult, panel: NSPanel?) {
+        panel?.orderOut(nil)
+        show("emotion_happy", for: 3)
+        say("Replaced. Saved as accepted.", for: 2.5)
+        Task { await client.markAccepted(draftId: r.draftId) }
+    }
+
+    /// Writes the suggestion through Accessibility; if the app won't take it, copies it.
+    func replaceViaAX(_ r: PolishResult, original: String, panel: NSPanel?) {
+        let element = polishedElement ?? selectionPID.flatMap { AX.focusedElement(pid: $0) }
+        if let element, AX.replace(in: element, original: original, with: r.suggestion) {
+            Debug.log("replace: written via AX")
+            replaced(r, panel: panel)
+        } else {
+            Debug.log("replace: app refused or selection changed, copied instead")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(r.suggestion, forType: .string)
+            show("emotion_curious", for: 3)
+            say("Couldn't write there. Copied: paste with ⌘V", for: 3.5)
+        }
+    }
+
     func showResult(_ content: PolishView.Content) {
         let view = PolishView(content, look: menu.cardLook)
         view.fit()
@@ -775,21 +814,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.say("Copied", for: 1.5)
         }
         view.onReplace = { [weak self, weak panel] r in
-            guard let self else { return }
-            let element = self.polishedElement ?? self.selectionPID.flatMap { AX.focusedElement(pid: $0) }
-            if let element, let original = self.polishedText, AX.replace(in: element, original: original, with: r.suggestion) {
-                Debug.log("replace: written via AX")
-                panel?.orderOut(nil)
-                self.show("emotion_happy", for: 3)
-                self.say("Replaced. Saved as accepted.", for: 2.5)
-                Task { await self.client.markAccepted(draftId: r.draftId) }
-            } else {
-                Debug.log("replace: app refused or selection changed, copied instead")
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(r.suggestion, forType: .string)
-                self.show("emotion_curious", for: 3)
-                self.say("Couldn't write there. Copied: paste with ⌘V", for: 3.5)
+            guard let self, let original = self.polishedText else { return }
+            // In a browser, the extension replaces it the way typing would (pages see input
+            // events; works in Google Docs). Accessibility is the fallback.
+            if self.polishedBrowser, self.bridge.connected {
+                self.bridge.replace(original: original, with: r.suggestion) { [weak self, weak panel] ok in
+                    guard let self else { return }
+                    if ok {
+                        Debug.log("replace: written by the extension")
+                        self.replaced(r, panel: panel)
+                    } else {
+                        self.replaceViaAX(r, original: original, panel: panel)
+                    }
+                }
+                return
             }
+            self.replaceViaAX(r, original: original, panel: panel)
         }
         view.onDropped = { [weak self, weak panel] r in
             panel?.orderOut(nil)

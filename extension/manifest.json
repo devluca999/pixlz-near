@@ -1,18 +1,35 @@
 {
   "manifest_version": 3,
   "name": "Pixl Memory",
-  "version": "0.1.0",
-  "description": "Save highlights to Pixl Memory on your Mac, with a link that reopens the page at that passage.",
+  "version": "0.2.0",
+  "description": "Save highlights to Pixl Memory on your Mac (with a link back to the passage), and let Frogg polish text in web pages.",
   "minimum_chrome_version": "120",
-  "permissions": ["contextMenus", "activeTab", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_title": "Pixl Memory", "default_popup": "popup.html" },
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "nativeMessaging",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Pixl Memory",
+    "default_popup": "popup.html"
+  },
   "options_page": "options.html",
   "commands": {
     "save-selection": {
-      "suggested_key": { "default": "Alt+Shift+S" },
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
       "description": "Save the selection to Pixl Memory"
     }
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1jEYkQQMAvyoczbU6jOkzhUYjrqEN4U4h1umPz6grbsxNv/4MZidFACMZJlG4s8xmiMyTO/rLP4EqHWWP5ELaIVR8EPon0sVBi4jG/K0Sy8JQO9ER8NCbaL8pT3wF14jP2ApYyl8mtG+hE+2++flyamV54lWPOHLnc3x1i/nrUZ7jdezM2A9HyDgcXUZ6WO49VbCyp+Lnjx9/XEMv7x7eg7EvlZGyZ0aa1MWN50DpRd7lQNkAX0pzEes4jVxuzPzTrF56F9hYAt7FuRkea6rJqPsSaGZ+Pg+TK8tWXj8u5A/USu1rPjGAf5WLQFZHN1nqF8gc4geP2zzupN0+jU5+QIDAQAB"
 }

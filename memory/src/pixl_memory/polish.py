@@ -89,3 +89,37 @@ def ask_messages(question: str, name: str = "Frogg", personality: str = "a frien
         notes = "\n".join(f"- {h[:400]}" for h in highlights[:5])
         system += f"\n\nThe user's recent highlights:\n{notes}"
     return [{"role": "system", "content": system}, {"role": "user", "content": question}]
+
+
+# -- which saved highlights go along with a question --
+
+_WORD = re.compile(r"[\w']+", re.U)
+_STOP = set("""a an and are as at be but by can could did do does for from had has have how i if in into is it its
+me my no not of on or our so than that the their them then there these they this to was we were what when where which
+who why will with would you your about any did saved save highlight highlights tell remind""".split())
+
+
+def _terms(text: str) -> set[str]:
+    out = set()
+    for w in _WORD.findall(text.casefold()):
+        w = w.strip("'")
+        if len(w) < 3 or w in _STOP:
+            continue
+        out.add(w[:-1] if len(w) > 4 and w.endswith("s") else w)  # frogs ~ frog
+    return out
+
+
+def rank_highlights(question: str, highlights: list, k: int = 5, fallback: int = 3) -> tuple[list, bool]:
+    """Highlights that share words with the question, best first (ties: newest first).
+    Ranked on this Mac, before anything is sent. If none match, the `fallback` newest go along
+    as general context and the second value is False (no "from your highlights" links then)."""
+    q = _terms(question)
+    scored = []
+    for i, h in enumerate(highlights):  # `highlights` is newest-first
+        t = _terms(f"{h.title or ''} {h.text}")
+        hits = len(q & t)
+        if hits:
+            scored.append((-hits, i, h))
+    if scored:
+        return [h for _, _, h in sorted(scored)[:k]], True
+    return list(highlights[:fallback]), False

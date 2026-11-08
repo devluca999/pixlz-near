@@ -328,6 +328,17 @@ Heavy typing comes from the opt-in Input Monitoring count (D12), which never rea
 
 ---
 
+
+### 6.7 Browser bridge (Chrome extension ↔ app)
+
+`extension ⇄ (native messaging) ⇄ pixl-native-host ⇄ (Unix socket) ⇄ app`, and `host → (HTTP + token) → memory service`.
+
+- **Host.** `pixl-native-host` ships inside the app bundle. At launch the app registers it (`dev.pixlz.pixl_memory.json`) in the `NativeMessagingHosts` folder of each installed Chromium browser, allowing only the extension's pinned ID (`chmeigilhkkegiaabjlcidbkgahemceh`, from the public `key` in its manifest).
+- **No token in the extension.** The host reads the service token from the service's data folder and forwards only an allowlist: `GET /health`, `GET|POST /highlights`, `DELETE /highlights/<id>`, `POST /ask`, `POST /polish`, `GET /wallet`. Everything else is refused before it leaves the host. Without the app, the extension falls back to a pasted token.
+- **App socket.** `~/Library/Application Support/PixlMemory/bridge.sock`, mode 0600, JSON lines. The app accepts a connection only from the `pixl-native-host` next to its own executable (peer PID → executable path). The app may send only `get_selection` and `replace_selection`; the host drops anything else.
+- **Polish in web pages.** Accessibility first (form fields; Chromium's web tree is switched on when a Chromium browser becomes active). Where it can't see the selection (rich editors, Google Docs), the app asks the extension (0.4 s timeout). **Replace** in a browser goes through the extension first: `insertText`, so editors see a normal, undoable input event; only if the selection (or a unique match) still holds the original. Google Docs: its own typing iframe (copy event to read, `insertText` to write). Otherwise Accessibility, then copy.
+- **Recall.** Ask sends the highlights that share words with the question (ranked on the Mac; if none match, the three newest go as context without being cited). The matching ones come back as sources with their text-fragment backlinks; clicking one reopens the page at the passage, highlighted.
+
 ## 7. World map
 
 ### 7.1 Surfaces

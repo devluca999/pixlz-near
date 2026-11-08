@@ -178,4 +178,6 @@ public struct AskResult: Codable, Sendable, Equatable {
     public let answer: String
     public let verification: Verification
     public let receipt: Receipt?
+    /// Saved highlights that matched the question and went along as context, with backlinks.
+    public let highlights: [HighlightItem]?
 }

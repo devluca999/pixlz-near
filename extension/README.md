@@ -4,13 +4,15 @@ Select text on any page → right-click **Save to Pixl Memory** (or press **⌥�
 
 ## Install
 
-1. Start the service and copy its token:
-   ```sh
-   make -C memory serve
-   cd memory && uv run pixl-memory token
-   ```
-2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick this `extension/` folder.
-3. The settings page opens. Paste the token, then **Save and test**.
+1. Install and open the Mac app (`scripts/build-mac-app.sh --open`) and start the service (`make -C memory serve`).
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick this `extension/` folder. Its ID is pinned by the public `key` in `manifest.json`: **chmeigilhkkegiaabjlcidbkgahemceh**.
+3. That's it. The app registered its native host for that ID, so the extension talks to it through Chrome's native messaging and never holds the service token.
+
+Without the app (service only): open the extension's settings and paste the token from `cd memory && uv run pixl-memory token`.
+
+### Why it asks for access to all sites
+
+So Frogg can read your selection, and replace it with the polished text, in whatever tab you're in when you ask (**Polish** in web pages, rich editors and Google Docs). The extension only runs its selection script when the Mac app asks, and the app only asks when you open Frogg's menu.
 
 Click the frog in the toolbar to see, search and delete your highlights. Each title opens its passage.
 

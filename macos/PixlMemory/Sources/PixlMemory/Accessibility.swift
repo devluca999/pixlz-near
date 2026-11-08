@@ -148,6 +148,8 @@ enum AX {
                                         "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium"]
     nonisolated(unsafe) static var webEnabled: Set<pid_t> = []
 
+    static func isChromium(_ app: NSRunningApplication?) -> Bool { app?.bundleIdentifier.map(chromium.contains) ?? false }
+
     /// Returns true when the tree was just switched on (the caller may need to wait a moment).
     @discardableResult
     static func enableWebAccessibility(for app: NSRunningApplication?) -> Bool {

@@ -1,20 +1,24 @@
 // Pixl Memory: save the selection with a text-fragment backlink to the local service.
 import { buildFragmentUrl, countOccurrences } from "./fragment.js";
-import { api, getSettings } from "./client.js";
+import { api } from "./client.js";
 import { froggImageData } from "./icon.js";
+import { connect, onAppRequest } from "./native.js";
+import { pageSelection, pageReplace } from "./page.js";
+
+// Keep a port to the Mac app open (it also keeps this worker alive while the app is running).
+connect();
 
 const MENU_ID = "pixl-save";
 
 function setIcon() {
   chrome.action.setIcon({ imageData: { 16: froggImageData(1), 32: froggImageData(2) } });
 }
-chrome.runtime.onStartup.addListener(setIcon);
+chrome.runtime.onStartup.addListener(() => { setIcon(); connect(); });
 
 chrome.runtime.onInstalled.addListener(async () => {
   setIcon();
   chrome.contextMenus.create({ id: MENU_ID, title: "Save to Pixl Memory", contexts: ["selection"] });
-  const { token } = await getSettings();
-  if (!token) chrome.runtime.openOptionsPage();
+  connect();
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -101,3 +105,22 @@ function flash(tabId, text, color, title) {
     chrome.action.setTitle({ tabId, title: "Pixl Memory" });
   }, 4000);
 }
+
+// ---- requests from the Mac app (Polish in web pages) ----
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab;
+}
+
+/** Runs `func` in every frame of the active tab and returns the first useful answer. */
+async function inActiveTab(func, args = []) {
+  const tab = await activeTab();
+  if (!tab?.id || !/^(https?|file):/.test(tab.url || "")) return { ok: false, error: "no web page in front" };
+  const results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func, args });
+  const hit = results.map((r) => r.result).find((r) => r && r.ok);
+  return { ...(hit || results.map((r) => r.result).find(Boolean) || { ok: false, error: "nothing selected" }), url: tab.url, title: tab.title };
+}
+
+onAppRequest("get_selection", () => inActiveTab(pageSelection));
+onAppRequest("replace_selection", (msg) => inActiveTab(pageReplace, [msg.original ?? "", msg.text ?? ""]));

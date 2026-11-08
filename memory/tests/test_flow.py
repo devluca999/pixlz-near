@@ -195,6 +195,41 @@ def test_ask_is_verified_and_uses_highlights_as_context(tmp_path, captured):
     assert sent["messages"][1]["content"] == "how do frogs breathe?"
 
 
+def test_ask_sends_the_matching_highlights_and_returns_their_backlinks(tmp_path, captured):
+    fake = FakeNear(captured, reply="You saved that tree frogs can change colour.")
+    tc, store = make(tmp_path, fake)
+    store.add_highlight("Tree frogs can change colour to match their surroundings", "https://ex.org/frogs", "Frogs",
+                        "https://ex.org/frogs#:~:text=Tree%20frogs%20can%20change")
+    for i in range(8):
+        store.add_highlight(f"Unrelated note number {i} about invoices", f"https://ex.org/{i}", "Work", None)
+    r = tc.post("/ask", json={"question": "What did I save about tree frogs?"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [h["fragment_url"] for h in body["highlights"]] == ["https://ex.org/frogs#:~:text=Tree%20frogs%20can%20change"]
+    assert body["used_highlights"] == 1
+    sent = json.loads(fake.completions["chat123"][0])["messages"][0]["content"]
+    assert "Tree frogs can change colour" in sent and "invoices" not in sent  # only what matters leaves the Mac
+
+
+def test_ask_with_no_matching_highlight_sends_a_few_recent_and_claims_no_sources(tmp_path, captured):
+    fake = FakeNear(captured, reply="Hello!")
+    tc, store = make(tmp_path, fake)
+    for i in range(6):
+        store.add_highlight(f"Note {i} about invoices")
+    body = tc.post("/ask", json={"question": "hi there"}).json()
+    assert body["highlights"] == [] and body["used_highlights"] == 3
+
+
+def test_rank_highlights_prefers_more_shared_words_then_newest():
+    from types import SimpleNamespace as H
+
+    from pixl_memory.polish import rank_highlights
+    hs = [H(text="frog pond", title=None), H(text="tree frog pond colour", title=None), H(text="cats", title="Frogs")]
+    got, matched = rank_highlights("tree frogs in a pond", hs)
+    assert matched and [h.text for h in got] == ["tree frog pond colour", "frog pond", "cats"]
+    assert rank_highlights("the and of", hs) == (hs[:3], False)  # stopwords only: no match
+
+
 def test_ask_refuses_before_sending_when_attestation_fails(tmp_path, captured):
     fake = FakeNear(captured, attest_nonce_override="00" * 32)
     tc, _ = make(tmp_path, fake)

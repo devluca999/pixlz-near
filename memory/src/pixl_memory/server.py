@@ -160,7 +160,8 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         model = a.model or default_model
         if wallet and (why := wallet.blocked()):
             return JSONResponse({"error": "frogg_out_of_allowance", "message": why}, status_code=402)
-        notes = [h.text for h in store.list_highlights(limit=5)] if a.use_highlights else []
+        picked, matched = polish.rank_highlights(a.question, store.list_highlights(limit=500)) if a.use_highlights else ([], False)
+        notes = [h.text for h in picked]
         try:
             comp = client.chat(polish.ask_messages(a.question, a.name, a.personality, notes), model,
                                temperature=0.5, max_tokens=1024)
@@ -182,8 +183,11 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             cost = client.request_cost_nano_usd(comp.inference_id) if comp.inference_id else None
             receipt = wallet.pay(cost, {"kind": "ask", "model": comp.model, "verdict": verification["verdict"],
                                         "inference_id": comp.inference_id})
+        # The ones that matched the question come back as sources, each with its backlink.
+        sources = [{"id": h.id, "text": h.text[:280], "title": h.title, "url": h.url, "fragment_url": h.fragment_url}
+                   for h in picked] if matched else []
         return JSONResponse({"answer": answer, "verification": verification, "receipt": receipt,
-                             "used_highlights": len(notes), "inference_id": comp.inference_id})
+                             "used_highlights": len(notes), "highlights": sources, "inference_id": comp.inference_id})
 
     # -- Frogg's wallet --
 

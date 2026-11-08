@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pixl e2e · Glass frogs</title>
+<style>body{font:18px/1.6 Georgia,serif;max-width:680px;margin:48px auto;padding:0 16px;color:#222}</style>
+<h1>Glass frogs</h1>
+<p>Glass frogs live in the cloud forests of Central and South America. They spend most of the day asleep on the underside of leaves.</p>
+<p id="passage">While a glass frog sleeps, it hides almost all of its red blood cells inside its liver, which makes its body nearly transparent.</p>
+<p>At night the blood returns and the frog becomes visible again. Researchers are studying how the frog avoids blood clots while doing this.</p>
+<script>
+// The e2e driver opens this page with #select: the passage is selected, as if by the reader.
+if (location.hash === "#select") {
+  const r = document.createRange(); r.selectNodeContents(document.getElementById("passage"));
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+</script>

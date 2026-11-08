@@ -35,7 +35,7 @@ Writing assistants see everything you write: unsent emails, medical notes, contr
 **The verification works today with no account:**
 
 ```sh
-make -C memory                       # 41 tests, then starts the local service
+make -C memory                       # 85 tests, then starts the local service
 # or
 cd memory && uv run pixl-memory attest
 ```
@@ -47,7 +47,7 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 | `uv run pixl-memory attest` | 14 checks against the live NEAR AI Cloud: Intel TDX quote and TCB, your nonce inside the signed quote, signing key bound, RTMR3 replay, measured docker-compose, NVIDIA GPU attestation, deployment log |
 | `cp .env.example .env`, set `NEAR_AI_API_KEY`, then `uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
 | `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
-| Load `extension/` unpacked in Chrome, paste the token from `uv run pixl-memory token`, select text → right-click **Save to Pixl Memory** | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
+| Load `extension/` unpacked in Chrome (with the app installed it connects through native messaging, no token needed), select text → right-click **Save to Pixl Memory** (⌥⇧S) | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
 | `scripts/build-mac-app.sh --open`, allow Accessibility, select text in any app, click Frogg → **Polish this** | Frogg hops onto the active window; the panel shows the word diff, the verdict and all 17 checks; drag the green-edged card into your text |
 | `cd memory && uv run python attack_demo.py` | 21 attacks against the real code: forged/stale/debug enclaves, models outside a TEE, tampered or unattested replies, a compromised app holding Frogg's key, a malicious web page, a leaked key in a commit. All blocked; one (stolen key file) limited to Frogg's own balance. Log: [`docs/ATTACKS.md`](docs/ATTACKS.md) |
 | `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
@@ -72,10 +72,10 @@ Full details: [`memory/README.md`](memory/README.md).
 
 | Part | Status |
 |---|---|
-| `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
+| `memory/`: local service, verification, encrypted store, CLI | **working**, 85 tests |
 | Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
 | `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 61 unit/UI tests plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
-| `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
+| `extension/`: Chrome highlight → save → text-fragment backlink; bridge to the Mac app (native messaging): highlights recalled in Ask with backlinks, Polish → Replace inside web pages and rich editors | built, 12 tests + 11 bridge protocol tests (one runs the real host binary); run in Chrome (see the backlink screenshots above) |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
 

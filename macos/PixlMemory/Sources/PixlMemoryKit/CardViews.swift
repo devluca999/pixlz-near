@@ -238,6 +238,8 @@ final class HighlightRow: NSView {
 @MainActor
 public final class AskCard: PixlCard, NSTextFieldDelegate {
     public var onAsk: ((String) -> Void)?
+    public var onOpenURL: ((URL) -> Void)?
+    var sources: [NSView] = []
     public let field = NSTextField()
     let answer: NSTextField
     let status: NSTextField
@@ -287,6 +289,21 @@ public final class AskCard: PixlCard, NSTextFieldDelegate {
         let v = r.verification
         status.stringValue = (v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count)" + (r.receipt.map { " · " + $0.bubble } ?? "")
         status.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed
+        sources.forEach { $0.removeFromSuperview() }
+        sources = []
+        if let hs = r.highlights, !hs.isEmpty {
+            let cap = text("FROM YOUR HIGHLIGHTS", size: 10, weight: .bold, muted: true, mono: true)
+            stack.addArrangedSubview(cap)
+            sources.append(cap)
+            for h in hs.prefix(3) {
+                let source = h.title ?? h.url.flatMap { URL(string: $0)?.host } ?? "Saved text"
+                let row = HighlightRow(snippet: h.text.count > 140 ? String(h.text.prefix(140)) + "…" : h.text, source: source, width: inner) { [weak self] in
+                    if let link = h.link { Debug.log("ask: open backlink"); self?.onOpenURL?(link) }
+                }
+                stack.addArrangedSubview(row)
+                sources.append(row)
+            }
+        }
         fit()
     }
 

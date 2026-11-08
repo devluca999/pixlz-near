@@ -1,6 +1,7 @@
 import AppKit
 import PixlMemoryKit
 import PixlzCore
+import PixlBridge
 
 /// The C8 option-bubble menu, its "More" list, and the cards its slots open (SPEC §11.2).
 /// Owns its panels; AppController calls `open`, `close`, `pop`, and `step` from its clock.
@@ -52,10 +53,27 @@ final class BubbleMenu {
     // MARK: open / close
 
     func open(trigger: String) {
-        guard !app.userHidden, let head else { return }
+        guard !app.userHidden, head != nil else { return }
         closeList()
         closeCard()  // also invalidates any card still fetching
-        app.readSelection()
+        // Accessibility first (instant). In a browser where it can't see the selection (rich
+        // editors, Google Docs), ask the extension through the bridge, briefly.
+        if app.readSelection() == nil, AX.isChromium(NSWorkspace.shared.frontmostApplication), app.bridge.connected {
+            let front = NSWorkspace.shared.frontmostApplication
+            app.bridge.selection { [weak self] reply in
+                guard let self else { return }
+                if let reply, let text = reply.text {
+                    self.app.setWebSelection(text, app: front, title: reply.title)
+                }
+                self.openNow(trigger: trigger)
+            }
+            return
+        }
+        openNow(trigger: trigger)
+    }
+
+    private func openNow(trigger: String) {
+        guard !app.userHidden, let head else { return }
         let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: nil, walletSub: wallet?.short)
         let screen = app.screensTopLeft.first { $0.minX <= head.x && head.x <= $0.maxX } ?? app.screensTopLeft.first ?? .zero
         let placement = BubbleMenuModel.place(count: slots.count, head: head, radius: BubbleMenuModel.radius(scale: app.scale),
@@ -286,6 +304,7 @@ final class BubbleMenu {
         let card = AskCard(placeholder: ui.askPlaceholder, look: cardLook)
         card.fit()
         card.onClose = { [weak self] in self?.closeCard() }
+        card.onOpenURL = { NSWorkspace.shared.open($0) }  // the text-fragment link reopens the passage, highlighted
         card.onAsk = { [weak self, weak card] q in
             guard let self, let card else { return }
             self.app.ask(q) { result in
