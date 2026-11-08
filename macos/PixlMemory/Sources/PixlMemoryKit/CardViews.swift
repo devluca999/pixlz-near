@@ -505,7 +505,7 @@ public final class AskCard: PixlCard {
         // the verdict sits under the answer (the footer is for the buttons)
         sources.forEach { $0.removeFromSuperview() }
         sources = []
-        let verdict = text((v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count) checks" + (r.receipt.map { " · " + $0.bubble } ?? ""),
+        let verdict = text((v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge)" + (v.checks.isEmpty ? "" : " · \(v.passed)/\(v.checks.count) checks") + (r.receipt.map { " · " + $0.bubble } ?? ""),
                            size: 10, weight: .bold, mono: true)
         verdict.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed
         stack.addArrangedSubview(verdict)

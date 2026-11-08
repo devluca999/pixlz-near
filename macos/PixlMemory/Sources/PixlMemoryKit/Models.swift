@@ -28,6 +28,7 @@ public struct Verification: Codable, Sendable, Equatable {
         switch verdict {
         case "verified": "Verified in TEE"
         case "partial": "Partly verified"
+        case "offline": "Offline · nothing sent"
         default: "Not verified"
         }
     }
@@ -104,6 +105,7 @@ public enum MemoryError: Error, Equatable, Sendable {
     case attestationFailed(String, Verification?)
     case outOfAllowance(String)
     case upstream(String)
+    case offline(String)
 
     public var bubble: String {
         switch self {
@@ -116,6 +118,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .attestationFailed: "Enclave failed checks. Not sent."
         case .outOfAllowance: "I'm out of allowance for today"
         case .upstream: "NEAR AI hiccup. Try again?"
+        case .offline: "No internet. Saving still works."
         }
     }
 
@@ -125,6 +128,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .noToken: "~/Library/Application Support/PixlMemory/token doesn't exist yet."
         case .badToken: "The service rejected the token."
         case .noApiKey(let m), .noCredits(let m), .notPrivate(let m), .upstream(let m): m
+        case .offline(let m): m + " Nothing was sent. Highlights, notes, memory search and trips between your devices on this Wi-Fi still work."
         case .outOfAllowance(let m): m + " Your text was not sent. Top up Frogg or wait until tomorrow (UTC)."
         case .attestationFailed(let m, _): m + " Your text was not sent."
         }

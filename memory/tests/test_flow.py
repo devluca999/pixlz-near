@@ -261,3 +261,28 @@ def test_folder_paths_are_tamed():
     assert normalize_folder("  ") is None and normalize_folder(None) is None
     assert normalize_folder("a/../b//c/./d/e/f") == "a/b/c/d"                 # no traversal, at most 4 levels
     assert normalize_folder("x" * 60) == "x" * 40
+
+
+class OfflineNear:
+    """No internet: every request fails to connect."""
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("nodename nor servname provided", request=request)
+
+
+def test_offline_polish_says_offline_and_sends_nothing(tmp_path):
+    tc, _ = make(tmp_path, OfflineNear())
+    r = tc.post("/polish", json={"text": "teh fox"})
+    assert r.status_code == 503 and r.json()["error"] == "offline"
+
+
+def test_offline_ask_still_finds_what_you_saved(tmp_path):
+    tc, store = make(tmp_path, OfflineNear())
+    store.add_highlight("Glass frogs hide their red blood cells in the liver", "https://ex.org/g", "Glass frogs",
+                        "https://ex.org/g#:~:text=Glass%20frogs")
+    body = tc.post("/ask", json={"question": "what about glass frogs?"}).json()
+    assert body["offline"] is True and body["verification"]["verdict"] == "offline" and body["receipt"] is None
+    assert [h["fragment_url"] for h in body["highlights"]] == ["https://ex.org/g#:~:text=Glass%20frogs"]
+    # nothing matched: a plain offline error
+    r = tc.post("/ask", json={"question": "weather tomorrow"})
+    assert r.status_code == 503 and r.json()["error"] == "offline"

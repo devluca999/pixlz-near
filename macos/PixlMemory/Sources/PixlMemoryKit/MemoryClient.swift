@@ -142,6 +142,7 @@ public struct MemoryClient: Sendable {
         case (402, "frogg_out_of_allowance"): return .outOfAllowance(msg)
         case (402, _): return .noCredits(msg)
         case (400, "not_private"): return .notPrivate(msg)
+        case (503, "offline"): return .offline(msg)
         default: return .upstream(msg)
         }
     }

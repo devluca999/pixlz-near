@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import polish
-from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, UpstreamError
+from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, Offline, UpstreamError
 from .store import Store
 from .wallet import Wallet
 
@@ -149,6 +149,8 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
                                  "verification": e.verification.to_dict()}, status_code=409)
         except NoCredits as e:
             return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
+        except Offline as e:
+            return JSONResponse({"error": "offline", "message": str(e)}, status_code=503)
         except UpstreamError as e:
             return JSONResponse({"error": "upstream", "message": str(e)}, status_code=502)
 
@@ -197,6 +199,17 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
                                  "verification": e.verification.to_dict()}, status_code=409)
         except NoCredits as e:
             return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
+        except Offline as e:
+            if not matched:
+                return JSONResponse({"error": "offline", "message": str(e)}, status_code=503)
+            # No internet: nothing was sent, but what you saved is on this Mac. Show the matches.
+            return JSONResponse({"answer": "I'm offline, so I can't think it through. Here's what you saved that matches.",
+                                 "verification": {"verdict": "offline", "summary": "Offline: nothing was sent.",
+                                                  "checks": [], "model": model},
+                                 "receipt": None, "used_highlights": 0, "offline": True,
+                                 "highlights": [{"id": h.id, "text": h.text[:280], "title": h.title, "url": h.url,
+                                                 "fragment_url": h.fragment_url} for h in picked],
+                                 "inference_id": None})
         except UpstreamError as e:
             return JSONResponse({"error": "upstream", "message": str(e)}, status_code=502)
         answer = polish.clean(comp.content, "")

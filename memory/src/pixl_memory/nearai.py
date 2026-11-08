@@ -48,6 +48,16 @@ class UpstreamError(NearAIError):
     pass
 
 
+class Offline(UpstreamError):
+    """NEAR AI Cloud can't be reached at all (no internet, DNS, connection refused)."""
+
+
+def _unreachable(e: httpx.HTTPError, what: str) -> UpstreamError:
+    if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return Offline(f"no internet: {what} unreachable ({e})")
+    return UpstreamError(f"{what} unreachable: {e}")
+
+
 class NoCredits(NearAIError):
     """NEAR AI returned 402: no credits or no spending limit on the account."""
 
@@ -107,7 +117,7 @@ class NearAIClient:
         try:
             return self.http.get(f"{self.base_url}{path}", params=params, headers=self._headers(auth))
         except httpx.HTTPError as e:
-            raise UpstreamError(f"NEAR AI Cloud unreachable: {e}") from e
+            raise _unreachable(e, "NEAR AI Cloud") from e
 
     # -- models --
 
@@ -160,7 +170,7 @@ class NearAIClient:
         try:
             r = self.http.post(f"{self.base_url}/chat/completions", content=req_bytes, headers=headers)
         except httpx.HTTPError as e:
-            raise UpstreamError(f"completion failed: {e}") from e
+            raise _unreachable(e, "NEAR AI completion") from e
         if r.status_code == 402:
             try:
                 msg = r.json()["error"]["message"]
