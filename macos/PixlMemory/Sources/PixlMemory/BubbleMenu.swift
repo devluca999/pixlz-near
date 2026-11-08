@@ -357,6 +357,8 @@ final class BubbleMenu {
             card.onClose = { [weak self] in self?.closeCard() }
             card.onOpenURL = { NSWorkspace.shared.open($0) }
             card.onSetup = { [weak self] in self?.app.openWallet() }
+            card.onSetLimit = { [weak self] v in self?.updateLimits(perWeek: v) }
+            card.onPause = { [weak self] p in self?.updateLimits(paused: p) }
             return card
         }
         showCard(make(wallet, []), name: "wallet")
@@ -372,6 +374,22 @@ final class BubbleMenu {
             p.setContentSize(card.frame.size)
             p.setFrameTopLeftPoint(NSPoint(x: p.frame.minX, y: top))
             p.setFrame(Placement.fit(p.frame, in: app.froggScreen), display: true)
+        }
+    }
+
+    /// The user changed the weekly limit or paused: the service enforces it; the card redraws.
+    func updateLimits(perWeek: String? = nil, paused: Bool? = nil) {
+        Task { @MainActor in
+            do {
+                let w = try await app.client.setLimits(perWeekNear: perWeek, paused: paused)
+                wallet = w
+                Debug.log("wallet limits: week \(w.caps?.perWeekNear ?? "?") paused \(w.paused == true)")
+                app.say(paused == true ? "Paused. I won't spend anything." : paused == false ? "Back on. I'll stay under \(w.caps?.perWeekNear ?? "?") NEAR a week."
+                        : "Okay: at most \(w.caps?.perWeekNear ?? "?") NEAR a week.", for: 2.5)
+                showWallet()
+            } catch {
+                app.say((error as? MemoryError)?.bubble ?? "Couldn't change the limit", for: 3)
+            }
         }
     }
 

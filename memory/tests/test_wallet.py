@@ -144,7 +144,43 @@ def test_daily_cap_stops_spending(tmp_path):
     statuses = [w.pay(None, {})["status"] for _ in range(5)]
     assert statuses == ["paid", "paid", "paid", "refused", "refused"]  # 0.09 spent; a 4th would exceed 0.1
     assert len(chain.sent) == 3
-    assert "today's cap" in w.blocked()
+    assert "today's limit" in w.blocked()
+
+
+def test_weekly_limit_spans_days_and_resets_monday(tmp_path, monkeypatch):
+    import pixl_memory.wallet as wl
+    w, chain = ready(tmp_path, flat_price_near="0.04", max_per_request_near="0.05", max_per_day_near="0.1", max_per_week_near="0.2")
+    got = []
+    for d in ["2026-11-09", "2026-11-09", "2026-11-10", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-16"]:  # Mon Mon Tue Tue Wed Thu, next Mon
+        monkeypatch.setattr(wl, "today", lambda d=d: d)
+        got.append(w.pay(None, {}))
+    assert [r["status"] for r in got] == ["paid"] * 5 + ["refused", "paid"]      # 5 × 0.04 = the week's 0.2; Thursday's would exceed it
+    assert "this week's limit" in got[5]["reason"] and "resets Monday" in got[5]["reason"]
+    assert len(chain.sent) == 6
+    assert wl.week_of("2026-11-12") == ("2026-11-09", "2026-11-15") and wl.week_of("2026-11-15") == ("2026-11-09", "2026-11-15")
+
+
+def test_user_limits_tighten_inside_the_owners_ceilings(tmp_path):
+    w, chain = ready(tmp_path, flat_price_near="0.03", max_per_request_near="0.05")
+    w.limits.update(per_week_near="0.05")
+    assert w.status()["caps"]["per_week_near"] == "0.05" and w.status()["ceilings"]["per_week_near"] == "0.5"
+    import pytest as _p
+    for bad in [dict(per_week_near="0.6"), dict(per_day_near="0"), dict(per_day_near="0.09")]:   # over ceiling, zero, day > week
+        with _p.raises(ValueError):
+            w.limits.update(**bad)
+    assert w.status()["caps"]["per_week_near"] == "0.05" and w.status()["caps"]["per_day_near"] == "0.05"  # nothing half-written
+    assert [w.pay(None, {})["status"] for _ in range(2)] == ["paid", "refused"]   # 0.03, then 0.06 > 0.05
+    assert len(chain.sent) == 1
+
+
+def test_pause_freezes_spending_without_signing_and_resume_restores_it(tmp_path):
+    w, chain = ready(tmp_path)
+    w.limits.update(paused=True)
+    r = w.pay(None, {})
+    assert r["status"] == "refused" and "paused" in r["reason"] and chain.sent == []
+    assert w.status()["paused"] is True and "paused" in w.blocked()
+    w.limits.update(paused=False)
+    assert w.pay(None, {})["status"] == "paid" and w.status()["paused"] is False
 
 
 def test_reserve_keeps_froggs_account_alive(tmp_path):
@@ -169,7 +205,7 @@ def test_no_key_means_no_payment_and_no_blocking(tmp_path):
 
 
 def test_pricing_rounds_up_and_never_pays_zero():
-    p = Policy(PARENT, N("0.01"), N("0.1"), N("0.05"), 0.4, N("0.0005"))
+    p = Policy(PARENT, N("0.01"), N("0.1"), N("0.5"), N("0.05"), 0.4, N("0.0005"))
     assert p.price(1) == (400_000_000_000_000, "cost")  # 1 nano-USD → 4e14 yocto
     assert p.price(0) == (N("0.0005"), "flat")
 
@@ -199,7 +235,7 @@ def test_out_of_allowance_refuses_before_sending_text(tmp_path, captured):
     tc, _ = make_app(tmp_path, fake, wallet=w)
     r = tc.post("/polish", json={"text": "secret note"})
     assert r.status_code == 402 and r.json()["error"] == "frogg_out_of_allowance"
-    assert "today's cap" in r.json()["message"]
+    assert "today's limit" in r.json()["message"]
     assert "/chat/completions" not in fake.calls
 
 
@@ -213,3 +249,15 @@ def test_setup_page_shows_only_public_data(tmp_path, captured):
     assert w.key().secret_key not in html and json.loads(w.key_path.read_text())["private_key"] not in html
     assert "createAccount" in html and "fullAccessKey" in html and 'network: "testnet"' in html
     assert tc.get("/wallet/setup", headers={"Host": "evil.example"}).status_code == 421
+
+
+def test_limits_endpoint_validates_and_reports(tmp_path, captured):
+    w, _ = ready(tmp_path)
+    tc, _ = make_app(tmp_path, FakeNear(captured), wallet=w)
+    r = tc.post("/wallet/limits", json={"per_week_near": "0.25", "per_day_near": "0.05"})
+    assert r.status_code == 200 and r.json()["caps"]["per_week_near"] == "0.25" and r.json()["caps"]["per_day_near"] == "0.05"
+    assert tc.post("/wallet/limits", json={"per_week_near": "9"}).status_code == 400          # above the ceiling
+    assert tc.post("/wallet/limits", json={"per_week_near": "-1"}).status_code == 422         # not a number we accept
+    assert tc.post("/wallet/limits", json={"paused": True}).json()["paused"] is True
+    s = tc.get("/wallet").json()
+    assert s["paused"] is True and "spent_week_near" in s and "week_resets" in s

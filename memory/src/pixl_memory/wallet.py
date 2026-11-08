@@ -26,6 +26,7 @@ class Policy:
     payee: str
     max_per_request: int  # yocto
     max_per_day: int  # yocto
+    max_per_week: int  # yocto
     reserve: int  # yocto kept in Frogg's account (storage + gas)
     near_per_usd: float
     flat_price: int  # yocto, when NEAR AI hasn't reported the cost yet
@@ -33,7 +34,8 @@ class Policy:
     @classmethod
     def from_config(cls, w: WalletConfig) -> "Policy":
         return cls(payee=w.payee, max_per_request=near_to_yocto(w.max_per_request_near),
-                   max_per_day=near_to_yocto(w.max_per_day_near), reserve=near_to_yocto(w.reserve_near),
+                   max_per_day=near_to_yocto(w.max_per_day_near), max_per_week=near_to_yocto(w.max_per_week_near),
+                   reserve=near_to_yocto(w.reserve_near),
                    near_per_usd=float(w.near_per_usd), flat_price=near_to_yocto(w.flat_price_near))
 
     def price(self, cost_nano_usd: int | None) -> tuple[int, str]:
@@ -52,12 +54,65 @@ def today() -> str:
     return dt.datetime.now(dt.UTC).date().isoformat()
 
 
+def week_of(day: str) -> tuple[str, str]:
+    """The calendar week (Monday…Sunday, UTC) containing `day`."""
+    d = dt.date.fromisoformat(day)
+    monday = d - dt.timedelta(days=d.weekday())
+    return monday.isoformat(), (monday + dt.timedelta(days=6)).isoformat()
+
+
+class Limits:
+    """What the user set from the app, inside the owner's ceilings (.env). Stored by the service,
+    enforced before anything is signed. None means "use the ceiling"."""
+    KEYS = ("limit_per_day_yocto", "limit_per_week_yocto", "paused")
+
+    def __init__(self, store: Store, policy: Policy):
+        self.store, self.policy = store, policy
+
+    def _get(self, key: str) -> int | None:
+        v = self.store.get_setting(key)
+        return int(v) if v is not None else None
+
+    @property
+    def per_day(self) -> int:
+        return min(self._get("limit_per_day_yocto") or self.policy.max_per_day, self.policy.max_per_day)
+
+    @property
+    def per_week(self) -> int:
+        return min(self._get("limit_per_week_yocto") or self.policy.max_per_week, self.policy.max_per_week)
+
+    @property
+    def paused(self) -> bool:
+        return self.store.get_setting("paused") == "1"
+
+    def update(self, per_day_near: str | None = None, per_week_near: str | None = None, paused: bool | None = None) -> None:
+        """Validates everything first, then writes: a bad value changes nothing."""
+        week = self.per_week if per_week_near is None else near_to_yocto(per_week_near)
+        day = self.per_day if per_day_near is None else near_to_yocto(per_day_near)
+        if per_day_near is None and day > week:
+            day, per_day_near = week, "follows the week"   # lowering the week lowers the day with it
+        for name, v, cap in [("daily", day, self.policy.max_per_day), ("weekly", week, self.policy.max_per_week)]:
+            if v <= 0:
+                raise ValueError(f"the {name} limit must be more than 0")
+            if v > cap:
+                raise ValueError(f"the {name} limit can't be above the owner's ceiling of {yocto_to_near(cap)} Ⓝ")
+        if day > week:
+            raise ValueError("the daily limit can't be above the weekly limit")
+        if per_day_near is not None:
+            self.store.set_setting("limit_per_day_yocto", str(day))
+        if per_week_near is not None:
+            self.store.set_setting("limit_per_week_yocto", str(week))
+        if paused is not None:
+            self.store.set_setting("paused", "1" if paused else None)
+
+
 class Wallet:
     def __init__(self, cfg: WalletConfig, data_dir: Path, store: Store, rpc: Rpc | None = None):
         self.cfg = cfg
         self.policy = Policy.from_config(cfg)
         self.key_path = data_dir / "frogg_key.json"
         self.store = store
+        self.limits = Limits(store, self.policy)
         self.rpc = rpc or Rpc(cfg.rpc_url)
 
     # -- key --
@@ -89,9 +144,16 @@ class Wallet:
             "payee": self.policy.payee, "public_key": key.public_key if key else None,
             "explorer": self.cfg.explorer,
             "caps": {"per_request_near": yocto_to_near(self.policy.max_per_request),
-                     "per_day_near": yocto_to_near(self.policy.max_per_day),
+                     "per_day_near": yocto_to_near(self.limits.per_day),
+                     "per_week_near": yocto_to_near(self.limits.per_week),
                      "reserve_near": yocto_to_near(self.policy.reserve)},
+            # the owner's ceilings: what the user's limits can go up to
+            "ceilings": {"per_day_near": yocto_to_near(self.policy.max_per_day),
+                         "per_week_near": yocto_to_near(self.policy.max_per_week)},
+            "paused": self.limits.paused,
             "spent_today_near": yocto_to_near(self.store.spent_on(today())),
+            "spent_week_near": yocto_to_near(self.store.spent_between(*week_of(today()))),
+            "week_resets": week_of(today())[1],
         }
         if key is None:
             return s | {"ready": False, "setup": "run `pixl-memory wallet init` to create Frogg's key"}
@@ -111,11 +173,16 @@ class Wallet:
         """Why a payment of `amount` would be refused, or None. Nothing is signed here."""
         if amount <= 0:
             return "nothing to pay"
+        if self.limits.paused:
+            return "spending is paused (you can resume it in the Wallet card)"
         if amount > self.policy.max_per_request:
             return f"{yocto_to_near(amount)} Ⓝ is over the {yocto_to_near(self.policy.max_per_request)} Ⓝ per-request cap"
         spent = self.store.spent_on(today())
-        if spent + amount > self.policy.max_per_day:
-            return f"today's cap of {yocto_to_near(self.policy.max_per_day)} Ⓝ is reached"
+        if spent + amount > self.limits.per_day:
+            return f"today's limit of {yocto_to_near(self.limits.per_day)} Ⓝ is reached"
+        week = self.store.spent_between(*week_of(today()))
+        if week + amount > self.limits.per_week:
+            return f"this week's limit of {yocto_to_near(self.limits.per_week)} Ⓝ is reached (resets Monday)"
         return None
 
     # -- paying --

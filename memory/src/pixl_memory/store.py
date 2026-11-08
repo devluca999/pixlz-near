@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS drafts (
     verification BLOB NOT NULL,
     receipt BLOB
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,
     created_at REAL NOT NULL,
@@ -212,6 +216,25 @@ class Store:
                          (pid, time.time(), day, str(amount_yocto), status, tx_hash,
                           self._seal("payments", pid, "receipt", json.dumps(receipt))))
         return pid
+
+    def spent_between(self, first_day: str, last_day: str) -> int:
+        """Paid yoctoNEAR on days first_day…last_day inclusive (ISO dates sort as text)."""
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day>=? AND day<=? AND status='paid'",
+                                (first_day, last_day)).fetchall()
+        return sum(int(r[0]) for r in rows)
+
+    # -- small settings the user changes from the app (not secrets) --
+
+    def get_setting(self, key: str) -> str | None:
+        row = self._db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_setting(self, key: str, value: str | None) -> None:
+        if value is None:
+            self._db.execute("DELETE FROM settings WHERE key=?", (key,))
+        else:
+            self._db.execute("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                             (key, value))
 
     def spent_on(self, day: str) -> int:
         rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status='paid'", (day,)).fetchall()

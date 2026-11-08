@@ -39,6 +39,12 @@ class AskIn(BaseModel):
     model: str | None = None
 
 
+class LimitsIn(BaseModel):
+    per_day_near: str | None = Field(default=None, pattern=r"^\d+(\.\d{1,24})?$", max_length=40)
+    per_week_near: str | None = Field(default=None, pattern=r"^\d+(\.\d{1,24})?$", max_length=40)
+    paused: bool | None = None
+
+
 class StatusIn(BaseModel):
     status: str
 
@@ -195,6 +201,18 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
     def wallet_status() -> dict[str, Any]:
         return wallet.status() if wallet else {"configured": False,
                                                "setup": "set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env"}
+
+    @app.post("/wallet/limits", dependencies=guarded)
+    def wallet_limits(body: LimitsIn) -> JSONResponse:
+        """The user tightens (or relaxes, up to the owner's ceilings) Frogg's daily and weekly
+        limits, or pauses spending. Enforced before anything is signed."""
+        if not wallet:
+            return JSONResponse({"error": "no_wallet", "message": "the wallet isn't configured"}, status_code=409)
+        try:
+            wallet.limits.update(body.per_day_near, body.per_week_near, body.paused)
+        except ValueError as e:
+            return JSONResponse({"error": "bad_limit", "message": str(e)}, status_code=400)
+        return JSONResponse(wallet.status())
 
     @app.get("/wallet/payments", dependencies=guarded)
     def wallet_payments(limit: int = 20) -> dict[str, Any]:

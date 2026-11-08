@@ -73,6 +73,20 @@ public struct MemoryClient: Sendable {
         return (try? JSONDecoder().decode(List.self, from: d))?.highlights ?? []
     }
 
+    /// POST /wallet/limits: the user's weekly limit and pause (inside the owner's ceilings).
+    public func setLimits(perWeekNear: String? = nil, perDayNear: String? = nil, paused: Bool? = nil) async throws(MemoryError) -> WalletInfo {
+        var r = try request("/wallet/limits", method: "POST")
+        var body: [String: Any] = [:]
+        if let perWeekNear { body["per_week_near"] = perWeekNear }
+        if let perDayNear { body["per_day_near"] = perDayNear }
+        if let paused { body["paused"] = paused }
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let (data, status) = try await send(r)
+        if status == 200, let w = try? JSONDecoder().decode(WalletInfo.self, from: data) { return w }
+        throw Self.error(data: data, status: status)
+    }
+
     public func wallet() async -> WalletInfo? {
         guard let r = try? request("/wallet"), let (d, s) = try? await send(r), s == 200 else { return nil }
         return try? JSONDecoder().decode(WalletInfo.self, from: d)

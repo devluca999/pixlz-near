@@ -145,6 +145,10 @@ final class RuleView: NSView {
 public final class WalletCard: PixlCard {
     public var onOpenURL: ((URL) -> Void)?
     public var onSetup: (() -> Void)?
+    /// The user picked a weekly limit (NEAR, as text).
+    public var onSetLimit: ((String) -> Void)?
+    /// Pause (true) or resume (false) all spending.
+    public var onPause: ((Bool) -> Void)?
 
     public init(info: WalletInfo?, payments: [Receipt], look: SurfaceView.Look) {
         super.init(title: "Wallet · \(PixlData.manifest.name)", icon: "wallet", look: look)
@@ -161,11 +165,31 @@ public final class WalletCard: PixlCard {
         let bal = NSTextField(labelWithAttributedString: big)
         stack.addArrangedSubview(bal)
         if let account = info.account { stack.addArrangedSubview(text(account, size: 10, muted: true, mono: true)) }
-        if ready, let c = info.caps {
-            stack.addArrangedSubview(text("Spent today \(info.spentTodayNear ?? "0") of \(c.perDayNear) · at most \(c.perRequestNear) a request · \(c.reserveNear) kept in reserve",
+        if !ready { stack.addArrangedSubview(text(info.setup ?? "Not set up yet.", size: 12)) }
+        if info.paused == true {
+            stack.addArrangedSubview(text("Spending is paused. \(PixlData.manifest.name) won't pay for anything until you resume.", size: 12, weight: .semibold))
+        }
+        // this week: spent against the user's weekly limit
+        if let c = info.caps, let week = c.perWeekNear {
+            let spent = Double(info.spentWeekNear ?? "0") ?? 0, limit = Double(week) ?? 0
+            stack.addArrangedSubview(caption("THIS WEEK", look: look))
+            stack.addArrangedSubview(MeterView(fraction: limit > 0 ? spent / limit : 0, look: look, width: inner))
+            stack.addArrangedSubview(text("\(info.spentWeekNear ?? "0") of \(week) NEAR · today \(info.spentTodayNear ?? "0") of \(c.perDayNear) · ≤ \(c.perRequestNear) a request · resets Monday",
                                           size: 11, muted: true))
-        } else if !ready {
-            stack.addArrangedSubview(text(info.setup ?? "Not set up yet.", size: 12))
+            // the weekly limit: presets up to the owner's ceiling
+            let ceiling = Double(info.ceilings?.perWeekNear ?? week) ?? limit
+            let presets = ["0.05", "0.1", "0.25", "0.5", "1"].filter { (Double($0) ?? 0) <= ceiling + 1e-9 }
+            var chips: [NSView] = [caption("WEEKLY LIMIT", look: look)]
+            for v in presets {
+                let on = abs((Double(v) ?? 0) - limit) < 1e-9
+                let b = PixelButton(title: v, style: on ? .primary : .secondary) { [weak self] in self?.onSetLimit?(v) }
+                b.setAccessibilityLabel("Weekly limit \(v) NEAR\(on ? ", selected" : "")")
+                chips.append(b)
+            }
+            let row = NSStackView(views: chips)
+            row.spacing = 6
+            row.alignment = .centerY
+            stack.addArrangedSubview(row)
         }
         for p in payments.prefix(4) {
             stack.addArrangedSubview(rule())
@@ -178,10 +202,12 @@ public final class WalletCard: PixlCard {
         }
         var b: [NSView] = []
         if !ready { b.append(PixelButton(title: "Set up wallet", style: .primary, hint: "↵") { [weak self] in self?.onSetup?() }) }
+        let paused = info.paused == true
+        b.append(PixelButton(title: paused ? "Resume" : "Pause", style: paused ? .primary : .secondary) { [weak self] in self?.onPause?(!paused) })
         if let e = info.explorer, let url = URL(string: e) {
-            b.append(PixelButton(title: ready ? "All receipts →" : "Explorer ↗", style: .secondary) { [weak self] in self?.onOpenURL?(url) })
+            b.append(PixelButton(title: ready ? "Receipts ↗" : "Explorer ↗", style: .secondary) { [weak self] in self?.onOpenURL?(url) })
         }
-        setFooter(b, hint: ready ? "testnet · pays its own inference" : "testnet")
+        setFooter(b, hint: "testnet")
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -422,5 +448,32 @@ public final class AskCard: PixlCard {
         hint.stringValue = e.bubble
         hint.textColor = Theme.failed
         fit()
+    }
+}
+
+/// A slim progress bar in the Pixl's accent (turns the failure colour when the limit is reached).
+@MainActor
+final class MeterView: NSView {
+    let fraction: Double
+    let look: SurfaceView.Look
+    init(fraction: Double, look: SurfaceView.Look, width: CGFloat) {
+        self.fraction = min(max(fraction, 0), 1)
+        self.look = look
+        super.init(frame: .zero)
+        widthAnchor.constraint(equalToConstant: width).isActive = true
+        heightAnchor.constraint(equalToConstant: 8).isActive = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.progressIndicator)
+        setAccessibilityValue("\(Int((self.fraction * 100).rounded())) percent of the weekly limit")
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        let r = bounds.insetBy(dx: 0, dy: 0.5)
+        look.tokens.chip.setFill()
+        NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4).fill()
+        guard fraction > 0 else { return }
+        (fraction >= 0.999 ? Theme.failed : Accent.color).setFill()
+        NSBezierPath(roundedRect: NSRect(x: r.minX, y: r.minY, width: max(8, r.width * fraction), height: r.height), xRadius: 4, yRadius: 4).fill()
     }
 }

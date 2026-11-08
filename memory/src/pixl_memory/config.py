@@ -39,9 +39,10 @@ def read_secret(name: str, env_file: Path | None = None) -> str | None:
 
 
 WALLET_SETTINGS = ("NEAR_NETWORK", "FROGG_PARENT_ACCOUNT", "FROGG_ACCOUNT", "FROGG_PAYEE",
-                   "FROGG_MAX_PER_REQUEST_NEAR", "FROGG_MAX_PER_DAY_NEAR", "FROGG_RESERVE_NEAR",
+                   "FROGG_MAX_PER_REQUEST_NEAR", "FROGG_MAX_PER_DAY_NEAR", "FROGG_MAX_PER_WEEK_NEAR", "FROGG_RESERVE_NEAR",
                    "FROGG_FLAT_PRICE_NEAR", "PIXL_NEAR_PER_USD", "NEAR_RPC_URL")
-WALLET_DEFAULTS = {"FROGG_MAX_PER_REQUEST_NEAR": "0.01", "FROGG_MAX_PER_DAY_NEAR": "0.1", "FROGG_RESERVE_NEAR": "0.05",
+WALLET_DEFAULTS = {"FROGG_MAX_PER_REQUEST_NEAR": "0.01", "FROGG_MAX_PER_DAY_NEAR": "0.1", "FROGG_MAX_PER_WEEK_NEAR": "0.5",
+                   "FROGG_RESERVE_NEAR": "0.05",
                    "FROGG_FLAT_PRICE_NEAR": "0.0005", "PIXL_NEAR_PER_USD": "0.4",
                    "NEAR_RPC_URL": "https://rpc.testnet.near.org"}
 _ACCOUNT_RE = re.compile(r"^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$")  # NEAR account-id rules
@@ -62,6 +63,7 @@ class WalletConfig:
     payee: str = ""
     max_per_request_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_REQUEST_NEAR"]
     max_per_day_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_DAY_NEAR"]
+    max_per_week_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_WEEK_NEAR"]
     reserve_near: str = WALLET_DEFAULTS["FROGG_RESERVE_NEAR"]
     flat_price_near: str = WALLET_DEFAULTS["FROGG_FLAT_PRICE_NEAR"]
     near_per_usd: str = WALLET_DEFAULTS["PIXL_NEAR_PER_USD"]
@@ -79,7 +81,7 @@ class WalletConfig:
         base = cls.validated(got["NEAR_NETWORK"] or "testnet", got["FROGG_PARENT_ACCOUNT"], got["FROGG_ACCOUNT"],
                              got["FROGG_PAYEE"] or got["FROGG_PARENT_ACCOUNT"])
         extra = {}
-        for env, field in [("FROGG_MAX_PER_REQUEST_NEAR", "max_per_request_near"), ("FROGG_MAX_PER_DAY_NEAR", "max_per_day_near"),
+        for env, field in [("FROGG_MAX_PER_REQUEST_NEAR", "max_per_request_near"), ("FROGG_MAX_PER_DAY_NEAR", "max_per_day_near"), ("FROGG_MAX_PER_WEEK_NEAR", "max_per_week_near"),
                            ("FROGG_RESERVE_NEAR", "reserve_near"), ("FROGG_FLAT_PRICE_NEAR", "flat_price_near"),
                            ("PIXL_NEAR_PER_USD", "near_per_usd")]:
             v = got[env] or WALLET_DEFAULTS[env]
@@ -91,6 +93,8 @@ class WalletConfig:
             extra[field] = v
         if float(extra["max_per_request_near"]) > float(extra["max_per_day_near"]):
             raise WalletConfigError("FROGG_MAX_PER_REQUEST_NEAR can't exceed FROGG_MAX_PER_DAY_NEAR")
+        if float(extra["max_per_day_near"]) > float(extra["max_per_week_near"]):
+            raise WalletConfigError("FROGG_MAX_PER_DAY_NEAR can't exceed FROGG_MAX_PER_WEEK_NEAR")
         rpc = got["NEAR_RPC_URL"] or WALLET_DEFAULTS["NEAR_RPC_URL"]
         if not rpc.startswith("https://") or "mainnet" in rpc:
             raise WalletConfigError(f"NEAR_RPC_URL must be an https testnet endpoint, got {rpc!r}")

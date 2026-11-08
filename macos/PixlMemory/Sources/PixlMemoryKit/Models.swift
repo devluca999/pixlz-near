@@ -135,7 +135,15 @@ public enum MemoryError: Error, Equatable, Sendable {
 public struct WalletInfo: Codable, Sendable, Equatable {
     public struct Caps: Codable, Sendable, Equatable {
         public let perRequestNear: String, perDayNear: String, reserveNear: String
-        enum CodingKeys: String, CodingKey { case perRequestNear = "per_request_near", perDayNear = "per_day_near", reserveNear = "reserve_near" }
+        public let perWeekNear: String?
+        enum CodingKeys: String, CodingKey {
+            case perRequestNear = "per_request_near", perDayNear = "per_day_near", reserveNear = "reserve_near", perWeekNear = "per_week_near"
+        }
+    }
+    /// The owner's ceilings (.env): the user's limits can go up to these.
+    public struct Ceilings: Codable, Sendable, Equatable {
+        public let perDayNear: String, perWeekNear: String
+        enum CodingKeys: String, CodingKey { case perDayNear = "per_day_near", perWeekNear = "per_week_near" }
     }
     public let account: String?
     public let payee: String?
@@ -146,9 +154,14 @@ public struct WalletInfo: Codable, Sendable, Equatable {
     public let ready: Bool?
     public let setup: String?
     public let explorer: String?
+    public var ceilings: Ceilings? = nil
+    public var paused: Bool? = nil
+    public var spentWeekNear: String? = nil
+    public var weekResets: String? = nil
     enum CodingKeys: String, CodingKey {
-        case account, payee, caps, ready, setup, explorer
+        case account, payee, caps, ready, setup, explorer, ceilings, paused
         case balanceNear = "balance_near", spendableNear = "spendable_near", spentTodayNear = "spent_today_near"
+        case spentWeekNear = "spent_week_near", weekResets = "week_resets"
     }
     public init(account: String?, payee: String?, balanceNear: String?, spendableNear: String?, spentTodayNear: String?,
                 caps: Caps?, ready: Bool?, setup: String?, explorer: String?) {
