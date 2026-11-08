@@ -81,6 +81,32 @@ enum AX {
         return list.contains { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
     }
 
+    /// Puts `text` into `pid`'s focused text field at the caret (replacing any selection), the
+    /// way Hand-off does: through Accessibility, never keystrokes, never pressing send.
+    /// Electron/Chromium apps ignore selected-text writes; then it's appended to the field's value.
+    static func insert(_ text: String, pid: pid_t) -> Bool {
+        let a = app(pid)
+        AXUIElementSetAttributeValue(a, "AXManualAccessibility" as CFString, kCFBooleanTrue)  // Electron (Claude, Slack…)
+        guard let el = focusedElement(pid: pid) else { return false }
+        let role: String? = attr(el, kAXRoleAttribute)
+        guard [kAXTextAreaRole, kAXTextFieldRole, "AXComboBox", "AXSearchField"].contains(role ?? "") || (attr(el, kAXValueAttribute) as String?) != nil
+        else { return false }
+        let before: String = attr(el, kAXValueAttribute) ?? ""
+        var settable: DarwinBoolean = false
+        if AXUIElementIsAttributeSettable(el, kAXSelectedTextAttribute as CFString, &settable) == .success, settable.boolValue,
+           AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFString) == .success {
+            for _ in 0..<6 {
+                if let v: String = attr(el, kAXValueAttribute), v != before, v.contains(text) { return true }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        var valueSettable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &valueSettable) == .success, valueSettable.boolValue else { return false }
+        let joined = before.isEmpty ? text : before + (before.hasSuffix("\n") || before.hasSuffix(" ") ? "" : " ") + text
+        guard AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, joined as CFString) == .success else { return false }
+        return (attr(el, kAXValueAttribute) as String?)?.contains(text) == true
+    }
+
     /// The focused element of `pid` (the text field holding the selection).
     static func focusedElement(pid: pid_t) -> AXUIElement? { attr(app(pid), kAXFocusedUIElementAttribute) }
 

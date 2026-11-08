@@ -1156,6 +1156,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
     }
 
+    /// Hand-off: bring `target` forward, let the Pixl hop to its window, then put the text into
+    /// its focused field (Accessibility; never keystrokes, never sends). If the app won't take
+    /// it, the text is copied and the Pixl says so.
+    func handOff(_ text: String, to target: NSRunningApplication) {
+        let name = target.localizedName ?? "that app"
+        Debug.log("hand-off to \(name)")
+        target.activate()
+        say("Taking it to \(name)…", for: 1.5)
+        later(0.7) { [weak self] in
+            guard let self else { return }
+            if AX.trusted, AX.insert(text, pid: target.processIdentifier) {
+                Debug.log("hand-off: written into \(name)")
+                self.show("emotion_happy", for: 2.5)
+                self.say("It's in \(name). Read it, then send it yourself.", for: 3)
+            } else {
+                Debug.log("hand-off: \(name) refused, copied")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self.show("emotion_curious", for: 2.5)
+                self.say("Click where it should go in \(name), then ⌘V. It's copied.", for: 4)
+            }
+        }
+    }
+
     /// The Pixl just paid for a request: a small accent pill ("−0.0021 Ⓝ") rises from its head
     /// and fades, so you see the wallet being used at the moment it is (no display link: the
     /// system animator runs it).

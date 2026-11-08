@@ -485,6 +485,8 @@ public final class AskCard: PixlCard {
 
     /// Save the answer into memory (folder "Answers"), with its sources' links.
     public var onSaveAnswer: ((String, String, [HighlightItem]) -> Void)?
+    /// Hand the answer to another app's text field (the app shows a list of apps).
+    public var onHandOff: ((String) -> Void)?
     var lastQuestion = ""
 
     public func show(_ r: AskResult) {
@@ -494,7 +496,9 @@ public final class AskCard: PixlCard {
             guard let self else { return }
             self.onSaveAnswer?(self.lastQuestion, r.answer, r.highlights ?? [])
         }
-        setFooter([askButton, saveB], hint: nil)
+        let hand = PixelButton(title: "Hand off ▸", style: .secondary) { [weak self] in self?.onHandOff?(r.answer) }
+        hand.setAccessibilityLabel("Hand off to another app")
+        setFooter([saveB, hand], hint: nil)
         let v = r.verification
         hint.stringValue = (v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count)" + (r.receipt.map { " · " + $0.bubble } ?? "")
         hint.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed

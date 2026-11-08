@@ -313,6 +313,7 @@ final class BubbleMenu {
         card.fit()
         card.onClose = { [weak self] in self?.closeCard() }
         card.onOpenURL = { NSWorkspace.shared.open($0) }  // the text-fragment link reopens the passage, highlighted
+        card.onHandOff = { [weak self] text in self?.showHandOff(text) }
         card.onSaveAnswer = { [weak self] question, answer, sources in
             // the answer goes into memory with the links it was built from, so it can be found again
             let links = sources.compactMap { $0.fragmentUrl ?? $0.url }
@@ -349,6 +350,23 @@ final class BubbleMenu {
         }
         showCard(card, name: "skins")
         cardPanel?.makeFirstResponder(card.picker)
+    }
+
+    /// Hand-off: pick an open app; the Pixl takes the text there (SPEC §6.7, docs/PRODUCT-NOTES.md).
+    func showHandOff(_ text: String) {
+        let me = NSRunningApplication.current.processIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != me && !$0.isTerminated && $0.localizedName != nil }
+            .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
+            .prefix(12)
+        let rows = apps.map { ListMenuView.Row(id: "\($0.processIdentifier)", title: $0.localizedName ?? "?", icon: nil, trailing: nil) }
+        guard !rows.isEmpty else { app.say("No other app is open", for: 2); return }
+        showList(rows, near: nil) { [weak self] row in
+            guard let self, let pid = pid_t(row.id), let target = NSRunningApplication(processIdentifier: pid) else { return }
+            self.closeList()
+            self.closeCard()
+            self.app.handOff(text, to: target)
+        }
     }
 
     func showMemory() {
