@@ -1,4 +1,7 @@
 import AppKit
+import PixlzCore
+
+typealias SquashStretchQuantize = SquashStretch
 
 /// Frogg's frames, rendered from the Claude Design C7 engine (scripts/render-frogg.mjs).
 /// Indexed colour, alpha 0 or 255 only, drawn nearest-neighbour at whole-number scales.
@@ -105,6 +108,27 @@ public final class FroggArt {
         } else {
             context.draw(img, in: CGRect(x: x, y: y, width: w, height: h))
         }
+        context.restoreGState()
+    }
+
+    /// Draws a frame with squash/stretch, mirroring and lean, all in whole art pixels and
+    /// anchored at the feet (bottom centre of `rect`), so the art stays crisp and planted.
+    /// - squash: (sx, sy), snapped to whole art pixels.
+    /// - lean: horizontal shear; the top row moves by `lean × height`, snapped to whole art pixels.
+    public func draw(_ name: String, in rect: CGRect, scale: CGFloat, context: CGContext,
+                     squash: CGSize, mirrored: Bool, lean: CGFloat) {
+        guard let img = image(name) else { return }
+        let art = CGSize(width: img.width, height: img.height)
+        let q = SquashStretchQuantize.quantized(squash, sprite: art)
+        let w = art.width * q.width * scale, h = art.height * q.height * scale
+        let feetX = rect.midX.rounded(), feetY = rect.minY
+        let topShift = (lean * art.height).rounded() * scale  // whole art pixels
+        context.saveGState()
+        context.interpolationQuality = .none
+        context.translateBy(x: feetX, y: feetY)
+        if topShift != 0 { context.concatenate(CGAffineTransform(a: 1, b: 0, c: topShift / max(h, 1), d: 1, tx: 0, ty: 0)) }
+        if mirrored { context.scaleBy(x: -1, y: 1) }
+        context.draw(img, in: CGRect(x: (-w / 2).rounded(.down), y: 0, width: w, height: h))
         context.restoreGState()
     }
 

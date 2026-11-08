@@ -49,10 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var mode = Mode.perched
     var foot: CGPoint?                 // feet, top-left global coordinates
-    var hop: (plan: HopPlan, start: TimeInterval)?
     var flight: ThrowFlight?
-    var drop: (from: CGPoint, to: CGPoint, start: TimeInterval)?
-    var motionTimer: Timer?
     var animTimers: [Timer] = []
     var idleTimer: Timer?
     var bubbleTimer: Timer?
@@ -116,6 +113,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func buildFrogg() {
         let current = foot
+        link?.invalidate()
+        link = nil
         froggPanel?.orderOut(nil)
         frogg = FroggView(scale: scale)
         frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
@@ -151,37 +150,77 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard !spaceTransition else { return }
         updateFullscreen()
-        if change == .moved, mode == .perched, hop == nil, !userPlaced, let spot = target() {
-            place(at: spot.foot)  // ride along while the window is dragged
+        if change == .moved, mode == .perched, motion == nil, !userPlaced, let spot = target() {
+            ride(to: spot.foot)  // feet glued to the dragged window, leaning against the drag
             return
         }
         reposition(force: change == .switched)
     }
 
-    /// Hop to the perch. `force` hops even a short distance (a different window, not a drag).
+    /// Hop to the perch. Mid-motion, the current flight is retargeted (never snaps back).
     func reposition(force: Bool = false) {
         guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced,
               let spot = target() else { return }
         guard let current = foot else { place(at: spot.foot); return }
+        if let m = motion {
+            if let end = motionTarget, hypot(end.x - spot.foot.x, end.y - spot.foot.y) < 1 { return }
+            let t = now - motionStart
+            motion = m.retargeted(at: t) { [unowned self] from in self.route(from: from, to: spot.foot) }
+            motionStart = now
+            lastMotionT = 0
+            motionTarget = spot.foot
+            Debug.log("motion retarget at t=\(String(format: "%.2f", t))")
+            return
+        }
         let d = hypot(spot.foot.x - current.x, spot.foot.y - current.y)
         if d < 1 { return }
-        if !force && d < 60 { place(at: spot.foot) } else { hopTo(spot.foot) }
+        if !force && d < 60 { place(at: spot.foot); return }
+        run(Choreography.hop(route(from: current, to: spot.foot)), target: spot.foot)
     }
 
-    /// Swiping between Spaces: Frogg leaves, then drops in from above onto the new
-    /// active window (the travel entrance, SPEC D9).
+    /// A shaped route (PixlzCore HopRoute): distance-scaled arc, chained when long, kept under
+    /// the menu bar and clear of the focused window's body (SPEC §7.3).
+    func route(from a: CGPoint, to b: CGPoint) -> HopRoute {
+        let bounds = screensTopLeft.first { $0.minX <= b.x && b.x <= $0.maxX && $0.minY <= b.y && b.y <= $0.maxY + 1 }
+            ?? screensTopLeft.first ?? .zero
+        let window = settings.perchOnWindows && focusUntil == nil ? watcher.activeWindowFrame : nil
+        let displays = NSScreen.screens.enumerated().map { i, s in
+            DisplayInfo(id: i, frame: topLeft(s.frame), visibleFrame: topLeft(s.visibleFrame))
+        }
+        let world = WorldMap(WorldInput(displays: displays, windows: window.map { [WindowInfo(id: 1, frame: $0)] } ?? []))
+        let r = HopRoute.plan(from: a, to: b, bounds: bounds, sprite: spriteSize, scale: scale, keepOut: window, world: world)
+        Debug.log("route legs=\(r.legs.count) duration=\(String(format: "%.2f", r.duration))s clear=\(r.clear)")
+        return r
+    }
+
+    /// Swiping between Spaces: a quick hop up and away (with a puff), then on the new
+    /// Space a peek from under the menu bar and a drop onto the active window (≤ 0.6 s).
     @objc func spaceChanged() {
         guard !userHidden else { return }
+        Debug.log("space changed")
         spaceTransition = true
-        cancelMotion()
-        hideOverlays(fade: 0.12)
-        Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+        closeMenus()
+        bubblePanel.orderOut(nil)
+        if let f = foot, froggPanel.isVisible, froggPanel.alphaValue > 0.5, !fullscreenHidden {
+            puff(at: f)
+            run(Choreography.exit(from: f, scale: scale), target: nil) { [weak self] in
+                self?.froggPanel.alphaValue = 0
+                self?.enterAfterSpaceChange()
+            }
+        } else {
+            enterAfterSpaceChange()
+        }
+    }
+
+    func enterAfterSpaceChange() {
+        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.watcher.attachToFrontmost()
                 self.spaceTransition = false
                 if self.settings.hideInFullscreen && self.watcher.activeWindowIsFullscreen {
                     self.fullscreenHidden = true
+                    self.froggPanel.orderOut(nil)
                     return
                 }
                 self.fullscreenHidden = false
@@ -202,82 +241,181 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    // MARK: motion (display timer only while moving, SPEC R6)
+    /// Peek down from under the menu bar (hanging by a toe pad), then drop onto `target`.
+    func dropIn(to target: CGPoint) {
+        let screen = screensTopLeft.first { $0.minX <= target.x && target.x <= $0.maxX } ?? screensTopLeft.first ?? .zero
+        let hang = FroggArt.shared.frames[MotionFrames.hang]
+        let below = CGFloat((hang?.h ?? 40) - (hang?.pin?[1] ?? 0)) * scale  // pin (toe) to feet
+        let hangFoot = CGPoint(x: target.x, y: min(screen.minY + below, target.y - 20))
+        froggPanel.alphaValue = 1
+        froggPanel.orderFrontRegardless()
+        run(Choreography.dropIn(hangFoot: hangFoot, to: target), target: target)
+    }
 
+    // MARK: motion: one display-synced clock, running only while something moves (SPEC R6, D7)
+
+    var motion: Choreography?
+    var motionStart: TimeInterval = 0
+    var lastMotionT: TimeInterval = -1
+    var motionTarget: CGPoint?
+    var motionDone: (@MainActor () -> Void)?
+    var link: CADisplayLink?
+    var lastTick: TimeInterval = 0
+    var dust: DustView?
+    var dustPanel: OverlayPanel?
+    var riding = false
+    var lastRide: (x: CGFloat, t: TimeInterval)?
+    var leanTarget: CGFloat = 0
+    var dragStopTimer: Timer?
+
+    var moving: Bool { motion != nil || flight != nil }
+
+    func run(_ c: Choreography, target: CGPoint?, then done: (@MainActor () -> Void)? = nil) {
+        cancelAnimations()
+        motion = c
+        motionStart = now
+        lastMotionT = -1
+        motionTarget = target
+        motionDone = done
+        Debug.log("motion start segments=\(c.segments.count) duration=\(String(format: "%.2f", c.duration))s")
+        startClock()
+    }
+
+    func startClock() {
+        guard link == nil else { return }
+        let l = frogg.displayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)  // keeps running during menus and window drags
+        link = l
+        lastTick = now
+        Debug.log("display link on")
+    }
+
+    func stopClockIfIdle() {
+        guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001 else { return }
+        link?.invalidate()
+        link = nil
+        dustPanel?.orderOut(nil)
+        Debug.log("display link off")
+    }
+
+    @objc func tick(_ l: CADisplayLink) {
+        let t0 = now
+        let dt = min(max(t0 - lastTick, 0), 0.05)
+        lastTick = t0
+        if let m = motion {
+            let t = t0 - motionStart
+            let (pose, done) = m.pose(at: t)
+            apply(pose)
+            for p in m.landings(between: lastMotionT, and: t) { puff(at: p) }
+            lastMotionT = t
+            if done {
+                motion = nil
+                motionTarget = nil
+                let finished = motionDone
+                motionDone = nil
+                finishMotion()
+                finished?()
+            }
+        }
+        if var f = flight {
+            let landed = f.step(dt: min(dt, 1.0 / 30))
+            flight = f
+            place(at: f.body.position)
+            if let spot = landed {
+                flight = nil
+                mode = .perched
+                userPlaced = true
+                run(Choreography([.land(at: spot, frame: MotionFrames.dropLand, mirrored: false, duration: 0.1, dust: true),
+                                  .settle(at: spot, duration: 0.2)]), target: nil)
+                puff(at: spot)
+            }
+        }
+        // lean against a window drag, easing back to upright
+        let lean = riding ? leanTarget : 0
+        frogg.lean += (lean - frogg.lean) * min(1, CGFloat(dt) * 14)
+        if abs(frogg.lean - lean) < 0.002 { frogg.lean = lean }
+        if let dust, !dust.pool.isEmpty { dust.step(to: Date(), dt: dt) }
+        stopClockIfIdle()
+    }
+
+    func apply(_ pose: Pose) {
+        if frogg.frameName != pose.frame { frogg.frameName = pose.frame }
+        frogg.squash = pose.squash
+        frogg.mirrored = pose.mirrored
+        froggPanel.alphaValue = pose.alpha
+        place(at: pose.foot)
+    }
+
+    func finishMotion() {
+        frogg.squash = CGSize(width: 1, height: 1)
+        frogg.mirrored = false
+        mode = .perched
+        backToIdle()
+    }
+
+    /// Feet in top-left coordinates → panel origin snapped to device pixels.
     func place(at p: CGPoint) {
         foot = p
-        froggPanel.setFrame(Perch.panelFrame(foot: p, canvas: frogg.frame.size, primaryHeight: primaryHeight), display: true)
+        var f = Perch.panelFrame(foot: p, canvas: frogg.frame.size, primaryHeight: primaryHeight)
+        let s = froggPanel.backingScaleFactor
+        f.origin = NSPoint(x: (f.origin.x * s).rounded() / s, y: (f.origin.y * s).rounded() / s)
+        if froggPanel.frame != f { froggPanel.setFrame(f, display: true) }
         positionBubble()
     }
 
     func cancelMotion() {
-        motionTimer?.invalidate()
-        hop = nil; flight = nil; drop = nil
+        motion = nil
+        motionTarget = nil
+        motionDone = nil
+        flight = nil
         if mode != .held { mode = .perched }
+        frogg?.squash = CGSize(width: 1, height: 1)
+        frogg?.mirrored = false
+        stopClockIfIdle()
     }
 
-    func startMotionTimer(_ step: @escaping @MainActor () -> Void) {
-        motionTimer?.invalidate()
-        motionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
-            MainActor.assumeIsolated { step() }
+    /// Landing dust in its own click-through panel, so it stays where Frogg landed.
+    func puff(at p: CGPoint) {
+        let size = NSSize(width: 70 * scale, height: 24 * scale)
+        if dust == nil || dust?.scale != scale {
+            let v = DustView(scale: scale, size: size)
+            let panel = OverlayPanel(size: size)
+            panel.ignoresMouseEvents = true
+            panel.contentView = v
+            dust = v
+            dustPanel = panel
         }
+        guard let dust, let dustPanel else { return }
+        dustPanel.setFrameOrigin(NSPoint(x: (p.x - size.width / 2).rounded(), y: (primaryHeight - p.y - 4 * scale).rounded()))
+        dust.emit(at: CGPoint(x: size.width / 2, y: 4 * scale), now: Date())
+        dustPanel.order(.below, relativeTo: froggPanel.windowNumber)
+        startClock()
     }
 
-    func hopTo(_ target: CGPoint) {
-        guard let start = foot else { place(at: target); return }
+    /// Riding a dragged window: feet glued, a lean against the drag, and a small hop when it stops.
+    func ride(to p: CGPoint) {
+        let t = now
+        if let last = lastRide, t - last.t > 0.001 {
+            let vx = (p.x - last.x) / CGFloat(t - last.t)
+            leanTarget = max(-0.12, min(0.12, -vx / 2500))
+        }
+        lastRide = (p.x, t)
+        riding = true
         cancelAnimations()
-        hop = (HopPlan(from: start, to: target, apexHeight: 30 * Double(scale), gravity: 900 * Double(scale)), now + 0.2)
-        frogg.frameName = "move_0"  // coil
-        startMotionTimer { [weak self] in self?.stepHop() }
-    }
-
-    func stepHop() {
-        guard let (plan, t0) = hop else { motionTimer?.invalidate(); return }
-        let t = now - t0
-        if t < 0 { return }
-        if t >= plan.duration {
-            hop = nil
-            motionTimer?.invalidate()
-            place(at: plan.end)
-            land(frame: "move_2")
-            return
+        place(at: p)
+        startClock()
+        dragStopTimer?.invalidate()
+        dragStopTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.riding = false
+                self.lastRide = nil
+                self.leanTarget = 0
+                if let f = self.foot, self.motion == nil, self.mode == .perched {
+                    self.run(Choreography.bump(at: f, scale: self.scale), target: nil)
+                }
+            }
         }
-        frogg.frameName = "move_1"
-        place(at: plan.position(at: t))
-    }
-
-    func dropIn(to target: CGPoint) {
-        cancelAnimations()
-        let screen = screensTopLeft.first { $0.minX <= target.x && target.x <= $0.maxX } ?? screensTopLeft.first ?? .zero
-        let from = CGPoint(x: target.x, y: screen.minY + 4)  // just under the menu bar
-        mode = .dropping
-        drop = (from, target, now)
-        frogg.frameName = "move_1"
-        place(at: from)
-        froggPanel.alphaValue = 1
-        froggPanel.orderFrontRegardless()
-        startMotionTimer { [weak self] in self?.stepDrop() }
-    }
-
-    func stepDrop() {
-        guard let (from, to, t0) = drop else { motionTimer?.invalidate(); return }
-        let g = 900 * Double(scale)
-        let t = now - t0
-        let y = from.y + 0.5 * g * t * t
-        if y >= to.y {
-            drop = nil
-            motionTimer?.invalidate()
-            mode = .perched
-            place(at: to)
-            land(frame: "grab_2")  // squash on landing
-            return
-        }
-        place(at: CGPoint(x: to.x, y: y))
-    }
-
-    func land(frame: String) {
-        frogg.frameName = frame
-        after(0.3) { [weak self] in self?.backToIdle() }
     }
 
     // MARK: animation (frame changes only)
@@ -310,7 +448,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func backToIdle() {
-        guard mode == .perched, hop == nil else { return }
+        guard mode == .perched, !moving else { return }
         frogg.frameName = "idle_0"
         scheduleIdle()
     }
@@ -320,7 +458,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !paused else { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 3...8), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.mode == .perched, self.hop == nil, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
+                guard let self, self.mode == .perched, !self.moving, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
                 let next = Bool.random() ? "idle_1" : "idle_2"  // blink or throat puff
                 self.frogg.frameName = next
                 self.after(next == "idle_1" ? 0.17 : 0.66) { [weak self] in self?.backToIdle() }
@@ -420,24 +558,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         flight = ThrowFlight(foot: start, velocity: v, scale: scale, screens: screens,
                              window: settings.perchOnWindows ? watcher.activeWindowFrame : nil, halfWidth: spriteSize.width / 2)
         mode = .airborne
-        frogg.frameName = "move_1"
-        var last = now
-        startMotionTimer { [weak self] in
-            guard let self, var f = self.flight else { return }
-            let t = self.now
-            let landed = f.step(dt: min(t - last, 1.0 / 30))
-            last = t
-            self.flight = f
-            self.place(at: f.body.position)
-            if let spot = landed {
-                self.flight = nil
-                self.motionTimer?.invalidate()
-                self.mode = .perched
-                self.userPlaced = true
-                self.place(at: spot)
-                self.land(frame: "grab_2")  // splat
-            }
-        }
+        frogg.frameName = MotionFrames.fall
+        Debug.log("throw v=(\(Int(v.dx)),\(Int(v.dy)))")
+        startClock()
     }
 
     // MARK: polish
@@ -1023,6 +1146,50 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             await wait(0.4)
             check("radial Hide → Frogg hidden", userHidden)
             toggleHidden()
+        }
+
+        // motion: the display link runs only while moving, lands exactly, never jumps on retarget
+        paused = false
+        cancelMotion()
+        await wait(0.3)
+        if let start = foot {
+            let target = CGPoint(x: start.x - 420, y: start.y)
+            run(Choreography.hop(route(from: start, to: target)), target: target)
+            await wait(0.1)
+            check("hop: display link runs while moving", link != nil)
+            let retargetTo = CGPoint(x: start.x - 200, y: start.y)
+            await wait(0.3)  // into the flight (after the notice beat and the coil)
+            var snap: CGFloat = .infinity
+            var fastest: CGFloat = 0
+            if let m = motion {
+                let t = now - motionStart
+                let before = m.pose(at: t).pose.foot
+                let next = m.retargeted(at: t) { [unowned self] in self.route(from: $0, to: retargetTo) }
+                let after = next.pose(at: 0).pose.foot
+                snap = hypot(after.x - before.x, after.y - before.y)
+                motion = next
+                motionStart = now
+                lastMotionT = 0
+                motionTarget = retargetTo
+                // speed through the new flight, sampled finely (pt per 1/60 s)
+                var prev = after
+                for k in 1...240 {
+                    let p = next.pose(at: Double(k) / 240 * next.duration).pose.foot
+                    let perFrame = hypot(p.x - prev.x, p.y - prev.y) / CGFloat(next.duration / 240 * 60)
+                    fastest = max(fastest, perFrame)
+                    prev = p
+                }
+            }
+            check("retarget mid-air: continues from where Frogg is (gap \(String(format: "%.1f", snap)) pt, fastest \(Int(fastest)) pt/frame)",
+                  snap < 0.5 && fastest < 40)
+            await wait(1.6)
+            check("hop lands on the new target, squash back to neutral",
+                  foot.map { hypot($0.x - retargetTo.x, $0.y - retargetTo.y) < 0.5 } == true && frogg.squash == CGSize(width: 1, height: 1))
+            check("display link stops when motion ends", link == nil)
+            let t0 = now
+            dropIn(to: retargetTo)
+            while motion != nil && now - t0 < 2 { await wait(0.01) }
+            check("Space drop-in finishes within 0.6 s (\(Int((now - t0) * 1000)) ms)", now - t0 <= 0.62)
         }
 
         let failed = results.filter { !$0.1 }.count

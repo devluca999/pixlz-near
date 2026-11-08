@@ -6,7 +6,12 @@ import AppKit
 @MainActor
 public final class FroggView: NSView {
     public var frameName: String { didSet { if frameName != oldValue { needsDisplay = true } } }
+    public var squash = CGSize(width: 1, height: 1) { didSet { if squash != oldValue { needsDisplay = true } } }
+    public var mirrored = false { didSet { if mirrored != oldValue { needsDisplay = true } } }
+    public var lean: CGFloat = 0 { didSet { if lean != oldValue { needsDisplay = true } } }
     public let scale: CGFloat
+    /// Room around the canvas so a stretch or squash never clips (transparent, click-through).
+    public static let headroom: CGFloat = 1.3
     public enum MouseEvent { case down, dragged, up, right }
     public var onMouse: ((MouseEvent, NSEvent) -> Void)?
     private let art = FroggArt.shared
@@ -15,7 +20,8 @@ public final class FroggView: NSView {
         self.scale = scale
         self.frameName = frameName
         let c = FroggArt.shared.canvas
-        super.init(frame: NSRect(x: 0, y: 0, width: c.width * scale, height: c.height * scale))
+        super.init(frame: NSRect(x: 0, y: 0, width: (c.width * scale * Self.headroom).rounded(),
+                                 height: (c.height * scale * Self.headroom).rounded()))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -24,7 +30,7 @@ public final class FroggView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        art.draw(frameName, in: bounds, scale: scale, context: ctx)
+        art.draw(frameName, in: bounds, scale: scale, context: ctx, squash: squash, mirrored: mirrored, lean: lean)
     }
 
     /// The art pixel under a point in view coordinates is opaque.
