@@ -7,14 +7,15 @@ struct GestureTests {
     @Test func quickStillPressIsAClick() {
         let g = PointerGesture(at: CGPoint(x: 100, y: 100), time: 10)
         #expect(g.isClick(releasedAt: CGPoint(x: 102, y: 101), time: 10.2))
-        #expect(!g.isClick(releasedAt: CGPoint(x: 102, y: 101), time: 10.3))  // held too long
+        #expect(g.isClick(releasedAt: CGPoint(x: 103, y: 102), time: 10.45))   // a slow trackpad press still counts
+        #expect(!g.isClick(releasedAt: CGPoint(x: 102, y: 101), time: 10.6))   // that's a long press (menu)
     }
 
     @Test func movingFourPointsStartsAGrab() {
         var g = PointerGesture(at: .zero, time: 0)
-        let r1 = g.moved(to: CGPoint(x: 3, y: 0))
+        let r1 = g.moved(to: CGPoint(x: 4, y: 3))   // 5 pt of jitter: still a press
         #expect(!r1)
-        let r2 = g.moved(to: CGPoint(x: 3, y: 3))
+        let r2 = g.moved(to: CGPoint(x: 5, y: 4))
         #expect(r2)
         let r3 = g.moved(to: CGPoint(x: 30, y: 30))
         #expect(!r3)  // only reports the transition once

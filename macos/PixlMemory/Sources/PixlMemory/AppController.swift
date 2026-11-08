@@ -12,7 +12,9 @@ class OverlayPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        // One Space at a time: Frogg slides away with the old desktop during a swipe and is
+        // brought onto the new one when ordered front (no floating over the slide).
+        collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
@@ -55,6 +57,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var bubbleTimer: Timer?
     var permissionTimer: Timer?
     var clickTimer: Timer?
+    var longPressTimer: Timer?
+    var longPressed = false
+    var pendingSwitch: Timer?
     var focusTimer: Timer?
 
     var gesture: PointerGesture?
@@ -92,6 +97,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MainActor.assumeIsolated {
                     guard let self, AX.trusted else { return }
                     self.permissionTimer?.invalidate()
+                    Debug.log("accessibility granted")
                     self.watcher.attachToFrontmost()
                 }
             }
@@ -147,6 +153,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if change == .switched {
             userPlaced = false
             nudgeIfDistracting()
+            // Wait a beat: swiping Spaces also activates another app, and the Space change
+            // arrives just after. Hopping first, then being interrupted, looked like a glitch.
+            pendingSwitch?.invalidate()
+            pendingSwitch = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.spaceTransition else { return }
+                    self.updateFullscreen()
+                    self.reposition(force: true)
+                }
+            }
+            return
         }
         guard !spaceTransition else { return }
         updateFullscreen()
@@ -198,18 +215,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func spaceChanged() {
         guard !userHidden else { return }
         Debug.log("space changed")
+        pendingSwitch?.invalidate()
         spaceTransition = true
+        cancelMotion()
         closeMenus()
-        bubblePanel.orderOut(nil)
-        if let f = foot, froggPanel.isVisible, froggPanel.alphaValue > 0.5, !fullscreenHidden {
-            puff(at: f)
-            run(Choreography.exit(from: f, scale: scale), target: nil) { [weak self] in
-                self?.froggPanel.alphaValue = 0
-                self?.enterAfterSpaceChange()
-            }
-        } else {
-            enterAfterSpaceChange()
-        }
+        // Frogg's panels belong to the old Space and slid away with it; take them down and
+        // bring Frogg in on this Space: peek from under the menu bar, drop, squash, settle.
+        for p in [froggPanel, bubblePanel, resultPanel, dustPanel] { p?.orderOut(nil) }
+        enterAfterSpaceChange()
     }
 
     func enterAfterSpaceChange() {
@@ -476,6 +489,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch kind {
         case .down:
             closeMenus()
+            longPressTimer?.invalidate()
+            longPressed = false
             if event.clickCount == 2 {
                 clickTimer?.invalidate()
                 gesture = nil
@@ -484,43 +499,50 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             gesture = PointerGesture(at: mouseTopLeft, time: now)
             dragSamples = [(now, mouseTopLeft)]
+            // Press and hold: the menu opens (like a long-press on the iPhone stage, SPEC §11.1).
+            longPressTimer = Timer.scheduledTimer(withTimeInterval: PointerGesture.longPressTime, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.gesture?.dragging == false, self.mode == .perched else { return }
+                    self.longPressed = true
+                    Debug.log("long press → menu")
+                    self.showRadial()
+                }
+            }
         case .dragged:
             guard var g = gesture else { return }
             dragSamples.append((now, mouseTopLeft))
-            if g.moved(to: mouseTopLeft) { startGrab() }
+            if g.moved(to: mouseTopLeft) {
+                longPressTimer?.invalidate()
+                if longPressed { closeMenus() }
+                startGrab()
+            }
             gesture = g
             if mode == .held { moveHeld() }
         case .up:
             defer { gesture = nil }
+            longPressTimer?.invalidate()
             if mode == .held { release(); return }
+            if longPressed { return }  // the menu is already open
             if let g = gesture, g.isClick(releasedAt: mouseTopLeft, time: now) { clicked(event) }
-            else { Debug.log("mouse up: not a click (held ≥250 ms or moved)") }
+            else { Debug.log("mouse up: not a click (moved)") }
         case .right:
             showRadial()
         }
     }
 
-    /// Poke: instant reaction; with text selected, the polish menu follows unless this
-    /// turns out to be the first half of a double-click.
+    /// Click: Frogg reacts at once (poke), then his menu opens, unless this turns out to be
+    /// the first half of a double-click (signature).
     func clicked(_ event: NSEvent) {
-        let selection = readSelection()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
             say("Hey! \(settings.name) is busy being a frog.", for: 2)
-            return
+        } else {
+            play(.poke)
         }
-        play(.poke)
-        if let until = focusUntil {
-            say("Focus: \(Int(until.timeIntervalSinceNow / 60) + 1) min left", for: 2)
-            return
-        }
-        guard selection != nil else {
-            if !AX.trusted { say("Allow Accessibility so I can read your selection", for: 3) }
-            return
-        }
+        if let until = focusUntil { say("Focus: \(Int(until.timeIntervalSinceNow / 60) + 1) min left", for: 2) }
         clickTimer?.invalidate()
         clickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showPolishMenu() }
+            MainActor.assumeIsolated { self?.showRadial() }
         }
     }
 
@@ -774,7 +796,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("radial select \(item.id) enabled=\(item.enabled)")
         closeMenus()
         guard item.enabled else {
-            say(item.id == "polish" ? "Select some text first" : "\(item.title) is coming soon 🐸", for: 2.5)
+            let why = !AX.trusted ? "Allow Accessibility in System Settings so I can read your selection"
+                                  : "Select some text first, then click me"
+            say(item.id == "polish" ? why : "\(item.title) is coming soon 🐸", for: 3)
             return
         }
         switch item.id {
@@ -1083,7 +1107,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         click(frogg, at: belly)
         await wait(0.12)
         check("click Frogg → poke animation", frogg.frameName.hasPrefix("poke"))
-        await wait(1.5)
+        await wait(NSEvent.doubleClickInterval + 0.25)
+        check("click Frogg → menu opens", radialPanel?.isVisible == true)
+        closeMenus()
+        await wait(1.2)
+
+        // a slow trackpad press (0.4 s, 4 pt of jitter) is still a click, not a throw
+        post(.leftMouseDown, at: belly, in: frogg)
+        await wait(0.2)
+        post(.leftMouseDragged, at: NSPoint(x: belly.x + 3, y: belly.y + 3), in: frogg)
+        await wait(0.2)
+        post(.leftMouseUp, at: NSPoint(x: belly.x + 3, y: belly.y + 3), in: frogg)
+        await wait(NSEvent.doubleClickInterval + 0.25)
+        check("slow jittery press → click (menu), not a throw", radialPanel?.isVisible == true && mode == .perched && flight == nil)
+        closeMenus()
+        await wait(1.2)
+
+        post(.leftMouseDown, at: belly, in: frogg)
+        await wait(0.7)
+        check("press and hold Frogg → menu opens", radialPanel?.isVisible == true)
+        post(.leftMouseUp, at: belly, in: frogg)
+        await wait(0.2)
+        check("…and stays open after letting go", radialPanel?.isVisible == true)
+        closeMenus()
+        await wait(0.5)
 
         click(frogg, at: belly)
         click(frogg, at: belly, clicks: 2)

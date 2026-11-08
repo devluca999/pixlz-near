@@ -52,7 +52,7 @@ public struct Choreography: Sendable {
 
     // MARK: building
 
-    public static let noticeTime: TimeInterval = 0.18   // 120–250 ms "notice" beat
+    public static let noticeTime: TimeInterval = 0.14   // 120–250 ms "notice" beat (after a 0.12 s switch debounce)
     public static let coilTime: TimeInterval = 0.12
     public static let landTime: TimeInterval = 0.11
     public static let settleTime: TimeInterval = 0.24

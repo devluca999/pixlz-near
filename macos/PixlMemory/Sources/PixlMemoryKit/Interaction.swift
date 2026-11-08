@@ -2,11 +2,14 @@ import CoreGraphics
 import Foundation
 import PixlzCore
 
-/// SPEC §11.1: a click is press + release under 250 ms with under 4 pt of movement;
-/// moving 4 pt starts a grab. Double-click comes from the event's click count.
+/// A press on Frogg: a click if released within half a second without moving; a long press
+/// (held half a second) opens the menu; moving 6 pt starts a grab. SPEC §11.1 had 250 ms and
+/// 4 pt, but real trackpad presses in testing lasted 0.4–1.3 s and drifted a few points, so
+/// clicks were lost and holds turned into throws. Double-click comes from the click count.
 public struct PointerGesture: Sendable {
-    public static let clickTime: TimeInterval = 0.25
-    public static let dragDistance: CGFloat = 4
+    public static let clickTime: TimeInterval = 0.5
+    public static let longPressTime: TimeInterval = 0.5
+    public static let dragDistance: CGFloat = 6
 
     public let start: CGPoint
     public let startTime: TimeInterval
