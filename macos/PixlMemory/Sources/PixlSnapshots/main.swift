@@ -234,6 +234,8 @@ func run() throws {
             let centers = BubbleMenuModel.arc(count: slots.count, head: head, radius: BubbleMenuModel.radius(scale: 2), direction: .up)
             let v = OptionBubblesView(frame: scene.bounds, slots: slots, head: head, centers: centers, look: icon, labelLook: look)
             v.accent = { let c = RGB(hex: skin.ui.accent); return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1) }()
+            v.style = skin.ui.menuStyle
+            if skin.ui.menuStyle == "wisp" { v.styleColor = v.accent }
             v.open(at: 0); v.advance(to: 2); v.setFocus(0)
             for k in 1...60 { v.advance(to: 2 + Double(k) / 60) }
             scene.addSubview(v)

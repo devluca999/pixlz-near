@@ -103,6 +103,9 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var detail: String?
     /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
     public var decal: PixlDecal?
+    /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a
+    /// dithered trail, the ghost), or nil (they just puff out).
+    public var menuStyle: String?
 
     public init(accent: String, menuFace: String, glassBody: Bool, signature: String, askPlaceholder: String, personality: String,
                 detail: String? = nil, decal: PixlDecal? = nil) {

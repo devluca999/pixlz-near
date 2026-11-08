@@ -589,7 +589,8 @@ let pixlManifestJSON: [String: String] = [
         "bottom": -6,
         "left": 18
       }
-    }
+    },
+    "menuStyle": "wisp"
   }
 }
 """##,
@@ -740,7 +741,8 @@ let pixlManifestJSON: [String: String] = [
         "top": -24,
         "right": 28
       }
-    }
+    },
+    "menuStyle": "silk"
   }
 }
 """##,

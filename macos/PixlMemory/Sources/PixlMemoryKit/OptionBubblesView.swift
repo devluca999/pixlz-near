@@ -97,6 +97,40 @@ public final class OptionBubblesView: NSView {
         advance(to: t)
     }
 
+    /// The Pixl's menu style ("silk", "wisp"): drawn behind the bubbles, from the head to each.
+    public var style: String? { didSet { needsDisplay = true } }
+    public var styleColor: NSColor = NSColor(srgbRed: 0.72, green: 0.75, blue: 0.80, alpha: 1)
+
+    public override func draw(_ dirtyRect: NSRect) {
+        guard let style else { return }
+        for b in buttons where b.alphaValue > 0.02 {
+            let end = CGPoint(x: b.frame.midX, y: b.frame.minY + 3)
+            switch style {
+            case "silk":
+                // a thread with a little sag, from the Pixl to the top of each bubble
+                let p = NSBezierPath()
+                p.move(to: head)
+                let mid = CGPoint(x: (head.x + end.x) / 2, y: (head.y + end.y) / 2 + 7)
+                p.curve(to: end, controlPoint1: mid, controlPoint2: mid)
+                p.lineWidth = 1
+                styleColor.withAlphaComponent(0.9 * b.alphaValue).setStroke()
+                p.stroke()
+                styleColor.withAlphaComponent(b.alphaValue).setFill()
+                NSRect(x: end.x - 1, y: end.y - 2, width: 2, height: 2).fill()
+            case "wisp":
+                // a dithered trail of 2 px dots, thinning out toward the bubble
+                let d = hypot(end.x - head.x, end.y - head.y), n = max(Int(d / 5), 1)
+                for k in 1..<n where k % 2 == 1 || k < n / 3 {
+                    let f = CGFloat(k) / CGFloat(n)
+                    styleColor.withAlphaComponent((0.75 - 0.45 * f) * b.alphaValue).setFill()
+                    let x = head.x + (end.x - head.x) * f, y = head.y + (end.y - head.y) * f + sin(f * .pi) * 6
+                    NSRect(x: x.rounded() - 1, y: y.rounded() - 1, width: 2, height: 2).fill()
+                }
+            default: break
+            }
+        }
+    }
+
     /// Steps every animation to time `t`; returns true while anything is still moving.
     @discardableResult
     public func advance(to t: TimeInterval) -> Bool {
@@ -120,6 +154,7 @@ public final class OptionBubblesView: NSView {
             if !alive { r.removeFromSuperview() }
             return !alive
         }
+        if style != nil { needsDisplay = true }
         switch phase {
         case .opening(let t0) where t - t0 >= BubbleMenuModel.openDuration(count: n): phase = .open
         case .closing(let t0) where t - t0 >= BubbleMenuModel.closeDuration(count: n): phase = .closed
