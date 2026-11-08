@@ -703,15 +703,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.orderFrontRegardless()
     }
 
-    func placeBeside(_ panel: NSPanel) {
+    /// The visible frame (below the menu bar, above the Dock) of the screen Frogg is on.
+    var froggScreen: CGRect {
+        let c = NSPoint(x: froggPanel.frame.midX, y: froggPanel.frame.minY + spriteSize.height / 2)
+        return (NSScreen.screens.first { $0.frame.contains(c) } ?? NSScreen.main)?.visibleFrame ?? .zero
+    }
+
+    /// Frogg's head and body box in screen coordinates.
+    var froggBox: CGRect {
         let f = froggPanel.frame
+        let art = FroggArt.shared.size(frogg.frameName)
+        return CGRect(x: f.midX - art.width * scale / 2, y: f.minY, width: art.width * scale, height: art.height * scale)
+    }
+
+    /// Beside Frogg (left preferred), fully on screen.
+    func placeBeside(_ panel: NSPanel) {
+        let b = froggBox
         let s = panel.frame.size
-        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) })?.visibleFrame ?? NSScreen.main?.visibleFrame else { return }
-        var x = f.minX - s.width - 8
-        if x < screen.minX + 8 { x = f.maxX + 8 }
-        x = min(max(x, screen.minX + 8), screen.maxX - s.width - 8)
-        let y = min(max(f.maxY - s.height, screen.minY + 8), screen.maxY - s.height - 8)
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let screen = froggScreen
+        var x = b.minX - s.width - 8
+        if x < screen.minX + 8 { x = b.maxX + 8 }
+        let r = Placement.fit(CGRect(x: x, y: b.maxY - s.height, width: s.width, height: s.height), in: screen)
+        panel.setFrameOrigin(r.origin)
     }
 
     // MARK: overlay pickers
@@ -726,9 +739,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.level = .popUpMenu
         panel.contentView = view
         if style == .round {
-            // centred over Frogg's head, like the radial menu
-            let f = froggPanel.frame
-            panel.setFrameOrigin(NSPoint(x: f.midX - view.frame.width / 2, y: f.minY + spriteSize.height + 8))
+            // centred over Frogg's head (under his feet if there's no room above), on screen
+            let b = froggBox, screen = froggScreen, size = view.frame.size
+            var r = CGRect(x: b.midX - size.width / 2, y: b.maxY + 8, width: size.width, height: size.height)
+            if r.maxY > screen.maxY - 8 { r.origin.y = b.minY - size.height - 8 }
+            panel.setFrameOrigin(Placement.fit(r, in: screen).origin)
         } else {
             placeBeside(panel)
         }
@@ -772,13 +787,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             RadialMenuView.Item(id: "hide", title: "Hide", glyph: "◌"),
             RadialMenuView.Item(id: "settings", title: "Settings", glyph: "⚙"),
         ]
-        let view = RadialMenuView(items: items)
+        // Around Frogg's body; a half-ring above or below him near the screen's bottom or top,
+        // then nudged so every button and label is on screen.
+        let body = NSPoint(x: froggPanel.frame.midX, y: froggPanel.frame.minY + spriteSize.height / 2)
+        let screen = froggScreen
+        let layout = Placement.radialLayout(center: body, visible: screen)
+        let view = RadialMenuView(items: items, layout: layout)
         view.onSelect = { [weak self] item in self?.radialSelected(item) }
         let panel = OverlayPanel(size: RadialMenuView.size)
         panel.level = .popUpMenu
         panel.contentView = view
-        let body = NSPoint(x: froggPanel.frame.midX, y: froggPanel.frame.minY + spriteSize.height / 2)
-        panel.setFrameOrigin(NSPoint(x: body.x - RadialMenuView.size.width / 2, y: body.y - RadialMenuView.size.height / 2))
+        var origin = NSPoint(x: body.x - RadialMenuView.size.width / 2, y: body.y - RadialMenuView.size.height / 2)
+        let content = Placement.screenRect(of: view.contentRect, inFlippedViewOfHeight: RadialMenuView.size.height, windowOrigin: origin)
+        let fitted = Placement.fit(content, in: screen)
+        origin.x += fitted.minX - content.minX
+        origin.y += fitted.minY - content.minY
+        panel.setFrameOrigin(NSPoint(x: origin.x.rounded(), y: origin.y.rounded()))
+        Debug.log("radial layout=\(layout) shifted=(\(Int(fitted.minX - content.minX)),\(Int(fitted.minY - content.minY)))")
         panel.orderFrontRegardless()
         radialPanel = panel
         radialView = view
@@ -874,12 +899,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let f = froggPanel.frame
         let s = bubblePanel.frame.size
         let headTop = f.minY + FroggArt.shared.size(frogg.frameName).height * scale
-        var origin = NSPoint(x: f.midX - s.width / 2, y: headTop + 2)
-        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) })?.visibleFrame {
-            origin.x = min(max(origin.x, screen.minX + 4), screen.maxX - s.width - 4)
-            if origin.y + s.height > screen.maxY { origin.y = f.minY - s.height }
-        }
-        bubblePanel.setFrameOrigin(origin)
+        let screen = froggScreen
+        var r = CGRect(x: f.midX - s.width / 2, y: headTop + 2, width: s.width, height: s.height)
+        if r.maxY > screen.maxY - 4 { r.origin.y = f.minY - s.height }  // no room above: say it below
+        bubblePanel.setFrameOrigin(Placement.fit(r, in: screen, margin: 4).origin)
     }
 
     func chatStub() {
@@ -1144,7 +1167,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         check("right-click Frogg → radial menu opens", radialPanel?.isVisible == true)
 
         if let rv = radialView {
-            let c = RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)
+            let c = rv.centers
             click(rv, at: c[1])
             await wait(0.3)
             check("radial Focus → 25/50 picker opens", choicePanel?.isVisible == true && radialPanel == nil)
@@ -1159,7 +1182,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showRadial()
         await wait(0.3)
         if let rv = radialView {
-            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[2])
+            click(rv, at: rv.centers[2])
             await wait(0.3)
             check("radial Chat (disabled) → \"coming soon\" bubble", (bubblePanel.contentView as? BubbleView)?.text.contains("coming soon") == true)
         }
@@ -1167,7 +1190,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showRadial()
         await wait(0.3)
         if let rv = radialView {
-            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[5])
+            click(rv, at: rv.centers[5])
             await wait(0.3)  // must open at once, before any network status arrives
             check("radial Settings → mini menu opens at once", miniPanel?.isVisible == true)
             if let mv = miniPanel?.contentView as? MiniMenuView, let p = mv.closeButtonCenter {
@@ -1189,11 +1212,34 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showRadial()
         await wait(0.3)
         if let rv = radialView {
-            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[4])
+            click(rv, at: rv.centers[4])
             await wait(0.4)
             check("radial Hide → Frogg hidden", userHidden)
             toggleHidden()
         }
+
+        // every menu stays on screen, wherever Frogg is
+        func inside(_ r: NSRect) -> Bool { froggScreen.insetBy(dx: -0.5, dy: -0.5).contains(r) }
+        let vis = screensTopLeft.first ?? .zero
+        for (name, spot) in [("bottom-right corner", CGPoint(x: vis.maxX - 10, y: vis.maxY)),
+                             ("top-left corner", CGPoint(x: vis.minX + 10, y: vis.minY + spriteSize.height + 4))] {
+            place(at: spot)
+            showRadial()
+            await wait(0.2)
+            if let rv = radialView, let rp = radialPanel {
+                let r = Placement.screenRect(of: rv.contentRect, inFlippedViewOfHeight: rv.bounds.height, windowOrigin: rp.frame.origin)
+                check("menu fully on screen at the \(name) (layout \(rv.layout))", inside(r))
+            }
+            showFocusMenu()
+            await wait(0.2)
+            check("Focus picker fully on screen at the \(name)", choicePanel.map { inside($0.frame) } == true)
+            closeMenus()
+            say("A long-ish bubble to check it stays on screen", for: 1)
+            check("bubble fully on screen at the \(name)", inside(bubblePanel.frame))
+        }
+        bubblePanel.orderOut(nil)
+        reposition(force: true)
+        await wait(0.3)
 
         // motion: the display link runs only while moving, lands exactly, never jumps on retarget
         paused = false
