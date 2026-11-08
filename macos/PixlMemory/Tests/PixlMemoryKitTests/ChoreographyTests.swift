@@ -60,7 +60,10 @@ struct ChoreographyTests {
         #expect(airborneFacing(left) == [true])
         #expect(airborneFacing(right) == [false])
         #expect(airborneFacing(up) == [false])  // mostly vertical: no flip
-        #expect(left.pose(at: 0).pose.mirrored)  // the notice look turns toward the target too
+        #expect(left.pose(at: Choreography.pivotTime + 0.01).pose.mirrored)  // the notice look turns toward the target too
+        // turning left starts with one narrow in-between frame, facing right then left
+        #expect(!left.pose(at: 0.01).pose.mirrored && left.pose(at: Choreography.pivotTime * 0.5).pose.squash.width < 0.85)
+        #expect(!right.segments.contains { if case .pivot = $0 { true } else { false } })   // no turn, no pivot
     }
 
     @Test func dustAtEveryLanding() {

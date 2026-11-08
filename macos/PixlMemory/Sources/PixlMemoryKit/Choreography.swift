@@ -41,11 +41,13 @@ public struct Choreography: Sendable {
         case whoa(at: CGPoint, mirrored: Bool, duration: TimeInterval)
         /// Out at one display's edge and in at the other's (shrink and fade, then grow back).
         case pop(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
+        /// Turning around: one narrow in-between frame, half facing the old way, half the new.
+        case pivot(at: CGPoint, frame: String, toLeft: Bool, duration: TimeInterval)
 
         var duration: TimeInterval {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
-                 .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d): d
+                 .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -64,6 +66,7 @@ public struct Choreography: Sendable {
     public static let landTime: TimeInterval = SquashStretch.landingTime
     public static let whoaTime: TimeInterval = 0.26
     public static let popTime: TimeInterval = 0.16
+    public static let pivotTime: TimeInterval = 0.07
 
     /// Face left when the hop is mostly horizontal and goes left; otherwise keep `current`.
     public static func facing(from a: CGPoint, to b: CGPoint, current: Bool) -> Bool {
@@ -76,6 +79,10 @@ public struct Choreography: Sendable {
         guard let first = route.legs.first else { return Choreography([]) }
         var segs: [Segment] = []
         var facing = facing(from: first.start, to: route.end, current: false)
+        if route.end.x < first.start.x - 2 {
+            // turning to go left: a narrow in-between frame so the facing doesn't just pop
+            segs.append(.pivot(at: first.start, frame: notice ? MotionFrames.notice : MotionFrames.coil, toLeft: true, duration: pivotTime))
+        }
         if notice {
             // the notice frame looks up and to the right: mirror it to look toward the target
             segs.append(.hold(at: first.start, frame: MotionFrames.notice, mirrored: route.end.x < first.start.x, duration: noticeTime))
@@ -198,6 +205,10 @@ public struct Choreography: Sendable {
             let y = a.y + (b.y - a.y) * CGFloat(f * f)  // constant acceleration
             return Pose(foot: CGPoint(x: b.x, y: y), frame: MotionFrames.fall,
                         squash: SquashStretch.scale(.flight(0.5 + 0.5 * f), apex: 0.5))
+        case .pivot(let p, let frame, let toLeft, _):
+            // narrowest at the middle of the turn; the facing flips halfway
+            let w = 1 - 0.18 * sin(Double.pi * f)
+            return Pose(foot: p, frame: frame, squash: CGSize(width: w, height: 1 + (1 - w) * 0.3), mirrored: f >= 0.5 ? toLeft : !toLeft)
         case .whoa(let p, let m, let d):
             return Pose(foot: p, frame: MotionFrames.startle, squash: t >= d ? CGSize(width: 1, height: 1) : SquashStretch.wobble(t), mirrored: m)
         case .pop(let a, let b, let m, _):
@@ -237,7 +248,7 @@ public struct Choreography: Sendable {
             return Choreography.hop(route(p), notice: false, coil: 0.08)
         case .fall(_, let b, _):
             return Choreography.hop(route(b), notice: false)
-        case .exit(let p, _, _), .whoa(let p, _, _):
+        case .exit(let p, _, _), .whoa(let p, _, _), .pivot(let p, _, _, _):
             return Choreography.hop(route(p), notice: false)
         case .pop(let a, let b, _, _):
             return Choreography.hop(route(local < segments[i].duration / 2 ? a : b), notice: false)
