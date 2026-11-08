@@ -110,6 +110,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             permissionTimer?.tolerance = 1
         }
+        E2EState.install(self)
         watcher.onChange = { [weak self] change in self?.windowChanged(change) }
         watcher.start()
         let ws = NSWorkspace.shared.notificationCenter
@@ -669,13 +670,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Instruction(title: "Fix spelling & grammar only", prompt: "Fix spelling and grammar only. Change nothing else."),
     ]
 
-    var pendingSelection: (text: String, app: String?)?
+    var pendingSelection: (text: String, app: String?)? { didSet { if pendingSelection == nil { selectionPID = nil } } }
+    var selectionPID: pid_t?
+    var polishedText: String?
 
     @discardableResult
     func readSelection() -> String? {
         let front = NSWorkspace.shared.frontmostApplication
         let text = AX.trusted ? AX.selectedText(pid: front?.processIdentifier ?? 0) : nil
         pendingSelection = text.map { ($0, front?.localizedName) }
+        selectionPID = text == nil ? nil : front?.processIdentifier
+        Debug.log("selection read from \(front?.localizedName ?? "?"): \(text.map { "\($0.count) chars" } ?? "none")")
         return text
     }
 
@@ -704,6 +709,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if CommandLine.arguments.contains("--selftest") { chosenInSelfTest = index; return }  // never send text in a self-test
         guard let sel = pendingSelection, instructions.indices.contains(index) else { return }
         let ins = instructions[index]
+        polishedText = sel.text
         busy = true
         resultPanel?.orderOut(nil)
         show("emotion_curious", for: 600)
@@ -749,6 +755,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(s, forType: .string)
             self?.say("Copied", for: 1.5)
+        }
+        view.onReplace = { [weak self, weak panel] r in
+            guard let self else { return }
+            if let pid = self.selectionPID, let original = self.polishedText,
+               AX.replaceSelection(pid: pid, original: original, with: r.suggestion) {
+                Debug.log("replace: written via AX")
+                panel?.orderOut(nil)
+                self.show("emotion_happy", for: 3)
+                self.say("Replaced. Saved as accepted.", for: 2.5)
+                Task { await self.client.markAccepted(draftId: r.draftId) }
+            } else {
+                Debug.log("replace: app refused or selection changed, copied instead")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(r.suggestion, forType: .string)
+                self.show("emotion_curious", for: 3)
+                self.say("Couldn't write there. Copied: paste with ⌘V", for: 3.5)
+            }
         }
         view.onDropped = { [weak self, weak panel] r in
             panel?.orderOut(nil)

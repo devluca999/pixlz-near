@@ -80,6 +80,22 @@ enum AX {
         return list.contains { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
     }
 
+    /// Replaces the selection in `pid`'s focused text element with `text`, only if that selection
+    /// is still `original` (the user may have moved on). Uses AX, never keystrokes.
+    static func replaceSelection(pid: pid_t, original: String, with text: String) -> Bool {
+        guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return false }
+        let current: String? = attr(focused, kAXSelectedTextAttribute)
+        guard current == original else { return false }
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(focused, kAXSelectedTextAttribute as CFString, &settable) == .success, settable.boolValue,
+              AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+        else { return false }
+        // some apps report success but ignore the write: confirm the text changed
+        let after: String? = attr(focused, kAXSelectedTextAttribute)
+        let value: String? = attr(focused, kAXValueAttribute)
+        return after == text || after == "" || (value?.contains(text) ?? false)
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

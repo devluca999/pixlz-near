@@ -12,6 +12,7 @@ public final class PolishView: NSView {
 
     public var onClose: (() -> Void)?
     public var onCopy: ((String) -> Void)?
+    public var onReplace: ((PolishResult) -> Void)?
     public var onDropped: ((PolishResult) -> Void)?
     public var onResize: (() -> Void)?
 
@@ -111,8 +112,9 @@ public final class PolishView: NSView {
             let copy = PixelButton(title: "Copy", primary: false) { [weak self] in self?.onCopy?(r.suggestion) }
             let more = PixelButton(title: showDetails ? "Hide checks" : "Show \(v.checks.count) checks", primary: false) { [weak self] in self?.toggleDetails() }
             detailsButton = more
-            let close = PixelButton(title: "Done", primary: true) { [weak self] in self?.onClose?() }
-            stack.addArrangedSubview(buttonRow([copy, more, close]))
+            let replace = PixelButton(title: "Replace", primary: true) { [weak self] in self?.onReplace?(r) }
+            let close = PixelButton(title: "Done", primary: false) { [weak self] in self?.onClose?() }
+            stack.addArrangedSubview(buttonRow([replace, copy, more, close]))
             stack.addArrangedSubview(details)
 
         case .error(let e, let app):
