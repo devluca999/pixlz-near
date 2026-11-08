@@ -8,6 +8,21 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 
 > Published publicly for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Frogg perched on the active window with a verified bubble](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) |
+| Frogg stands on the title bar of the window you're working in. *(Illustration: the window is drawn; Frogg, the bubble and the panel are the app's real views.)* | **Polish this** on a real NEAR AI Cloud reply: word diff, verdict, and the green-edged card you drag into your text. |
+| ![All 17 checks](docs/screenshots/polish-panel-checks.png) | ![Refused: the enclave failed verification](docs/screenshots/polish-refused.png) |
+| All 17 checks behind the verdict, from the same live request. | If the enclave fails verification, your text is never sent. |
+| ![Chrome: a saved highlight reopened](docs/screenshots/backlink-long-passage.png) | ![Chrome: the right "the frog" out of 35](docs/screenshots/backlink-the-frog.png) |
+| Chrome extension: a saved passage, reopened from its link, scrolled and highlighted. | The link picks the right "the frog" out of 35 on the page. |
+| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) |
+| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's 16 frames, exported from the Claude Design C7 engine. |
+
+App screenshots are rendered offscreen from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
+
 ## The problem
 
 Writing assistants see everything you write: unsent emails, medical notes, contracts. "We don't train on your data" is a promise you can't check. Pixl Memory lets you check: the model runs in an enclave whose code and hardware are attested, and your Mac verifies that **before** sending, not after.

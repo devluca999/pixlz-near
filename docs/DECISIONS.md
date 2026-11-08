@@ -53,7 +53,7 @@ Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
 - **Facing:** behavior slots drawn facing right; the engine mirrors them for left.
 - **Manifest** `assets/<pixl>/pixl.json`: species, frame size, fps per slot, foot anchor (ground-contact pixel), hitbox, aura preset, movement type (`hop | walk | float | climb`).
 - **Validation:** a PixlzCore unit test checks every manifest (all slots present, 3 frames, correct dimensions). A missing frame fails the build.
-- **Source:** sprites are rendered headlessly from the Claude Design C7 source (`design/explorations/c3/`), pet only, without props. The app draws props (folder, window, pond) itself. PixelLab fills gaps only (new poses, cleanup). Rendered PNGs are committed via Git LFS. *(P6)*
+- **Source:** sprites are rendered headlessly from the Claude Design C7 source (`design/explorations/c3/`), pet only, without props. The app draws props (folder, window, pond) itself. PixelLab fills gaps only (new poses, cleanup). Rendered PNGs are committed as plain git files (amended 2026-11-08, D15; was Git LFS). *(P6)*
 - A new Pixl = new data only; no code changes.
 
 ## D7. Performance budgets
@@ -172,3 +172,4 @@ Each milestone includes an Instruments check against these numbers.
 - Frogg's wallet: a sub-account created and funded by the user; the app holds only a function-call key for `pay_inference` on Frogg's own policy contract. The app never holds the user's keys.
 - Ground rules R1–R8 still apply. Text reaches the user's apps only by the user dragging it (R4: no synthetic keystrokes or pastes).
 - License unchanged (proprietary). The repo goes public for judging by 2026-11-14 23:59 UTC.
+- **PNGs leave Git LFS** (amends D6): sprites are a few KB each and screenshots a few hundred KB. A clone or ZIP download without LFS would show judges pointer files, and every download would spend the owner's LFS bandwidth. GIF, WebP, Aseprite and PSD stay in LFS.

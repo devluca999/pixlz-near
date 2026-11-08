@@ -1,6 +1,8 @@
-# Binary art goes through Git LFS (D6). Requires `git lfs install` before adding any of these.
-*.png      filter=lfs diff=lfs merge=lfs -text
+# Large or layered binary art goes through Git LFS. Requires `git lfs install` before adding any of these.
+# PNGs are plain git (D6, amended 2026-11-08): sprites and screenshots are small, and judges
+# cloning without LFS would otherwise get pointer files instead of images.
 *.gif      filter=lfs diff=lfs merge=lfs -text
 *.webp     filter=lfs diff=lfs merge=lfs -text
 *.aseprite filter=lfs diff=lfs merge=lfs -text
 *.psd      filter=lfs diff=lfs merge=lfs -text
+*.png      binary
