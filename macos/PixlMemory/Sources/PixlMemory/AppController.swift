@@ -40,6 +40,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
     var radialPanel: OverlayPanel?
+    var radialView: RadialMenuView?
+    var choicePanel: OverlayPanel?
+    var choiceView: ChoiceMenuView?
+    var chosenInSelfTest: Int?
     var miniPanel: KeyPanel?
     var statusItem: NSStatusItem?
 
@@ -68,6 +72,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var focusUntil: Date?
     var lastNudge = Date.distantPast
     var lastVerdict: String?
+    var cachedStatus: ServiceStatus?
     var monitors: [Any] = []
 
     var scale: CGFloat { CGFloat(settings.scale) }
@@ -76,6 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Debug.log("launch pid=\(ProcessInfo.processInfo.processIdentifier) accessibility=\(AX.trusted) debug=\(Debug.enabled)")
+        bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
         buildFrogg()
         setUpStatusItem()
         HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
@@ -102,6 +109,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reposition(force: true)
         froggPanel.orderFrontRegardless()
         scheduleIdle()
+        if CommandLine.arguments.contains("--selftest") {
+            Task { @MainActor in await self.selfTest() }
+        }
     }
 
     func buildFrogg() {
@@ -324,9 +334,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var mouseTopLeft: CGPoint { topLeft(NSEvent.mouseLocation) }
 
     func mouse(_ kind: FroggView.MouseEvent, _ event: NSEvent) {
+        if kind != .dragged { Debug.log("mouse \(kind) clickCount=\(event.clickCount) mode=\(mode)") }
         switch kind {
         case .down:
-            closeRadial()
+            closeMenus()
             if event.clickCount == 2 {
                 clickTimer?.invalidate()
                 gesture = nil
@@ -345,6 +356,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { gesture = nil }
             if mode == .held { release(); return }
             if let g = gesture, g.isClick(releasedAt: mouseTopLeft, time: now) { clicked(event) }
+            else { Debug.log("mouse up: not a click (held ≥250 ms or moved)") }
         case .right:
             showRadial()
         }
@@ -470,17 +482,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The instruction picker: an overlay panel, not an NSMenu (pop-up menus from a
+    /// non-activating panel in a menu-bar-only app are unreliable).
     func showPolishMenu() {
-        let menu = NSMenu()
-        if busy { menu.addItem(withTitle: "Working on it…", action: nil, keyEquivalent: "") }
-        else { instructionItems().forEach { menu.addItem($0) } }
-        let p = NSPoint(x: frogg.bounds.midX, y: FroggArt.shared.size(frogg.frameName).height * scale)
-        menu.popUp(positioning: nil, at: p, in: frogg)
+        guard !busy else { say("Working on it…", for: 1.5); return }
+        guard let sel = pendingSelection else { say("Select some text first", for: 2); return }
+        let preview = sel.text.replacingOccurrences(of: "\n", with: " ")
+        showChoices(title: "“\(preview.prefix(28))\(preview.count > 28 ? "…" : "")”", options: instructions.map(\.title),
+                    style: .list) { [weak self] i in self?.polish(i) }
     }
 
-    @objc func polishChosen(_ sender: NSMenuItem) {
-        guard let sel = pendingSelection, instructions.indices.contains(sender.tag) else { return }
-        let ins = instructions[sender.tag]
+    @objc func polishChosen(_ sender: NSMenuItem) { polish(sender.tag) }
+
+    func polish(_ index: Int) {
+        Debug.log("polish chosen index=\(index)")
+        if CommandLine.arguments.contains("--selftest") { chosenInSelfTest = index; return }  // never send text in a self-test
+        guard let sel = pendingSelection, instructions.indices.contains(index) else { return }
+        let ins = instructions[index]
         busy = true
         resultPanel?.orderOut(nil)
         show("emotion_curious", for: 600)
@@ -551,10 +569,55 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
+    // MARK: overlay pickers
+
+    func showChoices(title: String?, options: [String], style: ChoiceMenuView.Style, onSelect: @escaping @MainActor (Int) -> Void) {
+        closeMenus()
+        let view = ChoiceMenuView(title: title, options: options, style: style) { [weak self] i in
+            self?.closeMenus()
+            onSelect(i)
+        }
+        let panel = OverlayPanel(size: view.frame.size)
+        panel.level = .popUpMenu
+        panel.contentView = view
+        if style == .round {
+            // centred over Frogg's head, like the radial menu
+            let f = froggPanel.frame
+            panel.setFrameOrigin(NSPoint(x: f.midX - view.frame.width / 2, y: f.minY + spriteSize.height + 8))
+        } else {
+            placeBeside(panel)
+        }
+        panel.orderFrontRegardless()
+        choicePanel = panel
+        choiceView = view
+        Debug.log("choices open \(title ?? "") options=\(options.count)")
+        watchOutsideClicks()
+    }
+
+    /// A click in another app, or a key press, closes any open overlay menu.
+    func watchOutsideClicks() {
+        guard monitors.isEmpty else { return }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated {
+                Debug.log("outside click/key: closing menus")
+                self?.closeMenus()
+            }
+        }) { monitors.append(m) }
+    }
+
+    func closeMenus() {
+        closeRadial()
+        choicePanel?.orderOut(nil)
+        choicePanel = nil
+        choiceView = nil
+        monitors.forEach { NSEvent.removeMonitor($0) }
+        monitors.removeAll()
+    }
+
     // MARK: radial menu (SPEC §11.2)
 
     func showRadial() {
-        closeRadial()
+        closeMenus()
         readSelection()
         let items = [
             RadialMenuView.Item(id: "polish", title: "Polish", glyph: "✎", enabled: pendingSelection != nil),
@@ -573,21 +636,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.setFrameOrigin(NSPoint(x: body.x - RadialMenuView.size.width / 2, y: body.y - RadialMenuView.size.height / 2))
         panel.orderFrontRegardless()
         radialPanel = panel
-        // Any click elsewhere, or a key, closes it.
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.closeRadial() }
-        }) { monitors.append(m) }
+        radialView = view
+        Debug.log("radial open items=\(items.map { $0.id + ($0.enabled ? "" : "(off)") }.joined(separator: ","))")
+        watchOutsideClicks()
     }
 
     func closeRadial() {
         radialPanel?.orderOut(nil)
         radialPanel = nil
-        monitors.forEach { NSEvent.removeMonitor($0) }
-        monitors.removeAll()
+        radialView = nil
     }
 
     func radialSelected(_ item: RadialMenuView.Item) {
-        closeRadial()
+        Debug.log("radial select \(item.id) enabled=\(item.enabled)")
+        closeMenus()
         guard item.enabled else {
             say(item.id == "polish" ? "Select some text first" : "\(item.title) is coming soon 🐸", for: 2.5)
             return
@@ -604,20 +666,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: focus guardian (SPEC §6.6)
 
     func showFocusMenu() {
-        let menu = NSMenu()
-        for minutes in [25, 50] {
-            let item = NSMenuItem(title: "Focus for \(minutes) min", action: #selector(startFocus(_:)), keyEquivalent: "")
-            item.tag = minutes
-            item.target = self
-            menu.addItem(item)
+        showChoices(title: "Focus for", options: ["25 min", "50 min"], style: .round) { [weak self] i in
+            self?.startFocus(minutes: i == 0 ? 25 : 50)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: frogg.bounds.midX, y: frogg.bounds.midY), in: frogg)
     }
 
-    @objc func startFocus(_ sender: NSMenuItem) {
-        focusUntil = Date().addingTimeInterval(TimeInterval(sender.tag * 60))
-        say("Focus for \(sender.tag) min. I'll sit still.", for: 3)
-        focusTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(sender.tag * 60), repeats: false) { [weak self] _ in
+    func startFocus(minutes: Int) {
+        Debug.log("focus start \(minutes) min")
+        focusUntil = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        say("Focus for \(minutes) min. I'll sit still.", for: 3)
+        focusTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.endFocus(completed: true) }
         }
         userPlaced = false
@@ -648,6 +706,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: bubble (SPEC §11.6)
 
     func say(_ text: String, for seconds: TimeInterval? = 3) {
+        Debug.log("say \"\(text.prefix(40))\" hidden=\(userHidden) fullscreenHidden=\(fullscreenHidden)")
         guard !userHidden, !fullscreenHidden else { return }
         let bubble = BubbleView(text: text)
         bubblePanel.contentView = bubble
@@ -693,7 +752,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleHidden() {
         userHidden.toggle()
-        closeRadial()
+        Debug.log("hide toggled hidden=\(userHidden)")
+        closeMenus()
         if userHidden {
             cancelMotion()
             hideOverlays(fade: 0.15)
@@ -706,23 +766,35 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: mini menu (⌃⌥P, SPEC §11.5)
 
     func toggleMiniMenu() {
+        Debug.log("mini menu toggle (open=\(miniPanel?.isVisible == true))")
         if let p = miniPanel, p.isVisible { p.orderOut(nil); miniPanel = nil; return }
-        Task { @MainActor [weak self] in
+        // Open at once with what we last knew; fresh service/wallet status fills in after.
+        var status = cachedStatus ?? ServiceStatus(service: "checking…")
+        status.lastVerdict = lastVerdict
+        let view = MiniMenuView(settings: settings, status: status)
+        view.fit()
+        let panel = KeyPanel(size: view.frame.size)
+        panel.level = .popUpMenu
+        panel.contentView = view
+        panel.onCancel = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil }
+        view.onClose = panel.onCancel
+        view.onChange = { [weak self] s in self?.apply(s) }
+        view.onOpenWallet = { [weak self] in self?.openWallet() }
+        placeBeside(panel)
+        panel.makeKeyAndOrderFront(nil)
+        miniPanel = panel
+        Debug.log("mini menu shown")
+        Task { @MainActor [weak self, weak view, weak panel] in
             guard let self else { return }
-            var status = await client.status()
-            status.lastVerdict = lastVerdict
-            let view = MiniMenuView(settings: settings, status: status)
-            view.fit()
-            let panel = KeyPanel(size: view.frame.size)
-            panel.level = .popUpMenu
-            panel.contentView = view
-            panel.onCancel = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil }
-            view.onClose = panel.onCancel
-            view.onChange = { [weak self] s in self?.apply(s) }
-            view.onOpenWallet = { [weak self] in self?.openWallet() }
-            placeBeside(panel)
-            panel.makeKeyAndOrderFront(nil)
-            miniPanel = panel
+            var fresh = await self.client.status()
+            fresh.lastVerdict = self.lastVerdict
+            self.cachedStatus = fresh
+            guard let view, let panel, panel.isVisible else { return }
+            let top = panel.frame.maxY
+            view.update(status: fresh)
+            panel.setContentSize(view.frame.size)
+            panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
+            Debug.log("mini menu status updated: service=\(fresh.service) walletReady=\(fresh.walletReady)")
         }
     }
 
@@ -761,6 +833,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        Debug.log("menu bar menu open")
         menu.removeAllItems()
         readSelection()
         func add(_ title: String, _ action: Selector?, _ key: String = "") -> NSMenuItem {
@@ -849,4 +922,111 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func quit() { NSApp.terminate(nil) }
+
+    // MARK: self-test (--selftest): clicks through the real panels with posted events
+
+    func post(_ type: NSEvent.EventType, at p: NSPoint, in view: NSView, clicks: Int = 1) {
+        guard let w = view.window else { return }
+        let e = NSEvent.mouseEvent(with: type, location: view.convert(p, to: nil), modifierFlags: [],
+                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber, context: nil,
+                                   eventNumber: 0, clickCount: clicks, pressure: [.leftMouseUp, .rightMouseUp].contains(type) ? 0 : 1)!
+        NSApp.postEvent(e, atStart: false)
+    }
+
+    func click(_ view: NSView, at p: NSPoint, clicks: Int = 1) {
+        post(.leftMouseDown, at: p, in: view, clicks: clicks)
+        post(.leftMouseUp, at: p, in: view, clicks: clicks)
+    }
+
+    func wait(_ s: Double) async { try? await Task.sleep(for: .milliseconds(Int(s * 1000))) }
+
+    func selfTest() async {
+        var results: [(String, Bool)] = []
+        func check(_ name: String, _ ok: Bool) {
+            results.append((name, ok))
+            let line = "\(ok ? "PASS" : "FAIL")  \(name)"
+            print(line)
+            Debug.log("selftest " + line)
+        }
+        await wait(1.0)
+        paused = true  // keep Frogg still while we click it
+        settings.hideInFullscreen = false  // for this run only (not saved): the terminal may be fullscreen
+        fullscreenHidden = false
+        cancelMotion()
+        froggPanel.alphaValue = 1
+        froggPanel.orderFrontRegardless()
+        let belly = NSPoint(x: frogg.bounds.midX, y: 40)
+
+        click(frogg, at: belly)
+        await wait(0.12)
+        check("click Frogg → poke animation", frogg.frameName.hasPrefix("poke"))
+        await wait(1.5)
+
+        click(frogg, at: belly)
+        click(frogg, at: belly, clicks: 2)
+        await wait(0.12)
+        check("double-click Frogg → signature", frogg.frameName.hasPrefix("signature"))
+        await wait(2.5)
+
+        post(.rightMouseDown, at: belly, in: frogg)
+        post(.rightMouseUp, at: belly, in: frogg)
+        await wait(0.3)
+        check("right-click Frogg → radial menu opens", radialPanel?.isVisible == true)
+
+        if let rv = radialView {
+            let c = RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)
+            click(rv, at: c[1])
+            await wait(0.3)
+            check("radial Focus → 25/50 picker opens", choicePanel?.isVisible == true && radialPanel == nil)
+            if let cv = choiceView, let p = cv.center(of: 0) {
+                click(cv, at: p)
+                await wait(0.3)
+            }
+            check("picker 25 min → focus session starts", focusUntil != nil && choicePanel == nil)
+            endFocus(completed: false)
+        }
+
+        showRadial()
+        await wait(0.3)
+        if let rv = radialView {
+            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[2])
+            await wait(0.3)
+            check("radial Chat (disabled) → \"coming soon\" bubble", (bubblePanel.contentView as? BubbleView)?.text.contains("coming soon") == true)
+        }
+
+        showRadial()
+        await wait(0.3)
+        if let rv = radialView {
+            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[5])
+            await wait(0.3)  // must open at once, before any network status arrives
+            check("radial Settings → mini menu opens at once", miniPanel?.isVisible == true)
+            if let mv = miniPanel?.contentView as? MiniMenuView, let p = mv.closeButtonCenter {
+                click(mv, at: p)
+                await wait(0.3)
+            }
+            check("mini menu ✕ → closes", miniPanel == nil)
+        }
+
+        pendingSelection = ("teh frog sit on the windw", "SelfTest")
+        showPolishMenu()
+        await wait(0.3)
+        if let cv = choiceView, let p = cv.center(of: 1) {
+            click(cv, at: p)
+            await wait(0.3)
+        }
+        check("polish picker → \"Make it shorter\" chosen (not sent)", chosenInSelfTest == 1 && choicePanel == nil)
+
+        showRadial()
+        await wait(0.3)
+        if let rv = radialView {
+            click(rv, at: RadialMenuView.centers(count: rv.items.count, in: rv.bounds.size)[4])
+            await wait(0.4)
+            check("radial Hide → Frogg hidden", userHidden)
+            toggleHidden()
+        }
+
+        let failed = results.filter { !$0.1 }.count
+        print("\(results.count - failed)/\(results.count) passed")
+        exit(failed == 0 ? 0 : 1)
+    }
 }

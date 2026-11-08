@@ -11,6 +11,19 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     public static let width: CGFloat = 400
 
     private let stack = NSStackView()
+    private var closeButton: NSView?
+    private var serviceLabel: NSTextField!
+    private var modelLabel: NSTextField!
+    private var lastLabel: NSTextField!
+    private var walletLabel: NSTextField!
+    private var walletButton: NSView!
+
+    /// Centre of the ✕ button in this view's coordinates (for the app's self-test).
+    public var closeButtonCenter: NSPoint? {
+        guard let b = closeButton else { return nil }
+        layoutSubtreeIfNeeded()
+        return convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), from: b)
+    }
     private var nameField: NSTextField!
     private var appsField: NSTextField!
 
@@ -63,6 +76,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         let species = label("Red-eyed tree frog · the only Pixl in v1", Theme.mono(10), Theme.muted)
         let nameCol = NSStackView(views: [nameField, species]); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 4
         let close = PixelButton(title: "✕", primary: false) { [weak self] in self?.onClose?() }
+        closeButton = close
         let card = NSStackView(views: [img, nameCol, NSView(), close]); card.orientation = .horizontal; card.spacing = 10
         card.widthAnchor.constraint(equalToConstant: inner).isActive = true
         stack.addArrangedSubview(card)
@@ -93,21 +107,32 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(chips)
 
         stack.addArrangedSubview(section("PIXL MEMORY"))
-        stack.addArrangedSubview(label("Service: \(status.service)", Theme.mono(11), Theme.ink))
-        if let m = status.model { stack.addArrangedSubview(label("Model: \(m) (NEAR AI Cloud TEE)", Theme.mono(11), Theme.ink)) }
-        if let v = status.lastVerdict { stack.addArrangedSubview(label("Last reply: \(v)", Theme.mono(11), Theme.ink)) }
-        let wallet = label("Wallet: \(status.wallet ?? "not set up")", Theme.mono(11), status.walletReady ? Theme.verified : Theme.partial)
-        wallet.preferredMaxLayoutWidth = inner
-        stack.addArrangedSubview(wallet)
-        if !status.walletReady {
-            stack.addArrangedSubview(PixelButton(title: "Set up Frogg's wallet", primary: true) { [weak self] in self?.onOpenWallet?() })
-        }
+        serviceLabel = label("", Theme.mono(11), Theme.ink)
+        modelLabel = label("", Theme.mono(11), Theme.ink)
+        lastLabel = label("", Theme.mono(11), Theme.ink)
+        walletLabel = label("", Theme.mono(11), Theme.partial)
+        walletButton = PixelButton(title: "Set up Frogg's wallet", primary: true) { [weak self] in self?.onOpenWallet?() }
+        [serviceLabel, modelLabel, lastLabel, walletLabel, walletButton].forEach { stack.addArrangedSubview($0!) }
+        update(status: status)
 
         let talk = NSTextField(string: "")
         talk.placeholderString = "Talk to \(settings.name) · coming soon"
         talk.isEnabled = false
         talk.widthAnchor.constraint(equalToConstant: inner).isActive = true
         stack.addArrangedSubview(talk)
+    }
+
+    /// Fills in service and wallet status in place (the menu opens before it's known).
+    public func update(status: ServiceStatus) {
+        serviceLabel.stringValue = "Service: \(status.service)"
+        modelLabel.stringValue = "Model: \(status.model ?? "…") (NEAR AI Cloud TEE)"
+        modelLabel.isHidden = status.model == nil
+        lastLabel.stringValue = "Last reply: \(status.lastVerdict ?? "")"
+        lastLabel.isHidden = status.lastVerdict == nil
+        walletLabel.stringValue = "Wallet: \(status.wallet ?? "checking…")"
+        walletLabel.textColor = status.walletReady ? Theme.verified : Theme.partial
+        walletButton.isHidden = status.walletReady
+        fit()
     }
 
     private func label(_ s: String, _ font: NSFont, _ color: NSColor) -> NSTextField {

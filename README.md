@@ -73,7 +73,7 @@ Full details: [`memory/README.md`](memory/README.md).
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
 | Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
-| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and drops in when you swipe to another Space. Click to poke (with text selected: polish → diff → drag the result into your text), double-click for its signature, drag to grab and toss, right-click for the radial menu; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built, 30 tests; `scripts/build-mac-app.sh --open` |
+| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and drops in when you swipe to another Space. Click to poke (with text selected: polish → diff → drag the result into your text), double-click for its signature, drag to grab and toss, right-click for the radial menu; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 36 unit/UI tests plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`, 10/10); installs to `~/Applications`, `--debug` logs every click |
 | `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).

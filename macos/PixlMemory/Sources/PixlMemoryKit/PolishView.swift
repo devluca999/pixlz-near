@@ -294,7 +294,10 @@ final class SuggestionCard: NSView, NSDraggingSource {
     override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { downEvent = event }
+    override func mouseDown(with event: NSEvent) {
+        downEvent = event
+        Debug.log("suggestion card down")
+    }
 
     override func mouseDragged(with event: NSEvent) {
         guard let down = downEvent else { return }
@@ -315,6 +318,7 @@ final class SuggestionCard: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        Debug.log("suggestion drag ended operation=\(operation.rawValue)")
         if operation != [] { onDropped?() }
     }
 }
@@ -362,10 +366,16 @@ final class PixelButton: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { pressed = true; needsDisplay = true }
+    override func mouseDown(with event: NSEvent) {
+        pressed = true
+        needsDisplay = true
+        Debug.log("button down \(title)")
+    }
     override func mouseUp(with event: NSEvent) {
         pressed = false
         needsDisplay = true
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        Debug.log("button up \(title) inside=\(inside)")
+        if inside { action() }
     }
 }

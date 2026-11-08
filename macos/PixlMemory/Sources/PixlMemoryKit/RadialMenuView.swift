@@ -20,6 +20,7 @@ public final class RadialMenuView: NSView {
     public static let button: CGFloat = 54
     public static let size = NSSize(width: 2 * radius + button + 70, height: 2 * radius + button + 40)
     private var hovered: Int?
+    private var pressed: Int?
 
     public init(items: [Item]) {
         self.items = items
@@ -54,23 +55,9 @@ public final class RadialMenuView: NSView {
         let centers = Self.centers(count: items.count, in: bounds.size)
         for (i, (item, c)) in zip(items, centers).enumerated() {
             let r = NSRect(x: c.x - Self.button / 2, y: c.y - Self.button / 2, width: Self.button, height: Self.button)
-            Theme.ink.setFill()
-            NSBezierPath(ovalIn: r.offsetBy(dx: 4, dy: 4)).fill()
-            (item.enabled ? (hovered == i ? Theme.accent : NSColor.white) : NSColor(white: 0.88, alpha: 1)).setFill()
-            NSBezierPath(ovalIn: r).fill()
-            Theme.ink.setStroke()
-            let ring = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
-            ring.lineWidth = Theme.border
-            ring.stroke()
-            let gAttr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 22),
-                                                        .foregroundColor: item.enabled ? Theme.ink : Theme.muted]
-            let g = (item.glyph as NSString).size(withAttributes: gAttr)
-            (item.glyph as NSString).draw(at: NSPoint(x: c.x - g.width / 2, y: c.y - g.height / 2), withAttributes: gAttr)
-            let tAttr: [NSAttributedString.Key: Any] = [.font: Theme.mono(11, .bold), .foregroundColor: item.enabled ? Theme.ink : Theme.muted,
-                                                        .backgroundColor: Theme.paper]
-            let label = item.enabled ? item.title : "\(item.title) · soon"
-            let t = (label as NSString).size(withAttributes: tAttr)
-            (label as NSString).draw(at: NSPoint(x: c.x - t.width / 2, y: r.maxY + 6), withAttributes: tAttr)
+            RoundButton.draw(in: r, glyph: item.glyph, title: nil, enabled: item.enabled,
+                             lit: hovered == i || pressed == i, pressed: pressed == i)
+            RoundButton.label(item.enabled ? item.title : "\(item.title) · soon", centeredAt: c.x, top: r.maxY + 6, enabled: item.enabled)
         }
     }
 
@@ -82,7 +69,21 @@ public final class RadialMenuView: NSView {
     public override func mouseExited(with event: NSEvent) { hovered = nil; needsDisplay = true }
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    // Handle mouseDown ourselves: if it falls through to the borderless panel, AppKit can
+    // treat it as the start of a window drag and the mouseUp never reaches us.
+    public override func mouseDown(with event: NSEvent) {
+        pressed = index(at: convert(event.locationInWindow, from: nil))
+        Debug.log("radial down index=\(pressed.map { items[$0].id } ?? "none")")
+        needsDisplay = true
+    }
+
     public override func mouseUp(with event: NSEvent) {
-        if let i = index(at: convert(event.locationInWindow, from: nil)) { onSelect?(items[i]) }
+        let i = index(at: convert(event.locationInWindow, from: nil))
+        let was = pressed
+        pressed = nil
+        needsDisplay = true
+        Debug.log("radial up index=\(i.map { items[$0].id } ?? "none") pressed=\(was.map { items[$0].id } ?? "none")")
+        guard let i, i == was else { return }  // release on the button you pressed
+        onSelect?(items[i])
     }
 }

@@ -38,7 +38,11 @@ public final class FroggView: NSView {
 
     public override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
-        return hitsArt(at: local) ? self : nil
+        let hit = hitsArt(at: local)
+        if Debug.enabled, let e = NSApp.currentEvent, [.leftMouseDown, .rightMouseDown].contains(e.type) {
+            Debug.log("frogg hitTest \(e.type == .leftMouseDown ? "down" : "right") at (\(Int(local.x)),\(Int(local.y))) frame=\(frameName) \(hit ? "HIT opaque pixel" : "MISS transparent")")
+        }
+        return hit ? self : nil
     }
 
     /// Where a hanging frame's pin (the toe pad held by the cursor) is, in view coordinates.
@@ -49,10 +53,19 @@ public final class FroggView: NSView {
     }
 
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    public override func mouseDown(with event: NSEvent) { onMouse?(.down, event) }
+    public override func mouseDown(with event: NSEvent) {
+        Debug.log("frogg down clickCount=\(event.clickCount)")
+        onMouse?(.down, event)
+    }
     public override func mouseDragged(with event: NSEvent) { onMouse?(.dragged, event) }
-    public override func mouseUp(with event: NSEvent) { onMouse?(.up, event) }
-    public override func rightMouseDown(with event: NSEvent) { onMouse?(.right, event) }
+    public override func mouseUp(with event: NSEvent) {
+        Debug.log("frogg up clickCount=\(event.clickCount)")
+        onMouse?(.up, event)
+    }
+    public override func rightMouseDown(with event: NSEvent) {
+        Debug.log("frogg right clickCount=\(event.clickCount)")
+        onMouse?(.right, event)
+    }
 }
 
 /// The speech bubble (SPEC §11.6): white box, 3 pt ink outline, tail toward the Pixl,
