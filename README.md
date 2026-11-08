@@ -41,6 +41,15 @@ Writing assistants see everything you write: unsent emails, medical notes, contr
 
 ## Try it
 
+**Install the Mac app (one command):**
+
+```sh
+git clone … && cd pixlz-near
+scripts/install.sh        # sets up the service, builds and opens Pixl Memory.app
+```
+
+Then **click the frog in the menu bar** to call your Pixl: it springs out of the icon onto the window you're working in. Right-click the frog for the menu (Open at login, Pixl settings, Hide…). The app starts its own memory service; no terminal after this. *Not yet a download:* a standalone `.dmg` needs the service bundled and an Apple Developer ID for Gatekeeper, which come after judging.
+
 **The verification works today with no account:**
 
 ```sh
