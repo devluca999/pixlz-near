@@ -520,6 +520,15 @@ public final class AskCard: PixlCard {
         fit()
     }
 
+    /// An answer the Mac knew itself (screens, devices, "jump to…"): no model, nothing sent.
+    public func showLocal(_ text: String) {
+        answer.stringValue = text
+        answer.isHidden = false
+        hint.stringValue = "answered on this Mac · nothing sent"
+        hint.textColor = tokens.text2
+        fit()
+    }
+
     public func show(error e: MemoryError) {
         answer.stringValue = e.detail
         answer.isHidden = false

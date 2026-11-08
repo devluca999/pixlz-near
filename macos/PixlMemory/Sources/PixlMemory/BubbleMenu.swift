@@ -76,7 +76,7 @@ final class BubbleMenu {
 
     private func openNow(trigger: String) {
         guard !app.userHidden, let head else { return }
-        let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: nil, walletSub: wallet?.short)
+        let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: app.travel.sendSlotName, walletSub: wallet?.short)
         let screen = app.screensTopLeft.first { $0.minX <= head.x && head.x <= $0.maxX } ?? app.screensTopLeft.first ?? .zero
         let placement = BubbleMenuModel.place(count: slots.count, head: head, radius: BubbleMenuModel.radius(scale: app.scale),
                                               screen: screen, avoid: avoidRects())
@@ -178,6 +178,7 @@ final class BubbleMenu {
         case "memory": close(reason: "memory"); showMemory()
         case "wallet": close(reason: "wallet"); showWallet()
         case "more": showMore()
+        case "send": close(reason: "send"); showSend()
         default: close(reason: slot.id)
         }
     }
@@ -198,7 +199,9 @@ final class BubbleMenu {
         var rows = [ListMenuView.Row(id: "ask", title: "Ask", icon: "ask", trailing: "⌘K"),
                     ListMenuView.Row(id: "memory", title: "Memory", icon: "memory"),
                     ListMenuView.Row(id: "wallet", title: "Wallet", icon: "wallet", trailing: wallet?.short),
-                    ListMenuView.Row(id: "send", title: "Send to device", icon: "send", enabled: false),
+                    ListMenuView.Row(id: "send", title: "Send to device", icon: "send",
+                                     trailing: app.travel.localNetworkBlocked ? "allow Local Network" : app.travel.peers.isEmpty ? "none nearby" : nil,
+                                     enabled: app.travel.localNetworkBlocked || !app.travel.peers.isEmpty),
                     ListMenuView.Row(id: "focus", title: app.focusUntil == nil ? "Focus for 25 min" : "Stop focus", icon: nil),
                     ListMenuView.Row(id: "signature", title: "Do your thing", icon: nil, trailing: ui.signature),
                     ListMenuView.Row(id: "game", title: "Mischief: \(ui.game?.name ?? "Catch")", icon: nil, trailing: "20 s"),
@@ -221,6 +224,7 @@ final class BubbleMenu {
         case "focus": app.focusUntil == nil ? app.startFocus(minutes: 25) : app.endFocus(completed: false)
         case "signature": app.signature()
         case "skin": showSkins()
+        case "send": showSend()
         case "game": app.game.start()
         case "settings": app.toggleMiniMenu()
         case "hide": app.toggleHidden()
@@ -327,6 +331,13 @@ final class BubbleMenu {
         }
         card.onAsk = { [weak self, weak card] q in
             guard let self, let card else { return }
+            // screens, devices, "jump to …": answered on the Mac, nothing sent anywhere
+            if let local = self.app.travel.localAnswer(q) {
+                Debug.log("ask: answered locally")
+                card.showLocal(local)
+                self.resizeCard(card)
+                return
+            }
             self.app.ask(q) { result in
                 switch result {
                 case .success(let r): card.show(r)
@@ -337,6 +348,19 @@ final class BubbleMenu {
         }
         showCard(card, name: "ask")
         cardPanel?.makeFirstResponder(card.field)
+    }
+
+    /// Send to a nearby device: straight there if there's one, else pick it.
+    func showSend() {
+        if app.travel.localNetworkBlocked { app.travel.openLocalNetworkSettings(); return }
+        let peers = app.travel.peers
+        if peers.count == 1 { app.travel.send(to: peers[0]); return }
+        guard !peers.isEmpty else { app.say("No other device nearby (Pixl must be open on the same Wi-Fi).", for: 3); return }
+        showList(peers.map { ListMenuView.Row(id: $0.deviceId, title: $0.deviceName, icon: "send") }, near: nil) { [weak self] row in
+            guard let self, let p = peers.first(where: { $0.deviceId == row.id }) else { return }
+            self.closeList()
+            self.app.travel.send(to: p)
+        }
     }
 
     func showSkins() {

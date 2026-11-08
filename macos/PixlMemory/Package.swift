@@ -17,14 +17,17 @@ let package = Package(
         .target(name: "PixlMemoryKit", dependencies: ["PixlzCore"]),
         // The Chrome extension bridge: protocol, routing, host manifest (no UI, fully testable).
         .target(name: "PixlBridge"),
+        // Trips between devices: Bonjour discovery + PixlzCore's trip protocol over TCP.
+        .target(name: "PixlTravel", dependencies: ["PixlzCore"]),
         // Chrome starts this for the extension (native messaging); it relays to the service and the app.
         .executableTarget(name: "PixlNativeHost", dependencies: ["PixlBridge"]),
         // The overlay app: panels, Accessibility, motion, menus.
-        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge"]),
+        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge", "PixlTravel"]),
         // Renders the app's views offscreen to PNGs for docs (no screen recording needed).
         .executableTarget(name: "PixlSnapshots", dependencies: ["PixlMemoryKit"]),
         .testTarget(name: "PixlMemoryKitTests", dependencies: ["PixlMemoryKit"],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "PixlBridgeTests", dependencies: ["PixlBridge"]),
+        .testTarget(name: "PixlTravelTests", dependencies: ["PixlTravel", "PixlzCore"]),
     ]
 )

@@ -46,6 +46,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var game = GameController(app: self)
     let bridge = BridgeServer()
     let service = ServiceLauncher()
+    lazy var travel = TravelController(app: self)
+    /// The Pixl is on another device (by name) and this one waits to call it back.
+    var awayOn: String?
     /// Where the selection came from: Accessibility, or the browser extension (the bridge).
     var selectionFromWeb = false
     let ui = PixlData.ui
@@ -120,13 +123,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             permissionTimer?.tolerance = 1
         }
         E2EState.install(self)
-        bridge.start()
-        Task { @MainActor in
+        travel.start()
+        // a second copy of the app (PIXL_DEVICE_ID, for trying trips on one Mac) shares the
+        // bridge and the service with the first: it doesn't start its own
+        let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil
+        if !secondCopy { bridge.start() }
+        if !secondCopy { Task { @MainActor in
             if let why = await service.ensureRunning() {
                 Debug.log("service: \(why)")
                 say("Memory service: \(why)", for: 6)
             }
-        }
+        } }
         watcher.onChange = { [weak self] change in self?.windowChanged(change) }
         watcher.start()
         let ws = NSWorkspace.shared.notificationCenter
@@ -1267,6 +1274,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The menu bar icon was clicked: a hidden Pixl springs out of the icon onto your window;
     /// a visible one opens its bubbles.
     func summon() {
+        if let away = awayOn {
+            menu.showList([ListMenuView.Row(id: "call", title: "Call \(settings.name) back from \(away)", icon: nil, trailing: "↵")], near: nil) { [weak self] _ in
+                self?.menu.closeList()
+                self?.travel.callBack()
+            }
+            return
+        }
         let onScreen = froggPanel.isVisible && froggPanel.alphaValue > 0.5 && !userHidden && !fullscreenHidden
         Debug.log("summon (on screen: \(onScreen))")
         if onScreen { menu.open(trigger: "menu bar icon"); return }

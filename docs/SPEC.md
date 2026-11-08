@@ -486,6 +486,20 @@ enum StoredPet {
 
 ### 10.3 Transport
 
+**Built (Mac, 2026-11-08):** `PixlTravel` (macos/PixlMemory).
+- **Bonjour.** `_pixlz._tcp`, advertised with a TXT record of device id and name. Every device browses, so nearby devices show up like AirDrop targets. The app declares `NSBonjourServices` and asks for Local Network once; until that's allowed, More ▸ Send to device says "allow Local Network".
+- **Trips.** PixlzCore's `TravelNode` runs over TCP with length-prefixed envelopes. `TripRunner` persists every `.saved` before any later `.send`, so at least one complete copy of the Pixl always exists.
+- **Consent.** The first offer from an unknown device asks the user ("Catch Nox from Laptop?"). After a yes, that device is trusted.
+- **What travels.** Only PetState: name, species, needs, stats. Never memory, highlights or wallet keys.
+- **UI:**
+  - a "Send to <device>" bubble when one is nearby;
+  - leaving: an exit hop with a puff;
+  - arriving: the Pixl springs out of the menu-bar icon, in its own skin;
+  - the menu-bar icon offers "Call <name> back" while away;
+  - Ask answers "what screens are available?" and "jump to <device or display>" on the Mac itself, with no model involved.
+- **Tested** by two transports in one process over real Bonjour.
+- **Next:** code pairing (6-digit code + TLS-PSK, `Pairing.deriveKey` exists), then a relay for devices on other networks (Windows, a phone on cellular).
+
 ```swift
 protocol PetTransport {
     var peers: AsyncStream<[Peer]> { get }         // devices currently reachable

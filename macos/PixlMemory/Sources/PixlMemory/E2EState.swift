@@ -7,6 +7,7 @@ import PixlMemoryKit
 @MainActor
 enum E2EState {
     static let request = Notification.Name("com.pixl.memory.e2e.dump")
+    static let command = Notification.Name("com.pixl.memory.e2e.do")
     static var url: URL {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/PixlMemory/state.json")
     }
@@ -15,6 +16,22 @@ enum E2EState {
         guard Debug.enabled else { return }
         DistributedNotificationCenter.default().addObserver(forName: request, object: nil, queue: .main) { [weak app] _ in
             MainActor.assumeIsolated { if let app { write(app) } }
+        }
+        // debug-only commands for driving trips between two copies of the app (object = this
+        // device's id, so each copy only obeys its own): send, consent, local ask
+        DistributedNotificationCenter.default().addObserver(forName: command, object: app.travel.me.deviceId, queue: .main) { [weak app] n in
+            let info = n.userInfo as? [String: String] ?? [:]
+            MainActor.assumeIsolated {
+                guard let app else { return }
+                switch info["do"] {
+                case "send": if let p = app.travel.peers.first(where: { $0.deviceName == info["to"] }) { app.travel.send(to: p) } else { Debug.log("e2e: no peer \(info["to"] ?? "")") }
+                case "consent": app.menu.list.flatMap { l in l.rows.firstIndex { $0.id == (info["answer"] == "yes" ? "yes" : "no") }.map { (l, $0) } }
+                    .map { l, i in l.onSelect?(l.rows[i]) }
+                case "ask": Debug.log("e2e: local answer: \(app.travel.localAnswer(info["q"] ?? "") ?? "(for the model)")")
+                case "callback": app.travel.callBack()
+                default: break
+                }
+            }
         }
     }
 
@@ -61,6 +78,10 @@ enum E2EState {
                       "hidden": app.userHidden, "scale": app.settings.scale, "foot": app.foot.map { ["x": $0.x, "y": $0.y] } ?? [:]],
             "menuOpen": app.menu.isOpen,
             "skin": PixlSkins.currentID,
+            "device": app.travel.me.deviceName,
+            "peers": app.travel.peers.map(\.deviceName),
+            "awayOn": app.awayOn ?? NSNull(),
+            "owns": app.travel.runner?.owned?.name ?? NSNull(),
             "name": app.settings.name,
             "selection": app.pendingSelection?.text ?? NSNull(),
             "speech": (app.bubblePanel.isVisible ? (app.bubblePanel.contentView as? BubbleView)?.text : nil) ?? NSNull(),
