@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS drafts (
     verification BLOB NOT NULL,
     receipt BLOB
 );
+CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    created_at REAL NOT NULL,
+    day TEXT NOT NULL,
+    amount_yocto TEXT NOT NULL,
+    status TEXT NOT NULL,
+    tx_hash TEXT,
+    receipt BLOB NOT NULL
+);
 """
 
 
@@ -194,6 +203,24 @@ class Store:
     def set_draft_receipt(self, did: str, receipt: dict[str, Any]) -> bool:
         blob = self._seal("drafts", did, "receipt", json.dumps(receipt))
         return self._db.execute("UPDATE drafts SET receipt=? WHERE id=?", (blob, did)).rowcount > 0
+
+    # -- payments (Frogg's wallet) --
+
+    def add_payment(self, day: str, amount_yocto: int, status: str, tx_hash: str | None, receipt: dict[str, Any]) -> str:
+        pid = str(uuid.uuid4())
+        self._db.execute("INSERT INTO payments VALUES (?,?,?,?,?,?,?)",
+                         (pid, time.time(), day, str(amount_yocto), status, tx_hash,
+                          self._seal("payments", pid, "receipt", json.dumps(receipt))))
+        return pid
+
+    def spent_on(self, day: str) -> int:
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status='paid'", (day,)).fetchall()
+        return sum(int(r[0]) for r in rows)
+
+    def list_payments(self, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self._db.execute("SELECT id, created_at, receipt FROM payments ORDER BY created_at DESC LIMIT ?",
+                                (limit,)).fetchall()
+        return [{"id": i, "created_at": c, **json.loads(self._open("payments", i, "receipt", r))} for i, c, r in rows]
 
     def close(self) -> None:
         self._db.close()

@@ -87,7 +87,7 @@ Design:
   - Stored locally, encrypted with the draft: inference id, model, cost, verdict, tx hash.
   - The thought bubble shows the balance (`view_account`) and the last receipt with a testnet explorer link.
 - **Out of allowance.** If the balance or the daily cap is reached, Frogg says so and refuses further polishes until topped up.
-- **Signing.** One `Transfer` transaction (Borsh + ed25519), via `py-near` or `near-kit` after a spike, or a small encoder tested against near-cli output.
+- **Signing.** Done: one `Transfer` transaction (Borsh + ed25519) in `memory/src/pixl_memory/near.py`, matching `near-api-js` byte for byte. Account creation is approved by the owner in Meteor via the local `/wallet/setup` page (wallet-selector: CreateAccount + Transfer + AddKey).
 - **Optional hardening, if time allows.** A tiny policy contract on Frogg's account; the app then holds only a function-call key for `pay_inference` (fixed payee, per-call and daily caps enforced on chain). A stolen app key could then pay nobody but the payee.
 - **Testnet first.** **Ask the owner before creating or funding any account.**
 

@@ -122,6 +122,7 @@ struct ClientTests {
         #expect(err(401, "{}") == .badToken)
         #expect(err(412, #"{"error":"no_api_key","message":"set it"}"#) == .noApiKey("set it"))
         #expect(err(402, #"{"error":"no_credits","message":"pay"}"#) == .noCredits("pay"))
+        #expect(err(402, #"{"error":"frogg_out_of_allowance","message":"cap"}"#) == .outOfAllowance("cap"))
         #expect(err(400, #"{"error":"not_private","message":"no"}"#) == .notPrivate("no"))
         #expect(err(502, "not json") == .upstream("HTTP 502"))
         if case .attestationFailed(let m, _)? = err(409, #"{"error":"attestation_failed","message":"bad nonce"}"#) {
@@ -161,5 +162,21 @@ struct DiffTests {
         let c = PolishView(.error(.serviceDown, app: nil))
         c.fit()
         #expect(c.frame.height > 80 && c.frame.height < a.frame.height)
+    }
+}
+
+struct ReceiptTests {
+    @Test func bubbleLines() {
+        let paid = Receipt(status: "paid", amountNear: "0.0001", to: "sylversurferr.testnet", txHash: "abc",
+                           explorer: "https://testnet.nearblocks.io/txns/abc", balanceAfterNear: "0.9999", reason: nil)
+        #expect(paid.bubble == "Paid 0.0001 Ⓝ · 0.9999 Ⓝ left")
+        let refused = Receipt(status: "refused", amountNear: "0.0005", to: nil, txHash: nil, explorer: nil,
+                              balanceAfterNear: nil, reason: "today's cap of 0.1 Ⓝ is reached")
+        #expect(refused.bubble.hasPrefix("Didn't pay: today's cap"))
+    }
+
+    @Test func replyWithoutAWalletStillDecodes() throws {
+        let r = try MemoryClient.decodePolish(data: ClientTests().fixture(), status: 200)
+        #expect(r.receipt == nil)
     }
 }

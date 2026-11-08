@@ -1,0 +1,11 @@
+{
+ "pub": "ed25519:FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF",
+ "tx": "1b00000066726f67672e73796c766572737572666572722e746573746e65740003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8cb04fb711f0100001500000073796c766572737572666572722e746573746e6574fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e001000000030000f0cda884ae505100000000000000",
+ "sig": "fd672f8ba620437eba7c08c5b01c6dcb5aa3a116095c9e2173ba6e6e77ac7c897e7c4d2d5d653a1f4e88bc33206ecd5470a381c203d4c5c89031e008ebf1dd05",
+ "_about": "near-api-js (@near-js/transactions 2.x) encoding of a Transfer signed with the dummy seed bytes(0..31); generated 2026-11-08",
+ "signer": "frogg.sylversurferr.testnet",
+ "receiver": "sylversurferr.testnet",
+ "nonce": 1234567890123,
+ "deposit_yocto": "1500000000000000000000",
+ "block_hash_hex": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0"
+}

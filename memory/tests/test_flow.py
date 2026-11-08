@@ -71,12 +71,12 @@ class FakeNear:
         return httpx.Response(404)
 
 
-def make(tmp_path, fake, api_key="sk-test"):
+def make(tmp_path, fake, api_key="sk-test", wallet=None):
     http = httpx.Client(transport=httpx.MockTransport(fake.handler))
     client = NearAIClient(api_key, "https://cloud-api.near.ai/v1", http=http, quote_verifier=FakeQuoteVerifier(),
                           gpu_verifier=FakeGpuVerifier(), sleep=lambda s: None)
-    store = Store(tmp_path)
-    app = create_app(store, client, TOKEN, MODEL)
+    store = wallet.store if wallet else Store(tmp_path)
+    app = create_app(store, client, TOKEN, MODEL, wallet)
     return TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}), store
 
 

@@ -259,14 +259,15 @@ final class AppController: NSObject, NSApplicationDelegate {
                 let r = try await client.polish(sel.text, instruction: ins.prompt)
                 let v = r.verification
                 show(v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed", for: 4)
-                say(v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge, for: 4)
+                let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
+                say(r.receipt.map { verdict + "\n" + $0.bubble } ?? verdict, for: 5)
                 showResult(.result(r, instruction: ins.title, app: sel.app))
             } catch {
                 let e = (error as? MemoryError) ?? .upstream(error.localizedDescription)
                 show("emotion_annoyed", for: 5)
                 say(e.bubble, for: 6)
                 switch e {
-                case .attestationFailed, .serviceDown, .noApiKey, .noCredits: showResult(.error(e, app: sel.app))
+                case .attestationFailed, .serviceDown, .noApiKey, .noCredits, .outOfAllowance: showResult(.error(e, app: sel.app))
                 default: break
                 }
             }

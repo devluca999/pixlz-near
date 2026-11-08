@@ -67,6 +67,7 @@ public struct MemoryClient: Sendable {
         case (401, _): throw .badToken
         case (409, _): throw .attestationFailed(msg, e?.verification)
         case (412, _): throw .noApiKey(msg)
+        case (402, "frogg_out_of_allowance"): throw .outOfAllowance(msg)
         case (402, _): throw .noCredits(msg)
         case (400, "not_private"): throw .notPrivate(msg)
         default: throw .upstream(msg)

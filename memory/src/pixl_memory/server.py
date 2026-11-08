@@ -7,12 +7,13 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import polish
 from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, UpstreamError
 from .store import Store
+from .wallet import Wallet
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 
@@ -34,7 +35,8 @@ class StatusIn(BaseModel):
     status: str
 
 
-def create_app(store: Store, client: NearAIClient, token: str, default_model: str) -> FastAPI:
+def create_app(store: Store, client: NearAIClient, token: str, default_model: str,
+               wallet: Wallet | None = None) -> FastAPI:
     app = FastAPI(title="Pixl Memory", version="0.1.0", docs_url=None, redoc_url=None)
     app.add_middleware(
         CORSMiddleware,
@@ -102,6 +104,8 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
     @app.post("/polish", dependencies=guarded)
     def do_polish(p: PolishIn) -> JSONResponse:
         model = p.model or default_model
+        if wallet and (why := wallet.blocked()):
+            return JSONResponse({"error": "frogg_out_of_allowance", "message": why}, status_code=402)
         try:
             comp = client.chat(polish.messages(p.text, p.instruction), model, temperature=0.3, max_tokens=4096)
         except NoApiKey as e:
@@ -123,7 +127,15 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         draft = store.add_draft(model=comp.model, chat_id=comp.chat_id, source=p.text,
                                 instruction=p.instruction or polish.DEFAULT_INSTRUCTION,
                                 suggestion=suggestion, verification=verification)
+        receipt = None
+        if wallet:
+            # Frogg pays for its own inference, after the result is safely stored.
+            cost = client.request_cost_nano_usd(comp.inference_id) if comp.inference_id else None
+            receipt = wallet.pay(cost, {"draft_id": draft.id, "model": comp.model, "verdict": verification["verdict"],
+                                        "inference_id": comp.inference_id})
+            store.set_draft_receipt(draft.id, receipt)
         return JSONResponse({
+            "receipt": receipt,
             "draft_id": draft.id,
             "suggestion": suggestion,
             "diff": ops,
@@ -132,6 +144,29 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             "usage": comp.usage,
             "inference_id": comp.inference_id,
         })
+
+    # -- Frogg's wallet --
+
+    @app.get("/wallet", dependencies=guarded)
+    def wallet_status() -> dict[str, Any]:
+        return wallet.status() if wallet else {"configured": False,
+                                               "setup": "set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env"}
+
+    @app.get("/wallet/payments", dependencies=guarded)
+    def wallet_payments(limit: int = 20) -> dict[str, Any]:
+        return {"payments": store.list_payments(min(max(limit, 1), 200))}
+
+    @app.get("/wallet/setup", response_class=HTMLResponse)
+    def wallet_setup() -> HTMLResponse:
+        # No token: the page shows only public names and Frogg's public key, and is
+        # served to localhost only (host guard). The owner signs in Meteor, not here.
+        if not wallet:
+            return HTMLResponse("<p>Set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env, then restart.</p>", 503)
+        from .setup_page import render
+
+        key = wallet.key()
+        return HTMLResponse(render(wallet.cfg, key.public_key if key else None),
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
     # -- drafts --
 

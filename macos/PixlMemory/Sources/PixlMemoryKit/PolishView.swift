@@ -77,6 +77,20 @@ public final class PolishView: NSView {
                                             title: title(for: instruction), subtitle: [app, v.model].compactMap { $0 }.joined(separator: " · ")))
             stack.addArrangedSubview(VerdictBadge(verification: v))
             stack.addArrangedSubview(wrapping(v.summary, font: .systemFont(ofSize: 12), color: Theme.muted))
+            if let rc = r.receipt {
+                let line = rc.status == "paid"
+                    ? "🐸 Frogg paid \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?") from its own testnet wallet"
+                        + (rc.balanceAfterNear.map { " · \($0) Ⓝ left" } ?? "")
+                    : "🐸 " + rc.bubble
+                let f = wrapping(line, font: Theme.mono(11, .bold), color: rc.status == "paid" ? Theme.ink : Theme.partial)
+                if let link = rc.explorer, let url = URL(string: link) {
+                    let a = NSMutableAttributedString(attributedString: f.attributedStringValue)
+                    a.append(NSAttributedString(string: "  receipt ↗", attributes: [.link: url, .font: Theme.mono(11, .bold)]))
+                    f.attributedStringValue = a
+                    f.allowsEditingTextAttributes = true
+                }
+                stack.addArrangedSubview(f)
+            }
             let stats = DiffText.stats(r.diff)
             stack.addArrangedSubview(caption("CHANGES  +\(stats.added) −\(stats.removed) words"))
             let diff = wrapping("", font: .systemFont(ofSize: 13), color: Theme.ink)

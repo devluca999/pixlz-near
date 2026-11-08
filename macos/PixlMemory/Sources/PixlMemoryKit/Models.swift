@@ -45,14 +45,50 @@ public struct DiffOp: Codable, Sendable, Equatable {
     public init(op: Kind, text: String) { self.op = op; self.text = text }
 }
 
+/// What Frogg paid for this request from its own testnet account (memory/wallet.py).
+public struct Receipt: Codable, Sendable, Equatable {
+    public let status: String  // paid | refused | failed
+    public let amountNear: String?
+    public let to: String?
+    public let txHash: String?
+    public let explorer: String?
+    public let balanceAfterNear: String?
+    public let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, to, explorer, reason
+        case amountNear = "amount_near"
+        case txHash = "tx_hash"
+        case balanceAfterNear = "balance_after_near"
+    }
+
+    public init(status: String, amountNear: String?, to: String?, txHash: String?, explorer: String?,
+                balanceAfterNear: String?, reason: String?) {
+        self.status = status; self.amountNear = amountNear; self.to = to; self.txHash = txHash
+        self.explorer = explorer; self.balanceAfterNear = balanceAfterNear; self.reason = reason
+    }
+
+    /// One line for Frogg's thought bubble.
+    public var bubble: String {
+        switch status {
+        case "paid":
+            let left = balanceAfterNear.map { " · \($0) Ⓝ left" } ?? ""
+            return "Paid \(amountNear ?? "?") Ⓝ\(left)"
+        case "refused": return "Didn't pay: \(reason ?? "cap reached")"
+        default: return "Payment failed"
+        }
+    }
+}
+
 public struct PolishResult: Codable, Sendable, Equatable {
     public let draftId: String
     public let suggestion: String
     public let diff: [DiffOp]
     public let verification: Verification
+    public let receipt: Receipt?
 
     enum CodingKeys: String, CodingKey {
-        case suggestion, diff, verification
+        case suggestion, diff, verification, receipt
         case draftId = "draft_id"
     }
 }
@@ -66,6 +102,7 @@ public enum MemoryError: Error, Equatable, Sendable {
     case noCredits(String)
     case notPrivate(String)
     case attestationFailed(String, Verification?)
+    case outOfAllowance(String)
     case upstream(String)
 
     public var bubble: String {
@@ -77,6 +114,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .noCredits: "NEAR AI is out of credits"
         case .notPrivate: "That model isn't in a TEE. Refused."
         case .attestationFailed: "Enclave failed checks. Not sent."
+        case .outOfAllowance: "I'm out of allowance for today"
         case .upstream: "NEAR AI hiccup. Try again?"
         }
     }
@@ -87,6 +125,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .noToken: "~/Library/Application Support/PixlMemory/token doesn't exist yet."
         case .badToken: "The service rejected the token."
         case .noApiKey(let m), .noCredits(let m), .notPrivate(let m), .upstream(let m): m
+        case .outOfAllowance(let m): m + " Your text was not sent. Top up Frogg or wait until tomorrow (UTC)."
         case .attestationFailed(let m, _): m + " Your text was not sent."
         }
     }

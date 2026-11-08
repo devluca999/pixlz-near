@@ -54,7 +54,7 @@ Full details: [`memory/README.md`](memory/README.md).
 | Part | Status |
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
-| Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | next (account names and checks in place, 8 tests) |
+| Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
 | `macos/PixlMemory/`: overlay app: Frogg perches on the active window; click → polish → diff → drag the result into your text | built, 16 tests; `scripts/build-mac-app.sh --open` |
 | `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
@@ -86,7 +86,18 @@ Both keep your main funds untouchable. The sub-account does it with far less cod
 - The Agent API's server-side policy engine is the stronger tool for an agent that holds large balances. It is the upgrade path if Frogg ever does.
 - A smaller step is to deploy a tiny policy contract on Frogg's account and give the app only a function-call key for its `pay_inference` method. NEAR function-call keys can't transfer NEAR or add keys, so a stolen key could then only pay the fixed payee within per-call and daily limits. We list that as optional hardening, not part of the first build.
 
-Testnet first. No account is created or funded without the owner's go-ahead.
+**How it's built** (`memory/src/pixl_memory/near.py`, `wallet.py`):
+- **Signing.** Frogg's ed25519 key is generated on the Mac (`pixl-memory wallet init`) and stored in `~/Library/Application Support/PixlMemory/frogg_key.json` (0600). Transactions are signed in about 100 lines of Python, checked byte-for-byte against `near-api-js` in the tests.
+- **Before every payment,** in order: the per-request cap, the per-day cap, the payee allowlist and the reserve. Only then is anything signed. A polish is refused up front once the daily cap is reached, so your text isn't sent if Frogg can't pay.
+- **What's on chain is a plain NEAR transfer:** sender, receiver, amount and time. No text, model or verdict is attached. The full receipt is stored only in the local encrypted database.
+
+**Owner setup** (testnet only; the owner never shares a recovery phrase or key):
+1. Fund `sylversurferr.testnet` with testnet NEAR from the faucet: https://docs.near.org/getting-started/faucet
+2. `cd memory && uv run pixl-memory wallet init`. This creates Frogg's key and prints its public half.
+3. With `make -C memory serve` running, open http://127.0.0.1:7341/wallet/setup, click **Connect Meteor**, then **Create Frogg**. Meteor shows one transaction from `sylversurferr.testnet` to `frogg.sylversurferr.testnet` with three actions: Create account, Transfer (1 NEAR), Add key (Frogg's public key). Approve it.
+4. `uv run pixl-memory wallet status` should end with READY.
+
+Testnet only: the config refuses mainnet RPCs and anything but `frogg.<owner>.testnet`.
 
 ## Keys and secrets
 
@@ -136,6 +147,8 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 **Baseline:** Swift 6, Swift Package Manager, no third-party Swift packages.
 
 **`extension/`:** no libraries, no build step (plain JavaScript modules; tests use Node's built-in `node --test`).
+
+**Wallet:** no new Python libraries: ed25519 comes from `cryptography`, and Borsh and base58 are written in `near.py`. The setup page loads [`@near-wallet-selector/core` and `meteor-wallet`](https://github.com/near/wallet-selector) 10.1.4 and `@near-js/transactions` / `@near-js/crypto` 2.5.1 from esm.sh. The encoding test vector was generated with `@near-js/transactions` 2.x.
 
 **`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. Frogg's frames are exported from the baseline Claude Design engine (`design/explorations/c3`) by `scripts/render-frogg.mjs` and embedded as text: no PNGs.
 

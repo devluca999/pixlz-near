@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-i", "--instruction")
     p.add_argument("--model")
     p.add_argument("--json", action="store_true")
+    w = sub.add_parser("wallet", help="Frogg's testnet wallet: init | status | payments")
+    w.add_argument("action", choices=["init", "status", "payments"])
     sub.add_parser("token", help="print the token clients use to call the local API")
     sub.add_parser("models", help="list models served from NEAR AI's own TEEs")
     args = ap.parse_args(argv)
@@ -49,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "token":
         print(cfg.token())
         return 0
+
+    if args.cmd == "wallet":
+        return wallet_cmd(cfg, args.action)
 
     client = NearAIClient(cfg.api_key, cfg.base_url)
     try:
@@ -93,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
             from .store import Store
 
             token = cfg.token()
-            app = create_app(Store(cfg.data_dir), client, token, cfg.model)
+            store = Store(cfg.data_dir)
+            wallet = make_wallet(cfg, store)
+            app = create_app(store, client, token, cfg.model, wallet)
+            if wallet:
+                print(f"Frogg's wallet: {wallet.cfg.frogg} → pays {wallet.policy.payee} (testnet)")
             print(f"Pixl Memory on http://{cfg.host}:{args.port or cfg.port}  data: {cfg.data_dir}")
             print(f"API key: {'set' if cfg.api_key else 'NOT SET (polish disabled; attest works)'}")
             uvicorn.run(app, host=cfg.host, port=args.port or cfg.port, log_level="warning")
@@ -101,6 +110,48 @@ def main(argv: list[str] | None = None) -> int:
     except NearAIError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    return 0
+
+
+def make_wallet(cfg: Config, store):
+    from .config import WalletConfig
+    from .wallet import Wallet
+
+    w = WalletConfig.from_env()
+    return Wallet(w, cfg.data_dir, store) if w else None
+
+
+def wallet_cmd(cfg: Config, action: str) -> int:
+    from .config import WalletConfigError
+    from .store import Store
+
+    try:
+        wallet = make_wallet(cfg, Store(cfg.data_dir))
+    except WalletConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    if wallet is None:
+        print("Set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env (see .env.example).", file=sys.stderr)
+        return 1
+    if action == "init":
+        existed = wallet.key() is not None
+        key = wallet.init_key()
+        print(f"{'Frogg already has a key' if existed else 'Created Frogg’s key'} (private half: {wallet.key_path}, mode 0600)")
+        print(f"\n  Frogg's account  {wallet.cfg.frogg}\n  public key       {key.public_key}\n")
+        print("Next, with the service running (make -C memory serve), open:\n")
+        print(f"  http://127.0.0.1:{cfg.port}/wallet/setup\n")
+        print(f"and approve one transaction from {wallet.cfg.parent} in Meteor.")
+        return 0
+    if action == "status":
+        s = wallet.status()
+        for k in ["network", "account", "parent", "payee", "public_key", "balance_near", "spendable_near",
+                  "spent_today_near", "caps", "explorer", "setup"]:
+            if s.get(k) is not None:
+                print(f"  {k:<17} {s[k]}")
+        print("\n  READY: Frogg pays for its own inference." if s["ready"] else "\n  not ready yet")
+        return 0 if s["ready"] else 1
+    for p in wallet.store.list_payments(20):
+        print(f"  {p['status']:<8} {p.get('amount_near', '?'):>10} Ⓝ  {p.get('explorer') or p.get('reason', '')}")
     return 0
 
 
