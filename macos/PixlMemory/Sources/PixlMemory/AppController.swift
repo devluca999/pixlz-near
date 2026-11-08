@@ -39,7 +39,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let watcher = WindowWatcher()
     var frogg: FroggView!
     var froggPanel: OverlayPanel!
-    let bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
+    var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
     lazy var menu = BubbleMenu(app: self)
     let ui = PixlData.ui
@@ -159,6 +159,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func windowChanged(_ change: WindowWatcher.Change) {
         if change == .switched {
+            if AX.trusted { AX.enableWebAccessibility(for: NSWorkspace.shared.frontmostApplication) }
             userPlaced = false
             nudgeIfDistracting()
             // First sign of a Space switch: the app that just became active has no window on
@@ -246,10 +247,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         spaceTransition = true   // ignore watcher changes until the new perch is computed
         closeMenus()
         let gen = visGen
-        // let the watcher attach to the new frontmost window before asking where to perch
-        later(0.08) { [weak self] in
-            guard let self else { return }
+        // let the watcher attach to the new frontmost window before asking where to perch;
+        // a window that's still appearing gets up to 0.4 s, so Frogg doesn't hop to the
+        // ground first and then up to the window
+        func perchWhenReady(_ tries: Int) {
             self.watcher.attachToFrontmost()
+            if tries > 0, self.settings.perchOnWindows, self.focusUntil == nil, self.watcher.activeWindowFrame == nil {
+                self.later(0.1) { perchWhenReady(tries - 1) }
+                return
+            }
+            settle()
+        }
+        later(0.08) { perchWhenReady(4) }
+        func settle() {
             let spot = self.target()
             Debug.log("space: perch computed \(spot.map { "(\(Int($0.foot.x)),\(Int($0.foot.y)))" } ?? "none")")
             self.spaceTransition = false
@@ -673,13 +683,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var pendingSelection: (text: String, app: String?)? { didSet { if pendingSelection == nil { selectionPID = nil } } }
     var selectionPID: pid_t?
     var polishedText: String?
+    var selectionElement: AXUIElement?
+    var polishedElement: AXUIElement?
 
     @discardableResult
     func readSelection() -> String? {
         let front = NSWorkspace.shared.frontmostApplication
+        if AX.trusted, AX.enableWebAccessibility(for: front) {
+            Debug.log("web accessibility switched on for \(front?.localizedName ?? "?")")
+            Thread.sleep(forTimeInterval: 0.25)  // first time only: let the browser build its tree
+        }
         let text = AX.trusted ? AX.selectedText(pid: front?.processIdentifier ?? 0) : nil
         pendingSelection = text.map { ($0, front?.localizedName) }
         selectionPID = text == nil ? nil : front?.processIdentifier
+        selectionElement = text == nil ? nil : front.flatMap { AX.focusedElement(pid: $0.processIdentifier) }
         Debug.log("selection read from \(front?.localizedName ?? "?"): \(text.map { "\($0.count) chars" } ?? "none")")
         return text
     }
@@ -710,6 +727,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let sel = pendingSelection, instructions.indices.contains(index) else { return }
         let ins = instructions[index]
         polishedText = sel.text
+        polishedElement = selectionElement
         busy = true
         resultPanel?.orderOut(nil)
         show("emotion_curious", for: 600)
@@ -758,8 +776,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         view.onReplace = { [weak self, weak panel] r in
             guard let self else { return }
-            if let pid = self.selectionPID, let original = self.polishedText,
-               AX.replaceSelection(pid: pid, original: original, with: r.suggestion) {
+            let element = self.polishedElement ?? self.selectionPID.flatMap { AX.focusedElement(pid: $0) }
+            if let element, let original = self.polishedText, AX.replace(in: element, original: original, with: r.suggestion) {
                 Debug.log("replace: written via AX")
                 panel?.orderOut(nil)
                 self.show("emotion_happy", for: 3)
@@ -884,8 +902,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("say \"\(text.prefix(40))\" hidden=\(userHidden) fullscreenHidden=\(fullscreenHidden)")
         guard !userHidden, !fullscreenHidden else { return }
         let bubble = BubbleView(text: text, look: menu.labelLook)
-        bubblePanel.contentView = bubble
-        bubblePanel.setContentSize(bubble.frame.size)
+        // a fresh window for each bubble: Liquid Glass didn't render when a reused window's
+        // content view was swapped (only the tail showed)
+        let old = bubblePanel
+        let panel = OverlayPanel(size: bubble.frame.size)
+        panel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
+        panel.contentView = bubble
+        bubblePanel = panel
+        if old.isVisible { old.orderOut(nil) }
         bubblePanel.alphaValue = 1
         positionBubble()
         bubblePanel.orderFrontRegardless()

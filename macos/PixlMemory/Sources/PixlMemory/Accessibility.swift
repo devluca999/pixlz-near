@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import PixlMemoryKit
 
 /// Read-only Accessibility access: the active window's frame and the selected text.
 /// Never moves windows, never sends keys or clicks (SPEC R4).
@@ -80,20 +81,82 @@ enum AX {
         return list.contains { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
     }
 
-    /// Replaces the selection in `pid`'s focused text element with `text`, only if that selection
-    /// is still `original` (the user may have moved on). Uses AX, never keystrokes.
-    static func replaceSelection(pid: pid_t, original: String, with text: String) -> Bool {
-        guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return false }
-        let current: String? = attr(focused, kAXSelectedTextAttribute)
-        guard current == original else { return false }
+    /// The focused element of `pid` (the text field holding the selection).
+    static func focusedElement(pid: pid_t) -> AXUIElement? { attr(app(pid), kAXFocusedUIElementAttribute) }
+
+    /// Writes `text` over `original` in `element`, through AX (never keystrokes):
+    /// - if the selection is still `original`, replace it;
+    /// - else, if `original` appears exactly once in the field, select it again and replace it
+    ///   (browsers often collapse the selection when focus moves to another window).
+    /// Returns false if neither is safe, so the caller can fall back to copying.
+    static func replace(in element: AXUIElement, original: String, with text: String) -> Bool {
         var settable: DarwinBoolean = false
-        guard AXUIElementIsAttributeSettable(focused, kAXSelectedTextAttribute as CFString, &settable) == .success, settable.boolValue,
-              AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+        guard AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable) == .success, settable.boolValue
         else { return false }
-        // some apps report success but ignore the write: confirm the text changed
-        let after: String? = attr(focused, kAXSelectedTextAttribute)
-        let value: String? = attr(focused, kAXValueAttribute)
-        return after == text || after == "" || (value?.contains(text) ?? false)
+        let current: String? = attr(element, kAXSelectedTextAttribute)
+        if current != original {
+            guard let value: String = attr(element, kAXValueAttribute) else { return false }
+            let ns = value as NSString
+            let r = ns.range(of: original)
+            guard r.location != NSNotFound,
+                  ns.range(of: original, range: NSRange(location: r.location + 1, length: ns.length - r.location - 1)).location == NSNotFound
+            else { return false }  // missing or ambiguous: don't guess
+            var cf = CFRange(location: r.location, length: r.length)
+            guard let v = AXValueCreate(.cfRange, &cf),
+                  AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, v) == .success,
+                  (attr(element, kAXSelectedTextAttribute) as String?) == original
+            else { return false }
+        }
+        let before: String? = attr(element, kAXValueAttribute)
+        if AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success {
+            // some apps report success but ignore the write (or apply it a beat later): confirm
+            for _ in 0..<6 {
+                let value: String? = attr(element, kAXValueAttribute)
+                if value != before, value?.contains(text) == true { return true }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        // Chromium ignores selected-text writes in web fields but accepts a value write: swap
+        // just the original (it must appear exactly once), then select the new text.
+        guard let value = before else { return false }
+        let ns = value as NSString
+        let r = ns.range(of: original)
+        guard r.location != NSNotFound,
+              ns.range(of: original, range: NSRange(location: r.location + 1, length: ns.length - r.location - 1)).location == NSNotFound
+        else { return false }
+        var settableValue: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settableValue) == .success, settableValue.boolValue,
+              AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, ns.replacingCharacters(in: r, with: text) as CFString) == .success
+        else { return false }
+        for _ in 0..<6 {
+            if (attr(element, kAXValueAttribute) as String?)?.contains(text) == true {
+                var sel = CFRange(location: r.location, length: (text as NSString).length)
+                if let v = AXValueCreate(.cfRange, &sel) { AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, v) }
+                Debug.log("replace: selected-text write ignored, value written instead")
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return false
+    }
+
+    /// Chromium browsers build the accessibility tree for web pages only when an assistive app
+    /// asks (AXEnhancedUserInterface). Without it a textarea's selection can't be read. Only for
+    /// these browsers: in other apps the flag can disturb window animations.
+    static let chromium: Set<String> = ["com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
+                                        "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser",
+                                        "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.chromium.Chromium"]
+    nonisolated(unsafe) static var webEnabled: Set<pid_t> = []
+
+    /// Returns true when the tree was just switched on (the caller may need to wait a moment).
+    @discardableResult
+    static func enableWebAccessibility(for app: NSRunningApplication?) -> Bool {
+        guard let app, let id = app.bundleIdentifier, chromium.contains(id), !webEnabled.contains(app.processIdentifier) else { return false }
+        let el = Self.app(app.processIdentifier)
+        AXUIElementSetAttributeValue(el, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(el, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        webEnabled.insert(app.processIdentifier)
+        return true
     }
 
     /// The selected text in the frontmost app, if it exposes one.

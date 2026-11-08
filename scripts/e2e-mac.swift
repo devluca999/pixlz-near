@@ -7,6 +7,10 @@
 //     --live    send real Polish requests (NEAR AI TEE; costs a little)
 //     --spaces  switch Spaces with ⌃→ / ⌃← (needs two desktops)
 //     --chrome  also polish in a Chrome textarea
+//     --pet <name>  label for the screenshot folder (build/e2e/<name>/)
+//
+// Screenshots: cropped to the Pixl and its panels (never the whole screen), in build/e2e/<pet>/
+// (git-ignored: they show bits of your desktop).
 //
 // Needs Accessibility for the terminal running it. Moves your mouse: don't touch it meanwhile.
 
@@ -15,6 +19,9 @@ import ApplicationServices
 
 let args = Set(CommandLine.arguments.dropFirst())
 let live = args.contains("--live"), spaces = args.contains("--spaces"), chrome = args.contains("--chrome")
+let extraEnv = CommandLine.arguments.firstIndex(of: "--env").map { CommandLine.arguments[$0 + 1] }
+let fsProbe = args.contains("--fs-probe")
+let pet = CommandLine.arguments.firstIndex(of: "--pet").map { CommandLine.arguments[$0 + 1] } ?? "frogg"
 let home = FileManager.default.homeDirectoryForCurrentUser
 let logURL = home.appending(path: "Library/Logs/PixlMemory/debug.log")
 let stateURL = home.appending(path: "Library/Logs/PixlMemory/state.json")
@@ -74,6 +81,27 @@ func waitState(timeout: Double = 3, _ ok: ([String: Any]) -> Bool) -> [String: A
     let end = Date().addingTimeInterval(timeout)
     while Date() < end { let s = state(); if ok(s) { return s }; sleep(0.1) }
     return nil
+}
+
+// MARK: screenshots (cropped to the Pixl and its panels)
+
+let shotDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "build/e2e/\(pet)")
+try? FileManager.default.createDirectory(at: shotDir, withIntermediateDirectories: true)
+var shotCount = 0
+func rect(_ f: [String: Any]) -> CGRect {
+    CGRect(x: f["x"] as? Double ?? 0, y: f["y"] as? Double ?? 0, width: f["w"] as? Double ?? 0, height: f["h"] as? Double ?? 0)
+}
+func shot(_ name: String, panels: [String] = ["bubbles", "list", "card", "result", "mini"], extra: CGRect? = nil) {
+    let s = state()
+    var r = rect(dict(frogg(s)["box"]))
+    for p in panels { if let f = dict(s[p])["frame"] as? [String: Any] { r = r.union(rect(f)) } }
+    if let extra { r = r.union(extra) }
+    r = r.insetBy(dx: -36, dy: -36).integral
+    shotCount += 1
+    let file = shotDir.appending(path: String(format: "%02d-%@.png", shotCount, name)).path
+    let p = Process(); p.launchPath = "/usr/sbin/screencapture"
+    p.arguments = ["-x", "-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))", file]
+    try? p.run(); p.waitUntilExit()
 }
 
 // MARK: input
@@ -173,11 +201,37 @@ let pk = Process(); pk.launchPath = "/usr/bin/pkill"; pk.arguments = ["-x", "Pix
 sleep(0.6)
 try? FileManager.default.removeItem(at: logURL)
 logMark = 0
-let op = Process(); op.launchPath = "/usr/bin/open"; op.arguments = ["--env", "PIXL_DEBUG=1", appPath]; try? op.run(); op.waitUntilExit()
+let op = Process(); op.launchPath = "/usr/bin/open"; op.arguments = ["--env", "PIXL_DEBUG=1"] + (extraEnv.map { ["--env", $0] } ?? []) + [appPath]; try? op.run(); op.waitUntilExit()
 let launched = waitLog("launch pid", timeout: 8)
 sleep(2.0)
 var s = state()
 record("Fresh launch with PIXL_DEBUG=1", launched && (frogg(s)["visible"] as? Bool ?? false), "log: \(launched ? "launch seen" : "no launch line")")
+
+// Probe: three quick pokes make Frogg say something; capture the speech bubble.
+if args.contains("--say-probe") {
+    _ = front("TextEdit", bundle: "com.apple.TextEdit"); sleep(1.5)
+    let s0 = state(); let p = belly(s0)
+    for _ in 0..<3 { click(p); sleep(0.5) }
+    sleep(0.4)
+    let s1 = state()
+    print("speech: \(s1["speech"] ?? "nil")")
+    shot("say-probe", panels: [], extra: rect(dict(frogg(s1)["box"])).offsetBy(dx: 0, dy: -160).insetBy(dx: -120, dy: 0))
+    exit(0)
+}
+
+// Probe: does opening the bubbles over a full-screen app switch Spaces?
+if fsProbe {
+    _ = front("Google Chrome", bundle: "com.google.Chrome")
+    sleep(2.5)
+    markLog()
+    rightClick(belly(state()))
+    sleep(2.5)
+    let log = logSince()
+    let changes = log.components(separatedBy: "space: change seen").count - 1
+    print("env \(extraEnv ?? "-"): opened=\(log.contains("bubbles open")) spaceChanges=\(changes) key=\(!log.contains("not taking key"))")
+    key(K.esc); sleep(0.3); click(belly(state())); sleep(0.5)
+    exit(0)
+}
 
 // TextEdit document (also the safe place to click away)
 markLog()
@@ -191,10 +245,23 @@ let teArea = tePID.flatMap { p -> AXUIElement? in
     guard let w: AXUIElement = ax(app, kAXFocusedWindowAttribute) else { return nil }
     return find(w, role: kAXTextAreaRole)
 }
+if let tePID, let w: AXUIElement = ax(AXUIElementCreateApplication(tePID), kAXFocusedWindowAttribute) {
+    // a window in the middle of the screen, with room above it: Frogg perches on its top edge
+    var pos = CGPoint(x: 260, y: 300), size = CGSize(width: 760, height: 420)
+    markLog()
+    AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &pos)!)
+    AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
+}
 let teFrame = teArea.flatMap(frameOf)
-let hopped = waitLog("landing at", timeout: 3) || waitLog("route legs", timeout: 0.5)
-s = state()
-record("Window hop: Frogg follows to the TextEdit window", hopped, hopped ? "route + landing in log" : "no hop logged (may already have been there)")
+let teWindowTop: Double = {
+    guard let tePID, let w: AXUIElement = ax(AXUIElementCreateApplication(tePID), kAXFocusedWindowAttribute), let f = frameOf(w) else { return 300 }
+    return f.minY
+}()
+let hopped = waitLog("landing at", timeout: 4)
+s = waitState(timeout: 5) { !(frogg($0)["moving"] as? Bool ?? true) } ?? state()
+let footY = dict(frogg(s)["foot"])["y"] as? Double ?? 0
+record("Window hop: Frogg perches on the TextEdit window", abs(footY - teWindowTop) <= 4, "feet at y \(Int(footY)), window top \(Int(teWindowTop)); \(hopped ? "hopped there" : "rode along as the window moved")")
+shot("perched-on-textedit")
 let safe = teFrame.map { CGPoint(x: $0.midX, y: $0.maxY - 30) } ?? CGPoint(x: 400, y: 400)
 
 // 1. poke
@@ -211,6 +278,7 @@ markLog(); s = state()
 click(belly(s), clicks: 2)
 let dbl = waitState { ($0["menuOpen"] as? Bool ?? false) && controls($0, "bubbles").count >= 4 }
 let labels = dbl.map { controls($0, "bubbles").compactMap { $0["label"] as? String } } ?? []
+if dbl != nil { sleep(0.4); shot("bubbles-open") }
 record("Double-click opens the bubbles", dbl != nil && waitLog("bubbles open via double-click", timeout: 0.5), labels.joined(separator: " · "))
 key(K.right); sleep(0.2)
 key(K.esc)
@@ -242,17 +310,20 @@ func teText() -> String { teArea.flatMap { ax($0, kAXValueAttribute) as String? 
 if let teArea {
     markLog()
     let listOK = openPolishList(teArea)
+    if listOK { shot("polish-list", extra: teFrame) }
     record("Polish with a selection: slot 1 is Polish, list opens", listOK)
     if live, listOK, let row = control(state(), "list", "Polish this") ?? controls(state(), "list").first {
         click(center(row))
         let result = waitState(timeout: 60) { control($0, "result", "Replace") != nil || control($0, "result", "OK") != nil }
         let verdict = logSince().contains("Verified") || (result.map { controls($0, "result").contains { ($0["label"] as? String ?? "").contains("checks") } } ?? false)
+        if result != nil { shot("polish-result", extra: teFrame) }
         record("Polish result with diff and verification", result.flatMap { control($0, "result", "Replace") } != nil, verdict ? "verified badge" : "see log")
         if let r = result, let rep = control(r, "result", "Replace") {
             let before = teText()
             click(center(rep))
             sleep(0.6)
             let after = teText()
+            shot("after-replace", panels: [], extra: teFrame)
             record("Replace writes the suggestion into TextEdit", after != before && waitLog("replace: written via AX", timeout: 1), "“\(after.prefix(60))”")
         }
         // drag-to-apply: fresh text, polish again, drag the suggestion card onto the text
@@ -293,6 +364,7 @@ record("Without a selection slot 1 is Ask", askFirst != nil)
 if let st = askFirst, let ask = control(st, "bubbles", "Ask") {
     click(center(ask))
     let card = waitState { control($0, "card", "Question") != nil }
+    if card != nil { shot("ask-card") }
     record("Ask card opens with a question field", card != nil)
     key(K.esc); sleep(0.3)
 }
@@ -307,6 +379,7 @@ func openSlot(_ name: String) -> [String: Any]? {
 }
 markLog()
 let mem = openSlot("Memory")
+if mem != nil { shot("memory-card") }
 record("Memory card opens", mem != nil && waitLog("card open memory", timeout: 1), mem.map { "\(controls($0, "card").filter { ($0["role"] as? String) == "AXLink" }.count) highlights" } ?? "")
 key(K.esc); sleep(0.3)
 
@@ -314,6 +387,7 @@ key(K.esc); sleep(0.3)
 markLog()
 let wal = openSlot("Wallet")
 let walletLabels = wal.map { controls($0, "card").compactMap { $0["label"] as? String } } ?? []
+if wal != nil { shot("wallet-card") }
 record("Wallet card opens", wal != nil, walletLabels.joined(separator: " · "))
 key(K.esc); sleep(0.3)
 
@@ -323,8 +397,10 @@ if let more = openSlot("More") ?? waitState(timeout: 2, { controls($0, "list").c
     _ = more
 }
 if let st = waitState(timeout: 2, { control($0, "list", "Pixl settings") != nil }), let row = control(st, "list", "Pixl settings") {
+    sleep(0.3); shot("more-list")
     click(center(row))
     let mini = waitState { $0["mini"] is [String: Any] }
+    if mini != nil { sleep(0.3); shot("settings") }
     record("More ▸ Pixl settings opens the mini menu", mini != nil)
     if let mini, let three = control(mini, "mini", "3×") ?? control(mini, "mini", "3x") {
         let before = frogg(state())["scale"] as? Int ?? 0
@@ -364,17 +440,22 @@ record("Grab and throw, lands and settles", thrown && settled)
 // 11. Chrome textarea polish (optional)
 if chrome {
     _ = front("Google Chrome", bundle: "com.google.Chrome")
-    osa(#"tell application "Google Chrome" to open location "data:text/html,<title>Pixl e2e</title><textarea id=t style='width:500px;height:120px'>me and him is going to the meting tomorow</textarea>""#)
+    // a new tab in Chrome's current window (not a new window on another Space)
+    osa(#"tell application "Google Chrome" to tell window 1 to make new tab with properties {URL:"data:text/html,<title>Pixl e2e</title><textarea id=t style='width:500px;height:120px'>me and him is going to the meting tomorow</textarea>"}"#)
     sleep(2.0)
+    _ = front("Google Chrome", bundle: "com.google.Chrome")
+    _ = waitState(timeout: 4) { !(frogg($0)["moving"] as? Bool ?? true) }
     if let cp = pid("com.google.Chrome") {
         let app = AXUIElementCreateApplication(cp)
-        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        sleep(0.8)
+        // the app switches Chrome's web accessibility on when Chrome becomes active
+        let webOn = waitLog("web accessibility switched on", timeout: 3) || logSince().isEmpty == false
+        sleep(1.0)
         let w: AXUIElement? = ax(app, kAXFocusedWindowAttribute)
         let area = w.flatMap { find($0, role: kAXTextAreaRole) }
         markLog()
         let ok = openPolishList(area, bundle: "com.google.Chrome", app: "Google Chrome")
-        record("Chrome: selection read, Polish offered", ok && area != nil)
+        record("Chrome: selection read, Polish offered", ok && area != nil, webOn ? "app switched on Chrome's web accessibility" : "")
+        if ok { shot("chrome-polish-list") }
         if live, ok, let row = controls(state(), "list").first {
             click(center(row))
             if let r = waitState(timeout: 60, { control($0, "result", "Replace") != nil }), let rep = control(r, "result", "Replace") {
@@ -382,6 +463,7 @@ if chrome {
                 click(center(rep)); sleep(0.8)
                 let after: String = area.flatMap { ax($0, kAXValueAttribute) } ?? ""
                 let viaAX = logSince().contains("replace: written via AX")
+                shot("chrome-after-replace", panels: [], extra: area.flatMap(frameOf))
                 record("Chrome: Replace", after != before && viaAX, viaAX ? "“\(after.prefix(60))”" : "fell back to copy")
             } else { record("Chrome: Replace", false, "no result") }
         }
@@ -390,21 +472,41 @@ if chrome {
     key(K.esc)
 }
 
-// 12. Spaces (optional): fast and slow switches, Frogg never hides or drops
+// 12. Spaces: a real switch by bringing a full-screen app forward, then TextEdit again.
+// (Posted ⌃→ is ignored by Mission Control, so the driver can't swipe.)
+func fullscreenApp() -> NSRunningApplication? {
+    NSWorkspace.shared.runningApplications.first { app in
+        guard app.activationPolicy == .regular, app.bundleIdentifier != "com.apple.TextEdit", !app.isTerminated else { return false }
+        let el = AXUIElementCreateApplication(app.processIdentifier)
+        let windows: [AXUIElement] = ax(el, kAXWindowsAttribute) ?? []
+        return windows.contains { (ax($0, "AXFullScreen") as Bool?) == true }
+    }
+}
 if spaces {
-    for (name, pause) in [("slow", 1.6), ("fast", 0.35)] {
-        markLog()
-        var minVisible = true
-        key(K.right, [.maskControl]); sleep(pause)
-        if !(frogg(state())["visible"] as? Bool ?? false) { minVisible = false }
-        key(K.left, [.maskControl]); sleep(pause)
-        if !(frogg(state())["visible"] as? Bool ?? false) { minVisible = false }
-        sleep(1.2)
-        let log = logSince()
-        let seen = log.components(separatedBy: "space: change seen").count - 1
-        let drops = log.components(separatedBy: "hop start (drop-in)").count - 1
-        let landed = waitState(timeout: 3) { !(frogg($0)["moving"] as? Bool ?? true) } != nil
-        record("Space switches (\(name))", seen >= 2 && drops == 0 && minVisible && landed, "\(seen) changes, \(drops) drop-ins, visible \(minVisible)")
+    if let fs = fullscreenApp(), let name = fs.localizedName, let bundle = fs.bundleIdentifier {
+        for (label, pause) in [("slow", 1.6), ("fast", 0.45)] {
+            _ = front("TextEdit", bundle: "com.apple.TextEdit")   // start on TextEdit's Space, settled
+            _ = waitState(timeout: 4) { !(frogg($0)["moving"] as? Bool ?? true) }
+            sleep(0.5)
+            markLog()
+            _ = front(name, bundle: bundle); sleep(pause)
+            _ = front("TextEdit", bundle: "com.apple.TextEdit")
+            sleep(0.12); shot("space-return-\(label)")
+            _ = waitLog("space: change seen", timeout: 2)
+            let end = Date().addingTimeInterval(3)   // the switch back is a second change
+            while Date() < end, logSince().components(separatedBy: "space: change seen").count - 1 < 2 { sleep(0.05) }
+            sleep(0.3)
+            let settled = waitState(timeout: 4) { (frogg($0)["visible"] as? Bool ?? false) && !(frogg($0)["moving"] as? Bool ?? true) }
+            let log = logSince()
+            let seen = log.components(separatedBy: "space: change seen").count - 1
+            let whoa = log.contains("hop start (whoa)"), drop = log.contains("hop start (drop-in)")
+            let hiddenInFS = log.contains("fullscreen: hidden") || log.contains("hide overlays")
+            let foot = dict(frogg(settled ?? [:])["foot"])["y"] as? Double ?? 0
+            record("Space switch \(label) (via full-screen \(name))", seen >= 2 && settled != nil && abs(foot - teWindowTop) <= 4,
+                   "\(seen) changes; \(hiddenInFS ? "hidden over full screen, " : "")\(drop ? "drop-in on return (leaving full screen)" : whoa ? "whoa + hop" : "no entrance logged"); back on TextEdit")
+        }
+    } else {
+        record("Space switches", nil, "no full-screen app or second desktop to switch to")
     }
 }
 
