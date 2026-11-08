@@ -36,6 +36,13 @@ public struct HopRoute: Sendable, Equatable {
     public let pause: TimeInterval
     /// Every sampled point of every leg keeps the sprite under the menu bar and out of the keep-out body.
     public let clear: Bool
+    /// Between displays with no arc that stays on screen: after this leg the Pixl pops out at
+    /// the edge and in on the other display, where the next leg starts.
+    public let popAfter: Int?
+
+    public init(legs: [HopPlan], pause: TimeInterval, clear: Bool, popAfter: Int? = nil) {
+        self.legs = legs; self.pause = pause; self.clear = clear; self.popAfter = popAfter
+    }
 
     public var duration: TimeInterval { legs.map(\.duration).reduce(0, +) + pause * Double(max(legs.count - 1, 0)) }
     public var end: CGPoint { legs.last?.end ?? .zero }
@@ -74,6 +81,60 @@ public struct HopRoute: Sendable, Equatable {
             clear = clear && ok
         }
         return HopRoute(legs: legs, pause: t.landingPause, clear: clear)
+    }
+
+    /// A route that may cross displays (SPEC §7.3). Coordinates are global, y down; `displays`
+    /// are the visible frames. Across two displays the arc must keep the Pixl's head and feet
+    /// inside the union of both visible frames (displays may differ in height and position).
+    /// If no arc does, hop to the edge, pop through, and hop in on the other display.
+    public static func plan(from a: CGPoint, to b: CGPoint, displays: [CGRect], sprite: CGSize, scale: CGFloat,
+                            keepOut: CGRect? = nil, world: WorldMap? = nil, tuning t: Tuning = Tuning()) -> HopRoute {
+        let src = display(containing: a, in: displays), dst = display(containing: b, in: displays)
+        guard let src, let dst, src != dst else {
+            return plan(from: a, to: b, bounds: dst ?? src ?? displays.first ?? .zero, sprite: sprite, scale: scale,
+                        keepOut: keepOut, world: world, tuning: t)
+        }
+        // one arc over both: width from the union, headroom under the lower of the two tops
+        let union = src.union(dst)
+        let bounds = CGRect(x: union.minX, y: max(src.minY, dst.minY), width: union.width, height: union.maxY - max(src.minY, dst.minY))
+        let direct = plan(from: a, to: b, bounds: bounds, sprite: sprite, scale: scale, keepOut: keepOut, world: nil, tuning: t)
+        if direct.legs.allSatisfy({ staysOnScreen($0, displays: [src, dst], sprite: sprite) }) {
+            return HopRoute(legs: direct.legs, pause: direct.pause, clear: direct.clear)
+        }
+        // edge → pop → in
+        let (exit, entry) = crossing(from: a, src: src, dst: dst, sprite: sprite, headroom: t.minApex * scale)
+        let out = plan(from: a, to: exit, bounds: src, sprite: sprite, scale: scale, keepOut: keepOut, world: nil, tuning: t)
+        let into = plan(from: entry, to: b, bounds: dst, sprite: sprite, scale: scale, keepOut: keepOut, world: nil, tuning: t)
+        return HopRoute(legs: out.legs + into.legs, pause: t.landingPause, clear: out.clear && into.clear, popAfter: out.legs.count - 1)
+    }
+
+    /// The display whose visible frame holds `p` (feet may sit exactly on the bottom edge).
+    public static func display(containing p: CGPoint, in displays: [CGRect]) -> CGRect? {
+        displays.first { $0.minX - 0.5 <= p.x && p.x <= $0.maxX + 0.5 && $0.minY - 0.5 <= p.y && p.y <= $0.maxY + 1 }
+    }
+
+    /// Feet and head of every sampled point inside some display's visible frame.
+    public static func staysOnScreen(_ plan: HopPlan, displays: [CGRect], sprite: CGSize) -> Bool {
+        plan.samples(32).allSatisfy { p in
+            display(containing: p, in: displays) != nil && display(containing: CGPoint(x: p.x, y: p.y - sprite.height), in: displays) != nil
+        }
+    }
+
+    /// Where to leave `src` and arrive on `dst`: at their shared edge, at the same height when possible.
+    static func crossing(from a: CGPoint, src: CGRect, dst: CGRect, sprite: CGSize, headroom: CGFloat) -> (CGPoint, CGPoint) {
+        let half = sprite.width / 2
+        let top = sprite.height + headroom  // room for a small arc under the top edge
+        func clampY(_ y: CGFloat, _ r: CGRect) -> CGFloat { min(max(y, r.minY + top), r.maxY) }
+        func clampX(_ x: CGFloat, _ r: CGRect) -> CGFloat { min(max(x, r.minX + half), r.maxX - half) }
+        if dst.minX >= src.maxX - 1 {          // dst to the right
+            return (CGPoint(x: src.maxX - half, y: clampY(a.y, src)), CGPoint(x: dst.minX + half, y: clampY(a.y, dst)))
+        } else if dst.maxX <= src.minX + 1 {   // to the left
+            return (CGPoint(x: src.minX + half, y: clampY(a.y, src)), CGPoint(x: dst.maxX - half, y: clampY(a.y, dst)))
+        } else if dst.minY >= src.maxY - 1 {   // below
+            return (CGPoint(x: clampX(a.x, src), y: src.maxY), CGPoint(x: clampX(a.x, dst), y: dst.minY + top))
+        } else {                               // above
+            return (CGPoint(x: clampX(a.x, src), y: src.minY + top), CGPoint(x: clampX(a.x, dst), y: dst.maxY))
+        }
     }
 
     static func shapedLeg(from a: CGPoint, to b: CGPoint, bounds: CGRect, sprite: CGSize, scale: CGFloat,
@@ -118,6 +179,26 @@ public enum SquashStretch {
         case flight(Double)   // 0…1 through the air; `apex` is where the top is
         case land(Double)     // 0…1 through the landing squash
         case settle(Double)   // 0…1 through the settle bounces
+    }
+
+    /// Landing squash springing back with 1–2 overshoots (0.75 → ~1.1 → ~0.97 → 1.0, ~0.35 s),
+    /// `t` seconds after touchdown. Feet stay planted: the view scales about the feet.
+    public static func landing(_ t: TimeInterval, from squash: Double = 0.75) -> CGSize {
+        let sy = t >= landingTime ? 1 : DampedSpring.landing.value(from: squash, to: 1, at: t)
+        return CGSize(width: 1 + (1 - sy) * 0.85, height: sy)
+    }
+    public static let landingTime: TimeInterval = 0.36
+
+    /// The crouch before take-off, `t` seconds into it, springing from neutral down to `depth`.
+    public static func crouch(_ t: TimeInterval, depth: Double = 0.8) -> CGSize {
+        let sy = DampedSpring.crouch.value(from: 1, to: depth, at: t)
+        return CGSize(width: 1 + (1 - sy) * 0.85, height: sy)
+    }
+
+    /// A startled wobble: a quick stretch up that springs back with a few small swings.
+    public static func wobble(_ t: TimeInterval) -> CGSize {
+        let sy = DampedSpring.wobble.value(from: 1, to: 1, velocity: 3.2, at: t)
+        return CGSize(width: 1 + (1 - sy) * 0.85, height: sy)
     }
 
     /// (sx, sy). `apex` is the fraction of the flight at the top of the arc.

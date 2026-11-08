@@ -360,6 +360,12 @@ A platform is reachable from the current spot by one hop if:
 
 Other windows don't block a hop: the Pixl is drawn above every window, so passing in front of one looks right.
 
+**Between displays** (`HopRoute.plan(…displays:)`): plan the arc in global coordinates and keep the Pixl's head and feet inside the union of both displays' visible frames (they may differ in size, scale and alignment). If no arc does, hop to the shared edge, **pop** through (shrink and fade out, puff, grow back in at the matching edge of the other display), and hop on.
+
+**Switching Spaces:** the Pixl's panels are on every Space and stationary, so during a swipe it stays where it is. On the switch it plays a short "whoa" (the startled frame with a springy wobble) and hops from where it stands to the new perch. Watcher-driven moves are ignored from the first sign of a switch (an app activating with no window on this Space) until the new perch is computed. The drop from under the menu bar is only for when there is no previous position: launch, unhide, leaving fullscreen. A new target retargets the current motion; two motions never run at once.
+
+**Squash and stretch** come from damped springs (`DampedSpring`, PixlzCore): a crouch before take-off, stretch while rising, a slight stretch while falling, and on landing a squash that springs back with one or two overshoots (0.75 → 1.1 → 0.97 → 1.0, about 0.35 s), feet planted, with a dust puff. Positions are computed from elapsed time on the display-synced clock; if the system pauses display frames (Frogg off screen or occluded), a watchdog keeps the motion going.
+
 Sticky species can also reach a window top by climbing its side: hop to the side, cling (perch frame 1), climb, sit (perch frame 2). This needs the side to be visible from the top corner down to within one hop of the Pixl.
 
 ---

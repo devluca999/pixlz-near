@@ -71,7 +71,7 @@ struct ChoreographyTests {
 
     @Test func dropInIsQuickAndPeeksFirst() {
         let c = Choreography.dropIn(hangFoot: CGPoint(x: 500, y: 140), to: CGPoint(x: 500, y: 850))
-        #expect(c.duration <= 0.6)
+        #expect(c.duration <= 0.72)  // peek, fall, then the landing spring (it is the settle)
         #expect(c.pose(at: 0.01).pose.frame == MotionFrames.hang)
         let falling = samples(c).filter { $0.frame == MotionFrames.fall }
         #expect(!falling.isEmpty && falling.allSatisfy { $0.squash.height >= 1 })  // stretched while falling
@@ -123,5 +123,48 @@ struct RetargetSpeedTests {
                 }
             }
         }
+    }
+}
+
+extension ChoreographyTests {
+    @Test func landingSpringsBackWithAnOvershootAndEndsNeutral() {
+        let c = Choreography.hop(route(CGPoint(x: 200, y: 600), CGPoint(x: 600, y: 600)))
+        let tail = stride(from: c.duration - Choreography.landTime + 0.002, through: c.duration, by: 0.004).map { c.pose(at: $0).pose }
+        #expect(tail.first.map { $0.squash.height < 0.8 } == true)                 // squash on touchdown
+        #expect(tail.contains { $0.squash.height > 1.06 })                        // springs past neutral
+        #expect(c.pose(at: c.duration).pose.squash == CGSize(width: 1, height: 1))
+        #expect(tail.prefix(5).allSatisfy { $0.frame == MotionFrames.land })      // crouch frame first…
+        #expect(tail.last?.frame == MotionFrames.settle)                          // …then the settle frame
+        #expect(tail.allSatisfy { $0.foot == tail[0].foot })                                 // feet planted throughout
+        let frames = Set(samples(c).map { $0.frame })
+        #expect(!frames.contains("grab_2") && frames.contains(MotionFrames.fall) && frames.contains(MotionFrames.rise))
+    }
+
+    @Test func whoaStartlesInPlaceThenHops() {
+        let a = CGPoint(x: 600, y: 700), b = CGPoint(x: 300, y: 500)
+        let c = Choreography.whoa(at: a, then: route(a, b))
+        let start = samples(c).prefix { $0.frame == MotionFrames.startle }
+        #expect(!start.isEmpty && start.allSatisfy { $0.foot == a })
+        #expect(start.contains { $0.squash.height > 1.03 })                       // the wobble
+        #expect(c.pose(at: 0).pose.mirrored)                                       // looks toward where it's going (left)
+        #expect(c.pose(at: c.duration).pose.foot == b)
+        #expect(!samples(c).contains { $0.frame == MotionFrames.hang })            // never the drop from the menu bar
+        let still = Choreography.whoa(at: a, then: nil)
+        #expect(still.pose(at: still.duration).pose.foot == a && still.duration <= 0.3)
+    }
+
+    @Test func popsBetweenDisplaysWithoutSliding() throws {
+        let tall = CGRect(x: 0, y: 25, width: 1512, height: 1400), short = CGRect(x: 1512, y: 1025, width: 1280, height: 400)
+        let sprite = CGSize(width: 140, height: 100)
+        let r = HopRoute.plan(from: CGPoint(x: 1900, y: 1300), to: CGPoint(x: 300, y: 200), displays: [tall, short], sprite: sprite, scale: 2)
+        let pop = try #require(r.popAfter)
+        let c = Choreography.hop(r)
+        let poses = samples(c)
+        let faded = poses.filter { $0.alpha < 1 }
+        #expect(!faded.isEmpty)
+        // while faded it's only ever at the exit or the entry point: no slide across the gap
+        #expect(faded.allSatisfy { $0.foot == r.legs[pop].end || $0.foot == r.legs[pop + 1].start })
+        #expect(c.landings(between: -1, and: c.duration).contains(r.legs[pop + 1].start))  // a puff where it pops in
+        #expect(c.pose(at: c.duration).pose.foot == CGPoint(x: 300, y: 200))
     }
 }

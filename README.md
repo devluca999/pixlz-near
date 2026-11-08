@@ -74,10 +74,25 @@ Full details: [`memory/README.md`](memory/README.md).
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
 | Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
-| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and drops in when you swipe to another Space. Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 58 unit/UI tests plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
+| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 61 unit/UI tests plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
 | `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
+
+## Scope of this submission
+
+**One device, done properly.** The submission is the Mac app, the Chrome extension and the local memory service, working end to end. Everything else in the Pixlz plan is deliberately left for after judging, so nothing here is half-built.
+
+**Skins are part of the draw.** Frogg is the launch pet. For the demo we're adding three more skins, picked from the Pixlz Design System: **black cat**, **ghost** (its body and menus in macOS Liquid Glass) and **Shiba**. Each has its own accent, bubble detail and signature move. Switching skins keeps your memory, wallet, position and settings. Skins in this submission are a plain picker, not tokens.
+
+**Next, after the hackathon, in this order:**
+1. **On-chain skins.** Skins as NEAR NFTs (NEP-171) owned by your wallet and read by the app, so a pet you own follows your account.
+2. **iPhone companion.** Reuses the shared Swift core (`PixlzCore`): Frogg on a small stage, plus a widget.
+3. **Mac ↔ iPhone travel.** The pet hops between nearby devices, built on the trip protocol already in `PixlzCore` (baseline).
+4. **Windows app (WPF)**, built from `docs/SPEC.md`.
+5. **Cloud-relayed travel**, so the pet can move between Windows, Mac and iPhone across networks.
+
+Each step reuses the one before it: the iPhone app gives travel a second endpoint, Apple-to-Apple travel proves the protocol before a second platform and a server are added, and the cloud relay comes last because it is the only step that needs accounts and a backend.
 
 ## Frogg's wallet: why your funds stay untouchable
 

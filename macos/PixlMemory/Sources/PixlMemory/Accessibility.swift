@@ -72,6 +72,14 @@ enum AX {
         return rects
     }
 
+    /// Whether `pid` has a normal window on screen on the current Space. Uses only window
+    /// owner and layer from the window list (no titles, no images: no Screen Recording needed).
+    static func hasWindowOnThisSpace(pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return true }
+        return list.contains { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

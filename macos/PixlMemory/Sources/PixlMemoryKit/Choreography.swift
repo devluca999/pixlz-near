@@ -6,14 +6,16 @@ import PixlzCore
 /// the motion code doesn't change.
 public enum MotionFrames {
     public static let notice = "poke_1"    // head turned up toward the new window
-    public static let coil = "move_0"
-    public static let rise = "move_1"
-    /// No dedicated falling frame exists yet: the rising frame plus a falling stretch stands in.
-    public static let fall = "move_1"
-    public static let land = "move_2"
+    public static let coil = "move_0"      // crouched, side-on
+    public static let rise = "move_1"      // fully stretched leap
+    public static let fall = "move_2"      // legs swinging forward to land
+    public static let land = "move_0"      // back into the crouch as the feet touch
     public static let settle = "idle_0"
     public static let hang = "grab_0"      // peeking down from under the menu bar
-    public static let dropLand = "grab_2"  // splat after a straight drop
+    public static let dropLand = "move_0"  // the same crouch after a straight drop (no splat)
+    public static let startle = "emotion_startled"  // "whoa": the Space just changed under him
+    /// How long the land frame shows before the settle frame, while the landing spring plays out.
+    public static let landFrameTime: TimeInterval = 0.1
 }
 
 /// Everything the view needs for one moment of motion.
@@ -35,11 +37,15 @@ public struct Choreography: Sendable {
         case settle(at: CGPoint, duration: TimeInterval)
         case fall(from: CGPoint, to: CGPoint, duration: TimeInterval)
         case exit(from: CGPoint, rise: CGFloat, duration: TimeInterval)
+        /// A startle in place with a springy wobble.
+        case whoa(at: CGPoint, mirrored: Bool, duration: TimeInterval)
+        /// Out at one display's edge and in at the other's (shrink and fade, then grow back).
+        case pop(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
 
         var duration: TimeInterval {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
-                 .fall(_, _, let d), .exit(_, _, let d): d
+                 .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -54,8 +60,10 @@ public struct Choreography: Sendable {
 
     public static let noticeTime: TimeInterval = 0.14   // 120–250 ms "notice" beat (after a 0.12 s switch debounce)
     public static let coilTime: TimeInterval = 0.12
-    public static let landTime: TimeInterval = 0.11
-    public static let settleTime: TimeInterval = 0.24
+    /// The landing squash springs back over this time (0.75 → 1.1 → 0.97 → 1.0); it is the settle.
+    public static let landTime: TimeInterval = SquashStretch.landingTime
+    public static let whoaTime: TimeInterval = 0.26
+    public static let popTime: TimeInterval = 0.16
 
     /// Face left when the hop is mostly horizontal and goes left; otherwise keep `current`.
     public static func facing(from a: CGPoint, to b: CGPoint, current: Bool) -> Bool {
@@ -76,14 +84,28 @@ public struct Choreography: Sendable {
         for (i, leg) in route.legs.enumerated() {
             facing = Self.facing(from: leg.start, to: leg.end, current: facing)
             segs.append(.flight(leg, offset: 0, mirrored: facing, frames: (MotionFrames.rise, MotionFrames.fall)))
-            if i < route.legs.count - 1 {
+            if i == route.popAfter, i + 1 < route.legs.count {
+                // between displays with no arc that stays on screen: pop through the edge
+                let next = route.legs[i + 1]
+                segs.append(.pop(from: leg.end, to: next.start, mirrored: facing, duration: popTime))
+                segs.append(.coil(at: next.start, mirrored: facing, duration: route.pause * 0.6))
+            } else if i < route.legs.count - 1 {
                 // a short landing between chained hops: squash, then straight into the next coil
                 segs.append(.land(at: leg.end, frame: MotionFrames.land, mirrored: facing, duration: route.pause * 0.6, dust: true))
                 segs.append(.coil(at: leg.end, mirrored: facing, duration: route.pause * 0.4))
             }
         }
+        // land: crouch frame, then settle frame, while the squash springs back (feet planted)
         segs.append(.land(at: route.end, frame: MotionFrames.land, mirrored: facing, duration: landTime, dust: true))
-        segs.append(.settle(at: route.end, duration: settleTime))
+        return Choreography(segs)
+    }
+
+    /// The Space changed under the Pixl: a startle with a wobble where it stands, then a
+    /// springy hop to the new perch (no notice beat: the startle is the notice).
+    public static func whoa(at p: CGPoint, then route: HopRoute?) -> Choreography {
+        let toLeft = route.map { $0.end.x < p.x } ?? false
+        var segs: [Segment] = [.whoa(at: p, mirrored: toLeft, duration: whoaTime)]
+        if let route, hypot(route.end.x - p.x, route.end.y - p.y) >= 1 { segs += hop(route, notice: false).segments }
         return Choreography(segs)
     }
 
@@ -92,8 +114,7 @@ public struct Choreography: Sendable {
         let plan = HopPlan(from: p, to: p, apexHeight: Double(5 * scale), duration: 0.2)
         return Choreography([
             .flight(plan, offset: 0, mirrored: false, frames: (MotionFrames.rise, MotionFrames.fall)),
-            .land(at: p, frame: MotionFrames.land, mirrored: false, duration: 0.08, dust: false),
-            .settle(at: p, duration: 0.16),
+            .land(at: p, frame: MotionFrames.land, mirrored: false, duration: 0.24, dust: false),
         ])
     }
 
@@ -111,9 +132,8 @@ public struct Choreography: Sendable {
         return Choreography([
             .hold(at: hangFoot, frame: MotionFrames.hang, mirrored: false, duration: 0.08),
             .fall(from: hangFoot, to: target, duration: fall),
-            .land(at: target, frame: MotionFrames.dropLand, mirrored: false, duration: 0.09, dust: true),
-            .settle(at: target, duration: 0.13),   // total ≤ 0.58 s
-        ])
+            .land(at: target, frame: MotionFrames.dropLand, mirrored: false, duration: landTime, dust: true),
+        ])  // total ≤ 0.08 + 0.26 + 0.36 = 0.70 s
     }
 
     // MARK: sampling
@@ -138,6 +158,7 @@ public struct Choreography: Sendable {
         var out: [CGPoint] = []
         for seg in segments {
             if case .land(let p, _, _, _, true) = seg, start > t0, start <= t1 { out.append(p) }
+            if case .pop(_, let b, _, let d) = seg, start + d / 2 > t0, start + d / 2 <= t1 { out.append(b) }
             start += seg.duration
         }
         return out
@@ -159,21 +180,32 @@ public struct Choreography: Sendable {
         case .hold(let p, let frame, let m, _):
             return Pose(foot: p, frame: frame, mirrored: m)
         case .coil(let p, let m, _):
-            return Pose(foot: p, frame: MotionFrames.coil, squash: SquashStretch.scale(.coil(f)), mirrored: m)
+            return Pose(foot: p, frame: MotionFrames.coil, squash: SquashStretch.crouch(t), mirrored: m)
         case .flight(let plan, let offset, let m, let frames):
             let tt = offset + t
             let apex = plan.duration > 0 ? plan.timeToApex / plan.duration : 0.5
             let progress = plan.duration > 0 ? tt / plan.duration : 1
             return Pose(foot: plan.position(at: tt), frame: progress < apex ? frames.rise : frames.fall,
                         squash: SquashStretch.scale(.flight(progress), apex: apex), mirrored: m)
-        case .land(let p, let frame, let m, _, _):
-            return Pose(foot: p, frame: frame, squash: SquashStretch.scale(.land(f)), mirrored: m)
+        case .land(let p, let frame, let m, let d, _):
+            // the squash springs back over the whole segment; the last frame is exactly neutral
+            let squash = t >= d ? CGSize(width: 1, height: 1) : SquashStretch.landing(t)
+            return Pose(foot: p, frame: t < MotionFrames.landFrameTime ? frame : MotionFrames.settle, squash: squash,
+                        mirrored: t < MotionFrames.landFrameTime ? m : false)
         case .settle(let p, _):
             return Pose(foot: p, frame: MotionFrames.settle, squash: SquashStretch.scale(.settle(f)))
         case .fall(let a, let b, _):
             let y = a.y + (b.y - a.y) * CGFloat(f * f)  // constant acceleration
             return Pose(foot: CGPoint(x: b.x, y: y), frame: MotionFrames.fall,
                         squash: SquashStretch.scale(.flight(0.5 + 0.5 * f), apex: 0.5))
+        case .whoa(let p, let m, let d):
+            return Pose(foot: p, frame: MotionFrames.startle, squash: t >= d ? CGSize(width: 1, height: 1) : SquashStretch.wobble(t), mirrored: m)
+        case .pop(let a, let b, let m, _):
+            // shrink out at the edge, grow in on the other display
+            let out = f < 0.5
+            let k = out ? 1 - f * 2 : (f - 0.5) * 2
+            let s = 0.35 + 0.65 * k
+            return Pose(foot: out ? a : b, frame: MotionFrames.rise, squash: CGSize(width: s, height: s), mirrored: m, alpha: CGFloat(k))
         case .exit(let p, let rise, _):
             return Pose(foot: CGPoint(x: p.x, y: p.y - rise * CGFloat(f)), frame: MotionFrames.rise,
                         squash: SquashStretch.scale(.flight(f * 0.3), apex: 0.5), alpha: CGFloat(1 - f))
@@ -205,8 +237,10 @@ public struct Choreography: Sendable {
             return Choreography.hop(route(p), notice: false, coil: 0.08)
         case .fall(_, let b, _):
             return Choreography.hop(route(b), notice: false)
-        case .exit(let p, _, _):
+        case .exit(let p, _, _), .whoa(let p, _, _):
             return Choreography.hop(route(p), notice: false)
+        case .pop(let a, let b, _, _):
+            return Choreography.hop(route(local < segments[i].duration / 2 ? a : b), notice: false)
         }
     }
 }

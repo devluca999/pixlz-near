@@ -12,9 +12,9 @@ class OverlayPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         level = .statusBar
-        // One Space at a time: Frogg slides away with the old desktop during a swipe and is
-        // brought onto the new one when ordered front (no floating over the slide).
-        collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
+        // On every Space and stationary: during a swipe Frogg stays where he is on screen (he
+        // doesn't slide away with the old desktop), so the Space change never needs a teleport.
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
@@ -47,6 +47,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var lastSignature = Date.distantPast
     var askedInSelfTest: String?
     var ticks = 0
+    var watchdog: Timer?
     var chosenInSelfTest: Int?
     var miniPanel: KeyPanel?
     var statusItem: NSStatusItem?
@@ -73,6 +74,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var paused = false
     var busy = false
     var spaceTransition = false
+    /// Bumped on every show or hide of Frogg; a fade's completion only hides him if no show came since.
+    var visGen = 0
+    /// When the first sign of a Space switch was seen (an app activating with no window on this Space).
+    var spaceSignAt: TimeInterval?
     var focusUntil: Date?
     var lastNudge = Date.distantPast
     var lastVerdict: String?
@@ -155,6 +160,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if change == .switched {
             userPlaced = false
             nudgeIfDistracting()
+            // First sign of a Space switch: the app that just became active has no window on
+            // this Space. Freeze watcher-driven moves now, before the notification arrives.
+            if let app = NSWorkspace.shared.frontmostApplication, !AX.hasWindowOnThisSpace(pid: app.processIdentifier) {
+                spaceSignAt = now
+                spaceTransition = true
+                Debug.log("space: first sign (\(app.localizedName ?? "?") has no window here)")
+                // if no notification follows (e.g. a window on another display), carry on normally
+                later(0.6) { [weak self] in
+                    guard let self, let t = self.spaceSignAt, self.now - t >= 0.55 else { return }
+                    self.spaceSignAt = nil
+                    self.spaceTransition = false
+                    Debug.log("space: no change followed the first sign")
+                    self.updateFullscreen()
+                    self.reposition(force: true)
+                }
+                return
+            }
             // Wait a beat: swiping Spaces also activates another app, and the Space change
             // arrives just after. Hopping first, then being interrupted, looked like a glitch.
             pendingSwitch?.invalidate()
@@ -200,48 +222,58 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A shaped route (PixlzCore HopRoute): distance-scaled arc, chained when long, kept under
     /// the menu bar and clear of the focused window's body (SPEC §7.3).
     func route(from a: CGPoint, to b: CGPoint) -> HopRoute {
-        let bounds = screensTopLeft.first { $0.minX <= b.x && b.x <= $0.maxX && $0.minY <= b.y && b.y <= $0.maxY + 1 }
-            ?? screensTopLeft.first ?? .zero
         let window = settings.perchOnWindows && focusUntil == nil ? watcher.activeWindowFrame : nil
         let displays = NSScreen.screens.enumerated().map { i, s in
             DisplayInfo(id: i, frame: topLeft(s.frame), visibleFrame: topLeft(s.visibleFrame))
         }
         let world = WorldMap(WorldInput(displays: displays, windows: window.map { [WindowInfo(id: 1, frame: $0)] } ?? []))
-        let r = HopRoute.plan(from: a, to: b, bounds: bounds, sprite: spriteSize, scale: scale, keepOut: window, world: world)
-        Debug.log("route legs=\(r.legs.count) duration=\(String(format: "%.2f", r.duration))s clear=\(r.clear)")
+        let r = HopRoute.plan(from: a, to: b, displays: screensTopLeft, sprite: spriteSize, scale: scale, keepOut: window, world: world)
+        Debug.log("route legs=\(r.legs.count) duration=\(String(format: "%.2f", r.duration))s clear=\(r.clear)\(r.popAfter.map { " pop after leg \($0)" } ?? "")")
         return r
     }
 
-    /// Swiping between Spaces: a quick hop up and away (with a puff), then on the new
-    /// Space a peek from under the menu bar and a drop onto the active window (≤ 0.6 s).
+    /// Swiping between Spaces (or the active display changing). Frogg's panel is on every Space
+    /// and stationary, so he's already visible at the same spot: no fade, no drop from the
+    /// menu bar. A quick "whoa" where he stands, then a springy hop to the new perch. The
+    /// drop-in is only for when there's no previous position (launch, unhide, leaving fullscreen).
     @objc func spaceChanged() {
         guard !userHidden else { return }
-        Debug.log("space changed")
+        let sign = spaceSignAt.map { String(format: " (%.0f ms after the first sign)", (now - $0) * 1000) } ?? ""
+        Debug.log("space: change seen\(sign)")
+        spaceSignAt = nil
         pendingSwitch?.invalidate()
-        spaceTransition = true
-        cancelMotion()
+        spaceTransition = true   // ignore watcher changes until the new perch is computed
         closeMenus()
-        // Frogg's panels belong to the old Space and slid away with it; take them down and
-        // bring Frogg in on this Space: peek from under the menu bar, drop, squash, settle.
-        for p in [froggPanel, bubblePanel, resultPanel, dustPanel] { p?.orderOut(nil) }
-        enterAfterSpaceChange()
+        let gen = visGen
+        // let the watcher attach to the new frontmost window before asking where to perch
+        later(0.08) { [weak self] in
+            guard let self else { return }
+            self.watcher.attachToFrontmost()
+            let spot = self.target()
+            Debug.log("space: perch computed \(spot.map { "(\(Int($0.foot.x)),\(Int($0.foot.y)))" } ?? "none")")
+            self.spaceTransition = false
+            if self.settings.hideInFullscreen && self.watcher.activeWindowIsFullscreen {
+                self.fullscreenHidden = true
+                self.cancelMotion()
+                self.hideOverlays(fade: 0.15)
+                return
+            }
+            let wasHidden = self.fullscreenHidden || !self.froggPanel.isVisible || self.foot == nil || gen != self.visGen && self.froggPanel.alphaValue < 0.5
+            self.fullscreenHidden = false
+            guard let spot else { return }
+            if wasHidden { self.dropIn(to: spot.foot); return }
+            self.showFrogg()
+            self.whoa(to: spot.foot)
+        }
     }
 
-    func enterAfterSpaceChange() {
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.watcher.attachToFrontmost()
-                self.spaceTransition = false
-                if self.settings.hideInFullscreen && self.watcher.activeWindowIsFullscreen {
-                    self.fullscreenHidden = true
-                    self.froggPanel.orderOut(nil)
-                    return
-                }
-                self.fullscreenHidden = false
-                if let spot = self.target() { self.dropIn(to: spot.foot) }
-            }
-        }
+    /// Startle in place, then hop to `target`. Mid-motion, retargets instead (never two motions).
+    func whoa(to target: CGPoint) {
+        guard let current = foot else { place(at: target); return }
+        if motion != nil { reposition(force: true); return }
+        let d = hypot(target.x - current.x, target.y - current.y)
+        run(Choreography.whoa(at: current, then: d >= 1 ? route(from: current, to: target) : nil), target: target)
+        Debug.log("hop start (whoa) → (\(Int(target.x)),\(Int(target.y)))")
     }
 
     func updateFullscreen() {
@@ -250,6 +282,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             fullscreenHidden = true
             cancelMotion()
             hideOverlays(fade: 0.2)
+            Debug.log("fullscreen: hidden")
         } else if !fs && fullscreenHidden {
             fullscreenHidden = false
             if !userHidden, let spot = target() { dropIn(to: spot.foot) }
@@ -262,9 +295,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hang = FroggArt.shared.frames[MotionFrames.hang]
         let below = CGFloat((hang?.h ?? 40) - (hang?.pin?[1] ?? 0)) * scale  // pin (toe) to feet
         let hangFoot = CGPoint(x: target.x, y: min(screen.minY + below, target.y - 20))
-        froggPanel.alphaValue = 1
-        froggPanel.orderFrontRegardless()
+        showFrogg()
         run(Choreography.dropIn(hangFoot: hangFoot, to: target), target: target)
+        Debug.log("hop start (drop-in) → (\(Int(target.x)),\(Int(target.y)))")
+    }
+
+    /// Shows Frogg and invalidates any fade-out still running, so its completion can't hide him.
+    func showFrogg() {
+        visGen += 1
+        froggPanel.animator().alphaValue = 1  // replaces a running fade animation…
+        froggPanel.alphaValue = 1             // …and lands on 1 at once
+        froggPanel.orderFrontRegardless()
     }
 
     // MARK: motion: one display-synced clock, running only while something moves (SPEC R6, D7)
@@ -302,6 +343,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         l.add(to: .main, forMode: .common)  // keeps running during menus and window drags
         link = l
         lastTick = now
+        startWatchdog()
         ticks = 0
         Debug.log("display link on")
     }
@@ -314,17 +356,34 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("display link off after \(ticks) frames")
     }
 
-    @objc func tick(_ l: CADisplayLink) {
+    /// macOS pauses a view's display link while the view is off screen or occluded. If frames stop
+    /// mid-motion, keep advancing from elapsed time so Frogg can never get stuck mid-hop.
+    func startWatchdog() {
+        guard watchdog == nil else { return }
+        watchdog = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.link != nil else { self.watchdog?.invalidate(); self.watchdog = nil; return }
+                if self.now - self.lastTick > 0.15 {
+                    Debug.log("watchdog: no display frames for \(Int((self.now - self.lastTick) * 1000)) ms, stepping")
+                    self.tick(nil)
+                }
+            }
+        }
+    }
+
+    @objc func tick(_ l: CADisplayLink?) {
         let t0 = now
         ticks += 1
         if ticks == 1 { Debug.log("first frame") }
+        if ticks % 120 == 0 { Debug.log("frame \(ticks) motion=\(motion != nil) flight=\(flight != nil) riding=\(riding) menu=\(menu.view != nil) dust=\(dust?.pool.isEmpty == false)") }
         let dt = min(max(t0 - lastTick, 0), 0.05)
         lastTick = t0
         if let m = motion {
             let t = t0 - motionStart
             let (pose, done) = m.pose(at: t)
             apply(pose)
-            for p in m.landings(between: lastMotionT, and: t) { puff(at: p) }
+            for p in m.landings(between: lastMotionT, and: t) { puff(at: p); Debug.log("landing at (\(Int(p.x)),\(Int(p.y)))") }
             lastMotionT = t
             if done {
                 motion = nil
@@ -438,6 +497,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: animation (frame changes only)
+
+    /// A one-shot that animations can't cancel (for transition steps).
+    func later(_ seconds: TimeInterval, _ block: @escaping @MainActor () -> Void) {
+        Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in MainActor.assumeIsolated { block() } }
+    }
 
     func after(_ seconds: TimeInterval, _ block: @escaping @MainActor () -> Void) {
         let t = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in MainActor.assumeIsolated { block() } }
@@ -830,9 +894,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: hide / show (⌃⌥H, the screen-share panic button)
 
     func hideOverlays(fade: TimeInterval) {
+        visGen += 1
+        let gen = visGen
+        Debug.log("hide overlays gen=\(gen)")
         for p in [froggPanel, bubblePanel, resultPanel, menu.panel, menu.listPanel, menu.cardPanel].compactMap({ $0 }) {
             NSAnimationContext.runAnimationGroup({ $0.duration = fade; p.animator().alphaValue = 0 },
-                                                 completionHandler: { MainActor.assumeIsolated { p.orderOut(nil) } })
+                                                 completionHandler: { [weak self] in MainActor.assumeIsolated {
+                                                     // a show since this fade began wins: never hide a newly shown Frogg
+                                                     guard let self, self.visGen == gen else { Debug.log("stale fade-out ignored (gen \(gen))"); return }
+                                                     p.orderOut(nil)
+                                                 } })
         }
     }
 
@@ -1232,13 +1303,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // motion: the display link runs only while moving, lands exactly, never jumps on retarget
         paused = false
         cancelMotion()
+        if let spot = target() { place(at: spot.foot) }
         await wait(0.3)
         if let start = foot {
-            let target = CGPoint(x: start.x - 420, y: start.y)
+            let mid = (screensTopLeft.first ?? .zero).midX
+            let dir: CGFloat = start.x > mid ? -1 : 1   // always toward the middle: stay on screen
+            let target = CGPoint(x: start.x + dir * 420, y: start.y)
             run(Choreography.hop(route(from: start, to: target)), target: target)
             await wait(0.1)
             check("hop: display link runs while moving", link != nil)
-            let retargetTo = CGPoint(x: start.x - 200, y: start.y)
+            let retargetTo = CGPoint(x: start.x + dir * 200, y: start.y)
             await wait(0.3)  // into the flight (after the notice beat and the coil)
             var snap: CGFloat = .infinity
             var fastest: CGFloat = 0
@@ -1270,7 +1344,61 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let t0 = now
             dropIn(to: retargetTo)
             while motion != nil && now - t0 < 2 { await wait(0.01) }
-            check("Space drop-in finishes within 0.6 s (\(Int((now - t0) * 1000)) ms)", now - t0 <= 0.62)
+            check("drop-in (launch/unhide only) finishes within 0.75 s (\(Int((now - t0) * 1000)) ms)", now - t0 <= 0.75)
+        }
+
+        // Space change: no teleport. Frogg stays visible where he is, startles, then hops.
+        await wait(0.3)
+        if let start = foot {
+            var minY = start.y, hidden = false, frames: Set<String> = []
+            spaceChanged()
+            let t0 = now
+            while now - t0 < 2.0 {
+                if let f = foot { minY = min(minY, f.y) }
+                if !froggPanel.isVisible || froggPanel.alphaValue < 0.99 { hidden = true }
+                frames.insert(frogg.frameName)
+                if now - t0 > 0.2 && motion == nil { break }
+                await wait(0.005)
+            }
+            let menuBar = (screensTopLeft.first?.minY ?? 0) + spriteSize.height
+            check("Space change: Frogg never hidden or faded", !hidden)
+            check("Space change: \"whoa\" startle frame shown", frames.contains(MotionFrames.startle))
+            check("Space change: no drop from the menu bar (highest feet \(Int(minY)), menu bar line \(Int(menuBar)))", minY > menuBar + 20 || abs(minY - start.y) < 1)
+            check("Space change: never the old splat frame", !frames.contains("grab_2"))
+            check("Space change: lands at the perch, squash neutral",
+                  motion == nil && frogg.squash == CGSize(width: 1, height: 1) && foot.map { p in target().map { hypot($0.foot.x - p.x, $0.foot.y - p.y) < 1 } ?? true } == true)
+        }
+
+        // a fade-out that finishes after Frogg was shown again must not hide him
+        hideOverlays(fade: 0.2)
+        await wait(0.05)
+        showFrogg()
+        await wait(0.4)
+        check("stale fade-out can't hide a newly shown Frogg", froggPanel.isVisible && froggPanel.alphaValue > 0.99)
+
+        // two quick Space changes: one motion at a time, ends perched and visible
+        spaceChanged()
+        await wait(0.15)
+        spaceChanged()
+        await wait(1.6)
+        check("two quick Space changes: settles once, visible, not moving", motion == nil && froggPanel.isVisible && mode == .perched)
+
+        // across displays (only with two screens): one arc on screen, or edge → pop → in
+        let screens = screensTopLeft
+        if screens.count > 1, let here = foot {
+            let other = screens.first { HopRoute.display(containing: here, in: screens) != $0 } ?? screens[1]
+            let to = CGPoint(x: other.midX, y: other.maxY)
+            let r = route(from: here, to: to)
+            check("cross-display route stays on screen (legs \(r.legs.count), pop \(r.popAfter.map(String.init) ?? "no"))",
+                  r.legs.allSatisfy { HopRoute.staysOnScreen($0, displays: screens, sprite: spriteSize) })
+            run(Choreography.hop(r), target: to)
+            let t0 = now
+            while motion != nil && now - t0 < 4 { await wait(0.02) }
+            check("cross-display hop lands on the other display", foot.map { hypot($0.x - to.x, $0.y - to.y) < 1 } == true)
+            reposition(force: true)
+            await wait(2)
+        } else {
+            print("SKIP  cross-display hop (one display)")
         }
 
         let failed = results.filter { !$0.1 }.count
