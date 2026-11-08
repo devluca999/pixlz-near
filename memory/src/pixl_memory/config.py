@@ -130,6 +130,8 @@ def default_data_dir() -> Path:
         return Path(env).expanduser()
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "PixlMemory"
+    if sys.platform == "win32":  # the Windows app (docs/WINDOWS.md) reads the token from here too
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "PixlMemory"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "pixl-memory"
 
 
