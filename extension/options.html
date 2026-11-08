@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pixl Memory settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="options">
+  <h1>Pixl Memory</h1>
+  <p class="muted">The extension saves highlights to the Pixl Memory service on this Mac. Nothing is sent anywhere else.</p>
+  <ol>
+    <li>Start the service: <code>make -C memory serve</code></li>
+    <li>Print the token: <code>cd memory &amp;&amp; uv run pixl-memory token</code></li>
+    <li>Paste it below.</li>
+  </ol>
+  <label>Token <input id="token" type="password" autocomplete="off" spellcheck="false"></label>
+  <label>Port <input id="port" type="number" min="1" max="65535"></label>
+  <div class="row">
+    <button id="save">Save and test</button>
+    <span id="result" class="muted"></span>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

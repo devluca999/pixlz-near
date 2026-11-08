@@ -29,6 +29,7 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 | `uv run pixl-memory attest` | 14 checks against the live NEAR AI Cloud: Intel TDX quote and TCB, your nonce inside the signed quote, signing key bound, RTMR3 replay, measured docker-compose, NVIDIA GPU attestation, deployment log |
 | `cp .env.example .env`, set `NEAR_AI_API_KEY`, then `uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
 | `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
+| Load `extension/` unpacked in Chrome, paste the token from `uv run pixl-memory token`, select text → right-click **Save to Pixl Memory** | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
 | `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
 
 Full details: [`memory/README.md`](memory/README.md).
@@ -54,7 +55,7 @@ Full details: [`memory/README.md`](memory/README.md).
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
 | Frogg's wallet: funded `frogg.<you>.testnet`, pays per request | next |
 | `macos/PixlMemory/`: overlay app: perch, polish, diff, drag | in progress |
-| `extension/`: Chrome highlight → save → text-fragment backlink | in progress |
+| `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
 
@@ -133,7 +134,9 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 **Baseline:** Swift 6, Swift Package Manager, no third-party Swift packages.
 
-The wallet code, `macos/` and `extension/` will list their libraries here as they land.
+**`extension/`:** no libraries, no build step (plain JavaScript modules; tests use Node's built-in `node --test`).
+
+The wallet code and `macos/` will list their libraries here as they land.
 
 **AI-generated content:**
 - The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
@@ -145,7 +148,7 @@ The wallet code, `macos/` and `extension/` will list their libraries here as the
 ```
 memory/      Hackathon: local service, NEAR AI private inference + verification
 macos/       macOS app; PixlMemory/ overlay is hackathon work (in progress)
-extension/   Hackathon: Chrome extension (in progress)
+extension/   Hackathon: Chrome extension (highlight → save → backlink)
 PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)
 docs/        SPEC.md, DECISIONS.md, RESEARCH.md (baseline); PLAN-pixl-memory.md (hackathon)
 design/ assets/ ios/ windows/   Baseline

@@ -1,0 +1,38 @@
+/* Tokens from design/tokens/colors.css: ink, paper, accent; 3px ink borders, hard offset shadow. */
+:root {
+  --ink: #1B2A1A;
+  --paper: #FFFBF2;
+  --accent: #7CD93A;
+  --muted: #5d6b5c;
+  --danger: #c92a2a;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace; }
+h1 { font-size: 15px; margin: 0; }
+a { color: var(--ink); }
+code { background: #fff; border: 1px solid var(--ink); padding: 0 4px; }
+.muted { color: var(--muted); margin: 2px 0 0; }
+
+.popup { width: 360px; padding: 12px; }
+.popup header { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+#frogg { image-rendering: pixelated; width: 32px; height: 32px; }
+input[type=search], input[type=password], input[type=number] {
+  width: 100%; padding: 6px 8px; border: 3px solid var(--ink); background: #fff; font: inherit; color: var(--ink);
+}
+#list { list-style: none; padding: 0; margin: 10px 0; max-height: 380px; overflow-y: auto; }
+#list li { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 var(--ink); padding: 8px; margin: 0 6px 12px 0; }
+blockquote { margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
+.meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.meta a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button { font: inherit; cursor: pointer; }
+button.link { background: none; border: 0; padding: 0; text-decoration: underline; color: var(--ink); }
+button.danger { color: var(--danger); }
+footer { font-size: 12px; text-align: right; }
+
+.options { max-width: 520px; margin: 32px auto; padding: 0 16px; }
+.options label { display: block; margin: 12px 0; font-weight: bold; }
+.options label input { margin-top: 4px; font-weight: normal; }
+.options .row { display: flex; gap: 12px; align-items: center; }
+.options button { border: 3px solid var(--ink); background: var(--accent); padding: 6px 12px; box-shadow: 4px 4px 0 var(--ink); }
+.options button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popup">
+  <header>
+    <canvas id="frogg" width="32" height="32" aria-hidden="true"></canvas>
+    <div>
+      <h1>Pixl Memory</h1>
+      <p id="status" class="muted">Checking…</p>
+    </div>
+  </header>
+  <input id="q" type="search" placeholder="Search highlights" autocomplete="off">
+  <ul id="list"></ul>
+  <p id="empty" class="muted" hidden>No highlights yet. Select text on a page, right-click, <b>Save to Pixl Memory</b> (or ⌥⇧S).</p>
+  <footer><a href="options.html" target="_blank">Settings</a></footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
