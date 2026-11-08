@@ -1,0 +1,149 @@
+{
+  "id": "widow",
+  "name": "Silk",
+  "species": "Black widow",
+  "canvas": {
+    "w": 104,
+    "h": 92
+  },
+  "anchor": {
+    "x": 52,
+    "y": 86
+  },
+  "hitbox": {
+    "x": 23,
+    "y": 34,
+    "w": 58,
+    "h": 52
+  },
+  "movement": "hop",
+  "sticky": true,
+  "aura": "silk",
+  "physics": {
+    "gravity": 900,
+    "hopApex": [
+      18,
+      30
+    ],
+    "hopDistance": [
+      40,
+      90
+    ],
+    "walkSpeed": 0
+  },
+  "slots": {
+    "idle": {
+      "holds": [
+        6,
+        2,
+        8
+      ],
+      "loop": "all"
+    },
+    "move": {
+      "holds": [
+        3,
+        0,
+        3
+      ],
+      "loop": "none"
+    },
+    "rest": {
+      "holds": [
+        6,
+        6,
+        12
+      ],
+      "loop": "last"
+    },
+    "poke": {
+      "holds": [
+        2,
+        4,
+        6
+      ],
+      "loop": "none"
+    },
+    "grab": {
+      "holds": [
+        2,
+        6,
+        3
+      ],
+      "loop": "middle"
+    },
+    "file_ride": {
+      "holds": [
+        3,
+        3,
+        6
+      ],
+      "loop": "last"
+    },
+    "perch": {
+      "holds": [
+        4,
+        4,
+        8
+      ],
+      "loop": "last"
+    },
+    "signature": {
+      "holds": [
+        4,
+        2,
+        8
+      ],
+      "loop": "none"
+    },
+    "mischief": {
+      "holds": [
+        6,
+        12,
+        4
+      ],
+      "loop": "none"
+    }
+  },
+  "props": {
+    "signature": [
+      "web"
+    ],
+    "mischief": [
+      "silk"
+    ]
+  },
+  "ui": {
+    "accent": "#D0202A",
+    "menuFace": "emotion_curious",
+    "glassBody": false,
+    "signature": "Web",
+    "askPlaceholder": "Ask Silk anything…",
+    "personality": "a composed, precise little spider who answers exactly and dryly",
+    "detail": "Silk thread + tiny spider, top edge",
+    "decal": {
+      "grid": [
+        ".k...k.",
+        "..kak..",
+        "kkaaakk",
+        "..kak..",
+        ".k.s.k.",
+        "...s...",
+        "...s...",
+        "...s...",
+        "...s...",
+        "...s...",
+        "...s...",
+        "...s..."
+      ],
+      "colors": {
+        "a": "#E5232E",
+        "s": "#B8BECC"
+      },
+      "pos": {
+        "top": -24,
+        "right": 28
+      }
+    }
+  }
+}

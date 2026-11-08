@@ -96,8 +96,56 @@ public enum ManifestValidator {
         return issues
     }
 
+    /// Indexed-colour frames (`sprites.json`, from scripts/render-pixls.mjs): the format the
+    /// app ships, since the repo keeps PNGs in Git LFS. Same rules as the PNG sheets: every
+    /// slot frame and emotion present and non-empty, grounded frames standing on their feet,
+    /// grab pins inside the sprite.
+    public struct IndexedSprites: Decodable {
+        public struct Frame: Decodable { public let w: Int; public let h: Int; public let rows: [String]; public let pin: [Int]? }
+        public let transparent: String
+        public let chars: String
+        public let palette: [String]
+        public let frames: [String: Frame]
+    }
+
+    public static func validate(indexed s: IndexedSprites, file: String = "sprites.json") -> [ValidationIssue] {
+        var issues: [ValidationIssue] = []
+        func fail(_ m: String) { issues.append(.init(file: file, message: m)) }
+        if s.chars.count != s.palette.count { fail("palette and chars differ in length") }
+        let t = Character(s.transparent)
+        let names = Slot.allCases.flatMap { sl in (0..<3).map { "\(sl.rawValue)_\($0)" } } + Emotion.allCases.map { "emotion_\($0.rawValue)" }
+        for name in names {
+            guard let f = s.frames[name] else { fail("frame \(name) is missing"); continue }
+            if f.rows.count != f.h || f.rows.contains(where: { $0.count != f.w }) { fail("frame \(name): rows don't match \(f.w)×\(f.h)"); continue }
+            if !f.rows.contains(where: { $0.contains { $0 != t } }) { fail("frame \(name) is empty"); continue }
+            for row in f.rows where row.contains(where: { $0 != t && !s.chars.contains($0) }) { fail("frame \(name): unknown colour"); break }
+            let parts = name.split(separator: "_")
+            if let i = Int(parts.last ?? ""), let slot = Slot(rawValue: parts.dropLast().joined(separator: "_")),
+               groundedFrames[slot]?.contains(i) == true, f.rows.last?.contains(where: { $0 != t }) != true {
+                fail("frame \(name): doesn't stand on its feet (bottom row empty)")
+            }
+            if name.hasPrefix("grab_"), name != "grab_2" {
+                guard let pin = f.pin, pin.count == 2, (0..<f.w).contains(pin[0]), (0..<f.h).contains(pin[1]) else { fail("frame \(name): no pin inside the sprite"); continue }
+            }
+        }
+        return issues
+    }
+
     /// Checks the manifest plus every sprite file in `directory` (`assets/<pixl>/`).
     public static func validate(directory: URL) -> [ValidationIssue] {
+        let indexed = directory.appending(path: "sprites.json")
+        if FileManager.default.fileExists(atPath: indexed.path) {
+            // the shipped format: the manifest plus the indexed frames
+            var issues: [ValidationIssue] = []
+            do {
+                let m = try PixlManifest.decode(Data(contentsOf: directory.appending(path: "pixl.json")))
+                issues += validate(m)
+                issues += validate(indexed: try JSONDecoder().decode(IndexedSprites.self, from: Data(contentsOf: indexed)))
+            } catch {
+                issues.append(.init(file: "pixl.json / sprites.json", message: "unreadable: \(error)"))
+            }
+            return issues
+        }
         let manifestURL = directory.appendingPathComponent("pixl.json")
         let manifest: PixlManifest
         do {

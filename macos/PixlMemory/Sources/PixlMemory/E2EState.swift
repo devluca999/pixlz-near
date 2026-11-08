@@ -60,6 +60,8 @@ enum E2EState {
                       "frame": app.frogg.frameName, "mode": "\(app.mode)", "moving": app.moving,
                       "hidden": app.userHidden, "scale": app.settings.scale, "foot": app.foot.map { ["x": $0.x, "y": $0.y] } ?? [:]],
             "menuOpen": app.menu.isOpen,
+            "skin": PixlSkins.currentID,
+            "name": app.settings.name,
             "selection": app.pendingSelection?.text ?? NSNull(),
             "speech": (app.bubblePanel.isVisible ? (app.bubblePanel.contentView as? BubbleView)?.text : nil) ?? NSNull(),
             "screens": app.screensTopLeft.map { ["x": $0.minX, "y": $0.minY, "w": $0.width, "h": $0.height] },

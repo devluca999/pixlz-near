@@ -8,6 +8,9 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     public var hideInFullscreen = true
     public var mischief = "normal"    // chill | normal | chaos (stored; mischief acts aren't built yet)
     public var distractingApps: [String] = []  // focus guardian nudges when one of these is activated
+    /// Which Pixl (assets/<id>). Optional so settings saved before skins existed still load.
+    public var skin: String?
+    public var skinID: String { skin ?? "frogg" }
 
     public init() {}
 

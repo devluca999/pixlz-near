@@ -96,6 +96,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Debug.log("launch pid=\(ProcessInfo.processInfo.processIdentifier) accessibility=\(AX.trusted) debug=\(Debug.enabled)")
         bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
+        PixlSkins.currentID = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
         buildFrogg()
         setUpStatusItem()
         HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
@@ -1047,9 +1048,47 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func apply(_ new: PixlSettings) {
         let old = settings
         settings = new
+        if new.skinID != old.skinID { settings.skin = old.skin; setSkin(new.skinID); return }
         if new.scale != old.scale { setSize(new.scale) }
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
         if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
+    }
+
+    /// Switches Pixl: a quick puff out, the new one pops in where the old one stood. Memory,
+    /// wallet, position and settings carry over (they don't belong to the skin). The name
+    /// follows the skin unless the user renamed their Pixl.
+    func setSkin(_ id: String) {
+        guard let next = PixlSkins.skin(id), id != PixlSkins.currentID else { return }
+        let oldName = PixlSkins.current.manifest.name, nextName = next.manifest.name
+        Debug.log("skin \(PixlSkins.currentID) → \(id)")
+        let reopenSettings = miniPanel?.isVisible == true
+        if reopenSettings { toggleMiniMenu() }
+        cancelMotion()
+        cancelAnimations()
+        if let f = foot { puff(at: f) }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.12
+            froggPanel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                PixlSkins.currentID = id
+                self.settings.skin = id
+                if self.settings.name == oldName { self.settings.name = nextName }
+                self.settings.save()
+                let at = self.foot
+                self.buildFrogg()  // new canvas size, same feet
+                if let at { self.place(at: at) }
+                self.showFrogg()
+                if let at {
+                    // pop in: the landing spring, with dust
+                    self.run(Choreography([.land(at: at, frame: MotionFrames.land, mirrored: false, duration: Choreography.landTime, dust: true)]), target: nil)
+                    self.puff(at: at)
+                }
+                self.say("Hi, I'm \(self.settings.name)!", for: 2.5)
+                if reopenSettings { self.toggleMiniMenu() }
+            }
+        })
     }
 
     func setSize(_ s: Int) {

@@ -96,6 +96,7 @@ public final class BubbleView: NSView {
         label.textColor = look.textColor
         label.frame = body.insetBy(dx: Self.pad, dy: Self.pad - 2).offsetBy(dx: 0, dy: 1)
         surface.content.addSubview(label)
+        DecalArt.attach(to: surface.content, ui: PixlData.ui, look: look)
         super.init(frame: NSRect(origin: .zero, size: size))
         appearance = look.appearance
         addSubview(surface)

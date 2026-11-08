@@ -1,0 +1,136 @@
+{
+  "id": "ghost",
+  "name": "Boo",
+  "species": "Bedsheet ghost",
+  "canvas": {
+    "w": 81,
+    "h": 81
+  },
+  "anchor": {
+    "x": 40,
+    "y": 75
+  },
+  "hitbox": {
+    "x": 18,
+    "y": 30,
+    "w": 45,
+    "h": 45
+  },
+  "movement": "float",
+  "sticky": false,
+  "aura": "wisp",
+  "physics": {
+    "gravity": 900,
+    "hopApex": [
+      18,
+      30
+    ],
+    "hopDistance": [
+      40,
+      90
+    ],
+    "walkSpeed": 0
+  },
+  "slots": {
+    "idle": {
+      "holds": [
+        6,
+        2,
+        8
+      ],
+      "loop": "all"
+    },
+    "move": {
+      "holds": [
+        3,
+        0,
+        3
+      ],
+      "loop": "none"
+    },
+    "rest": {
+      "holds": [
+        6,
+        6,
+        12
+      ],
+      "loop": "last"
+    },
+    "poke": {
+      "holds": [
+        2,
+        4,
+        6
+      ],
+      "loop": "none"
+    },
+    "grab": {
+      "holds": [
+        2,
+        6,
+        3
+      ],
+      "loop": "middle"
+    },
+    "file_ride": {
+      "holds": [
+        3,
+        3,
+        6
+      ],
+      "loop": "last"
+    },
+    "perch": {
+      "holds": [
+        4,
+        4,
+        8
+      ],
+      "loop": "last"
+    },
+    "signature": {
+      "holds": [
+        4,
+        2,
+        8
+      ],
+      "loop": "none"
+    },
+    "mischief": {
+      "holds": [
+        6,
+        12,
+        4
+      ],
+      "loop": "none"
+    }
+  },
+  "props": {
+    "signature": [
+      "window"
+    ],
+    "mischief": []
+  },
+  "ui": {
+    "accent": "#A8C8F0",
+    "menuFace": "emotion_curious",
+    "glassBody": true,
+    "signature": "Phase",
+    "askPlaceholder": "Ask Boo anything…",
+    "personality": "a shy, cozy bedsheet ghost who whispers short, kind answers",
+    "detail": "Rippled sheet hem, bottom edge",
+    "decal": {
+      "grid": [
+        "fffffffffffff",
+        "kfffkfffkfffk",
+        ".kfk.kfk.kfk.",
+        "..k...k...k.."
+      ],
+      "colors": {},
+      "pos": {
+        "bottom": -6,
+        "left": 18
+      }
+    }
+  }
+}

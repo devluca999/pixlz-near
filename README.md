@@ -184,7 +184,7 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 **Wallet:** no new Python libraries: ed25519 comes from `cryptography`, and Borsh and base58 are written in `near.py`. The setup page loads [`@near-wallet-selector/core` and `meteor-wallet`](https://github.com/near/wallet-selector) 10.1.4 and `@near-js/transactions` / `@near-js/crypto` 2.5.1 from esm.sh. The encoding test vector was generated with `@near-js/transactions` 2.x.
 
-**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. Frogg's frames are exported from the baseline Claude Design engine (`design/explorations/c3`) by `scripts/render-frogg.mjs` and embedded as text: no PNGs.
+**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. Frogg's frames are exported from the baseline Claude Design engine (`design/explorations/c3`) by `scripts/render-pixls.mjs` and embedded as text: no PNGs.
 
 The wallet code will list its libraries here when it lands.
 

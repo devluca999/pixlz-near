@@ -9,6 +9,7 @@ extension SurfaceView {
                             shape: .rounded(16), look: look)
         content.frame = NSRect(origin: .zero, size: size)
         s.content.addSubview(content)
+        DecalArt.attach(to: s.content, ui: PixlData.ui, look: look)  // the Pixl's own detail (C10)
         s.setAccessibilityElement(true)
         s.setAccessibilityRole(.group)
         return s

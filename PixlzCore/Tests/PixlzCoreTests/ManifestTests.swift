@@ -100,21 +100,15 @@ private func tempDir() -> URL {
 
     /// The real gate (D6): every Pixl in `assets/` validates, sprites included.
     @Test func everyRepoPixlValidates() throws {
+        // Frogg, the cat, the Shiba, the ghost and the widow
         let dirs = try FileManager.default.contentsOfDirectory(at: repoAssets, includingPropertiesForKeys: [.isDirectoryKey])
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
         #expect(!dirs.isEmpty)
         for dir in dirs {
+            // every Pixl ships indexed frames (sprites.json, scripts/render-pixls.mjs) + pixl.json
+            #expect(FileManager.default.fileExists(atPath: dir.appending(path: "sprites.json").path), "\(dir.lastPathComponent)")
             let issues = ManifestValidator.validate(directory: dir)
-            let missingSpritesOnly = !issues.isEmpty && issues.allSatisfy { $0.message == "missing" }
-            if dir.lastPathComponent == "frogg" && missingSpritesOnly {
-                // Frogg's sprites aren't rendered yet (needs the design PNGs via Git LFS, P6).
-                // This turns into a failure on its own once the PNGs land and validate cleanly.
-                withKnownIssue("Frogg sprites not rendered yet") {
-                    Issue.record("\(dir.lastPathComponent): \(issues.count) sprite files missing")
-                }
-            } else {
-                #expect(issues == [], "\(dir.lastPathComponent)")
-            }
+            #expect(issues == [], "\(dir.lastPathComponent): \(issues)")
         }
     }
 }
@@ -128,5 +122,34 @@ struct PixlUITests {
         let ui = try #require(m.ui)
         #expect(ui.accent == "#7CD93A" && ui.menuFace == "emotion_curious" && !ui.glassBody)
         #expect(!ui.signature.isEmpty && !ui.personality.isEmpty)
+    }
+}
+
+struct IndexedSpriteTests {
+    func sprites(_ edit: (inout [String: [String: Any]]) -> Void) throws -> ManifestValidator.IndexedSprites {
+        var frames: [String: [String: Any]] = [:]
+        let names = Slot.allCases.flatMap { s in (0..<3).map { "\(s.rawValue)_\($0)" } } + Emotion.allCases.map { "emotion_\($0.rawValue)" }
+        for n in names { frames[n] = ["w": 3, "h": 2, "rows": [".a.", "aaa"], "pin": [1, 0]] }
+        edit(&frames)
+        let json = try JSONSerialization.data(withJSONObject: ["transparent": ".", "chars": "a", "palette": ["#112233"], "frames": frames])
+        return try JSONDecoder().decode(ManifestValidator.IndexedSprites.self, from: json)
+    }
+
+    @Test func aCompleteSetPasses() throws {
+        #expect(ManifestValidator.validate(indexed: try sprites { _ in }).isEmpty)
+    }
+
+    @Test func catchesMissingEmptyFloatingAndUnpinnedFrames() throws {
+        let bad = try sprites { f in
+            f["poke_1"] = nil                                                      // missing
+            f["idle_0"] = ["w": 2, "h": 1, "rows": [".."]]                          // empty
+            f["rest_0"] = ["w": 2, "h": 2, "rows": ["aa", ".."]]                    // grounded but floating
+            f["grab_0"] = ["w": 2, "h": 1, "rows": ["aa"], "pin": [5, 0]]           // pin outside
+            f["emotion_happy"] = ["w": 2, "h": 1, "rows": ["az"]]                   // unknown colour
+        }
+        let msgs = ManifestValidator.validate(indexed: bad).map(\.message).joined(separator: "\n")
+        for needle in ["poke_1 is missing", "idle_0 is empty", "rest_0: doesn't stand", "grab_0: no pin", "emotion_happy: unknown colour"] {
+            #expect(msgs.contains(needle), "\(needle)")
+        }
     }
 }

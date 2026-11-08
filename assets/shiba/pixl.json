@@ -1,0 +1,141 @@
+{
+  "id": "shiba",
+  "name": "Mochi",
+  "species": "Shiba Inu puppy",
+  "canvas": {
+    "w": 85,
+    "h": 72
+  },
+  "anchor": {
+    "x": 42,
+    "y": 66
+  },
+  "hitbox": {
+    "x": 19,
+    "y": 26,
+    "w": 48,
+    "h": 40
+  },
+  "movement": "hop",
+  "sticky": false,
+  "aura": "sparkle",
+  "physics": {
+    "gravity": 900,
+    "hopApex": [
+      18,
+      30
+    ],
+    "hopDistance": [
+      40,
+      90
+    ],
+    "walkSpeed": 0
+  },
+  "slots": {
+    "idle": {
+      "holds": [
+        6,
+        2,
+        8
+      ],
+      "loop": "all"
+    },
+    "move": {
+      "holds": [
+        3,
+        0,
+        3
+      ],
+      "loop": "none"
+    },
+    "rest": {
+      "holds": [
+        6,
+        6,
+        12
+      ],
+      "loop": "last"
+    },
+    "poke": {
+      "holds": [
+        2,
+        4,
+        6
+      ],
+      "loop": "none"
+    },
+    "grab": {
+      "holds": [
+        2,
+        6,
+        3
+      ],
+      "loop": "middle"
+    },
+    "file_ride": {
+      "holds": [
+        3,
+        3,
+        6
+      ],
+      "loop": "last"
+    },
+    "perch": {
+      "holds": [
+        4,
+        4,
+        8
+      ],
+      "loop": "last"
+    },
+    "signature": {
+      "holds": [
+        4,
+        2,
+        8
+      ],
+      "loop": "none"
+    },
+    "mischief": {
+      "holds": [
+        6,
+        12,
+        4
+      ],
+      "loop": "none"
+    }
+  },
+  "props": {
+    "signature": [],
+    "mischief": [
+      "cursor"
+    ]
+  },
+  "ui": {
+    "accent": "#EC9A44",
+    "menuFace": "emotion_curious",
+    "glassBody": false,
+    "signature": "Zoomies",
+    "askPlaceholder": "Ask Mochi anything…",
+    "personality": "an excitable Shiba puppy who is warm, quick and a little dramatic",
+    "detail": "Teal bandana tab, bottom edge",
+    "decal": {
+      "grid": [
+        "kkkkkkkkkk",
+        "kaaaaaaaak",
+        ".kaaaaaak.",
+        "..kaabak..",
+        "...kaak...",
+        "....kk...."
+      ],
+      "colors": {
+        "a": "#2E9A9C",
+        "b": "#7AD8D2"
+      },
+      "pos": {
+        "bottom": -10,
+        "left": 24
+      }
+    }
+  }
+}

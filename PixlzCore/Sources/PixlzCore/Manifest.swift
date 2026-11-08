@@ -99,9 +99,25 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var askPlaceholder: String
     /// One line of character for the Ask prompt.
     public var personality: String
+    /// The design's note on the Pixl's menu detail (C10), e.g. "Lily-pad notch, top edge".
+    public var detail: String?
+    /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
+    public var decal: PixlDecal?
 
-    public init(accent: String, menuFace: String, glassBody: Bool, signature: String, askPlaceholder: String, personality: String) {
+    public init(accent: String, menuFace: String, glassBody: Bool, signature: String, askPlaceholder: String, personality: String,
+                detail: String? = nil, decal: PixlDecal? = nil) {
         self.accent = accent; self.menuFace = menuFace; self.glassBody = glassBody
         self.signature = signature; self.askPlaceholder = askPlaceholder; self.personality = personality
+        self.detail = detail; self.decal = decal
     }
+}
+
+/// A tiny pixel grid drawn on the edge of the Pixl's surfaces (C10). Letters: k = outline,
+/// f = surface fill, a/b/s = colours from `colors`, "." = transparent. `pos` says which edges
+/// it sits on and how far (design points; negative = sticking out past the edge).
+public struct PixlDecal: Codable, Equatable, Sendable {
+    public var grid: [String]
+    public var colors: [String: String]
+    public var pos: [String: Double]
+    public init(grid: [String], colors: [String: String], pos: [String: Double]) { self.grid = grid; self.colors = colors; self.pos = pos }
 }

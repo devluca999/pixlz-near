@@ -42,28 +42,32 @@ func run() throws {
     let result = try JSONDecoder().decode(PolishResult.self, from: Data(contentsOf: URL(fileURLWithPath: args[1])))
     let out = args[2]
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
-    let art = FroggArt.shared
+    var art: FroggArt { FroggArt.shared }
 
-    // 1. Every frame Frogg has, at 3×, labelled.
-    let names = ["idle_0", "idle_1", "idle_2", "move_0", "move_1", "move_2", "poke_0", "poke_1", "poke_2",
-                 "grab_0", "grab_1", "grab_2", "signature_0", "signature_1", "signature_2", "rest_0", "rest_1", "rest_2",
-                 "perch_2", "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_curious", "emotion_proud"]
-    let cell = NSSize(width: art.canvas.width * 3 + 24, height: art.canvas.height * 3 + 40)
-    let cols = 5
-    let rows = (names.count + cols - 1) / cols
-    let sheet = Canvas(NSSize(width: cell.width * CGFloat(cols) + 24, height: cell.height * CGFloat(rows) + 70), fill: Theme.paper) { _ in
-        label("Frogg · rendered from the Claude Design C7 engine · 3×", Theme.mono(18, .bold), Theme.ink, at: NSPoint(x: 24, y: 20))
+    // 1. Every frame of every Pixl, at 2×, labelled: one sheet per Pixl.
+    let names = PixlSkins.requiredFrames
+    for skin in PixlSkins.all {
+        PixlSkins.currentID = skin.id
+        let a = skin.art
+        let cell = NSSize(width: a.canvas.width * 2 + 16, height: a.canvas.height * 2 + 30)
+        let cols = 9
+        let rows = (names.count + cols - 1) / cols
+        let sheet = Canvas(NSSize(width: cell.width * CGFloat(cols) + 24, height: cell.height * CGFloat(rows) + 64), fill: Theme.paper) { _ in
+            label("\(skin.manifest.name) · \(skin.manifest.species) · \(names.count) frames from the Claude Design engine · 2×",
+                  Theme.mono(16, .bold), Theme.ink, at: NSPoint(x: 24, y: 18))
+        }
+        for (i, n) in names.enumerated() {
+            let v = FroggView(scale: 2, frameName: n)
+            v.frame.origin = NSPoint(x: 24 + CGFloat(i % cols) * cell.width, y: 54 + CGFloat(i / cols) * cell.height)
+            sheet.addSubview(v)
+            let l = NSTextField(labelWithString: n.replacingOccurrences(of: "_", with: " "))
+            l.font = Theme.mono(10, .bold); l.textColor = Theme.muted
+            l.frame = NSRect(x: v.frame.minX, y: v.frame.maxY + 2, width: cell.width, height: 14)
+            sheet.addSubview(l)
+        }
+        try png(sheet, "\(out)/\(skin.id)-frames.png")
     }
-    for (i, n) in names.enumerated() {
-        let v = FroggView(scale: 3, frameName: n)
-        v.frame.origin = NSPoint(x: 24 + CGFloat(i % cols) * cell.width, y: 60 + CGFloat(i / cols) * cell.height)
-        sheet.addSubview(v)
-        let l = NSTextField(labelWithString: n.replacingOccurrences(of: "_", with: " "))
-        l.font = Theme.mono(12, .bold); l.textColor = Theme.muted
-        l.frame = NSRect(x: v.frame.minX, y: v.frame.maxY + 4, width: cell.width, height: 18)
-        sheet.addSubview(l)
-    }
-    try png(sheet, "\(out)/frogg-frames.png")
+    PixlSkins.currentID = "frogg"
 
     // 2. Frogg perched on a (drawn) window's title bar, with its thought bubble.
     let scene = NSSize(width: 980, height: 560)

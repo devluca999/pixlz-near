@@ -3,7 +3,7 @@ import PixlzCore
 
 typealias SquashStretchQuantize = SquashStretch
 
-/// Frogg's frames, rendered from the Claude Design C7 engine (scripts/render-frogg.mjs).
+/// Frogg's frames, rendered from the Claude Design C7 engine (scripts/render-pixls.mjs).
 /// Indexed colour, alpha 0 or 255 only, drawn nearest-neighbour at whole-number scales.
 @MainActor
 public final class FroggArt {
@@ -22,9 +22,8 @@ public final class FroggArt {
         let frames: [String: Frame]
     }
 
-    public static let shared: FroggArt = {
-        do { return try FroggArt(json: Data(froggSpriteJSON.utf8)) } catch { fatalError("bad sprite data: \(error)") }
-    }()
+    /// The current Pixl's art (the name stays: Frogg was first).
+    public static var shared: FroggArt { PixlSkins.current.art }
 
     public let frames: [String: Frame]
     private let colors: [Character: (UInt8, UInt8, UInt8)]
@@ -145,14 +144,38 @@ public final class FroggArt {
     }
 }
 
-/// Frogg's species data (assets/frogg/pixl.json, embedded by scripts/render-frogg.mjs),
-/// including the menu character (`ui`): accent, menu face, signature name, voice.
-public enum PixlData {
-    public static let manifest: PixlManifest = {
-        do { return try PixlManifest.decode(Data(froggManifestJSON.utf8)) } catch { fatalError("bad pixl.json: \(error)") }
-    }()
-    public static var ui: PixlUI {
-        manifest.ui ?? PixlUI(accent: "#7CD93A", menuFace: "emotion_curious", glassBody: false, signature: "Signature",
-                              askPlaceholder: "Ask anything…", personality: "a friendly pixel pet")
+/// Every Pixl the app ships (scripts/render-pixls.mjs): its frames and its pixl.json.
+@MainActor
+public enum PixlSkins {
+    public struct Skin {
+        public let id: String
+        public let manifest: PixlManifest
+        public let art: FroggArt
+        public var ui: PixlUI { manifest.ui ?? PixlData.fallbackUI }
     }
+
+    public static let all: [Skin] = pixlOrder.map { id in
+        do {
+            return Skin(id: id, manifest: try PixlManifest.decode(Data(pixlManifestJSON[id]!.utf8)),
+                        art: try FroggArt(json: Data(pixlSpriteJSON[id]!.utf8)))
+        } catch { fatalError("bad Pixl data for \(id): \(error)") }
+    }
+
+    /// Which one is on screen. Set by the app from the saved setting.
+    public static var currentID = "frogg"
+    public static var current: Skin { skin(currentID) ?? all[0] }
+    public static func skin(_ id: String) -> Skin? { all.first { $0.id == id } }
+
+    /// Every frame name the app asks for: all slots × 3, the six emotions.
+    public static let requiredFrames: [String] =
+        Slot.allCases.flatMap { s in (0..<3).map { "\(s.rawValue)_\($0)" } } + Emotion.allCases.map { "emotion_\($0.rawValue)" }
+}
+
+/// The current Pixl's species data and menu character (`ui`): accent, menu face, signature, voice.
+@MainActor
+public enum PixlData {
+    public static var manifest: PixlManifest { PixlSkins.current.manifest }
+    public static var ui: PixlUI { PixlSkins.current.ui }
+    nonisolated static let fallbackUI = PixlUI(accent: "#7CD93A", menuFace: "emotion_curious", glassBody: false, signature: "Signature",
+                                   askPlaceholder: "Ask anything…", personality: "a friendly pixel pet")
 }

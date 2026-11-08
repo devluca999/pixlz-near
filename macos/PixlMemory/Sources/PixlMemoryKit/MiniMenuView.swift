@@ -77,13 +77,20 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         nameField.delegate = self
         nameField.placeholderString = "Name"
         nameField.widthAnchor.constraint(equalToConstant: 180).isActive = true
-        let species = label("Red-eyed tree frog · the only Pixl in v1", Theme.mono(10), Theme.textMuted)
+        let species = label(PixlData.manifest.species, Theme.mono(10), Theme.textMuted)
         let nameCol = NSStackView(views: [nameField, species]); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 4
         let close = PixelButton(title: "✕", primary: false) { [weak self] in self?.onClose?() }
         closeButton = close
         let card = NSStackView(views: [img, nameCol, NSView(), close]); card.orientation = .horizontal; card.spacing = 10
         card.widthAnchor.constraint(equalToConstant: inner).isActive = true
         stack.addArrangedSubview(card)
+
+        stack.addArrangedSubview(section("PIXL"))
+        let picker = SkinPickerView(selected: settings.skinID, look: look, compact: true)
+        picker.widthAnchor.constraint(equalToConstant: picker.frame.width).isActive = true
+        picker.heightAnchor.constraint(equalToConstant: picker.frame.height).isActive = true
+        picker.onPick = { [weak self] id in self?.settings.skin = id; self?.changed() }
+        stack.addArrangedSubview(picker)
 
         stack.addArrangedSubview(section("SIZE"))
         let size = NSSegmentedControl(labels: ["2×", "3×", "4×"], trackingMode: .selectOne, target: self, action: #selector(sizeChanged(_:)))

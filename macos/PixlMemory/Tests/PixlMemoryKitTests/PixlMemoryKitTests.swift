@@ -11,7 +11,7 @@ struct ArtTests {
         let expected = ["idle_0", "idle_1", "idle_2", "move_0", "move_1", "move_2", "poke_0", "poke_1", "poke_2", "rest_1",
                         "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_curious", "emotion_proud"]
         #expect(Set(expected).isSubset(of: Set(art.frames.keys)))
-        #expect(art.frames.count == 25)
+        #expect(art.frames.count == 33)  // 9 slots × 3 + 6 emotions
         for name in expected {
             let img = art.image(name)
             #expect(img?.width == art.frames[name]?.w)

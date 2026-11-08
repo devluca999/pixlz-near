@@ -197,6 +197,7 @@ final class BubbleMenu {
                     ListMenuView.Row(id: "send", title: "Send to device", icon: "send", enabled: false),
                     ListMenuView.Row(id: "focus", title: app.focusUntil == nil ? "Focus for 25 min" : "Stop focus", icon: nil),
                     ListMenuView.Row(id: "signature", title: "Do your thing", icon: nil, trailing: ui.signature),
+                    ListMenuView.Row(id: "skin", title: "Change Pixl", icon: nil, trailing: app.settings.name),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
                     ListMenuView.Row(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")]
         if app.pendingSelection != nil { rows.insert(ListMenuView.Row(id: "polish", title: "Polish selection", icon: "polish"), at: 0) }
@@ -214,6 +215,7 @@ final class BubbleMenu {
         case "wallet": showWallet()
         case "focus": app.focusUntil == nil ? app.startFocus(minutes: 25) : app.endFocus(completed: false)
         case "signature": app.signature()
+        case "skin": showSkins()
         case "settings": app.toggleMiniMenu()
         case "hide": app.toggleHidden()
         default: break
@@ -317,6 +319,19 @@ final class BubbleMenu {
         }
         showCard(card, name: "ask")
         cardPanel?.makeFirstResponder(card.field)
+    }
+
+    func showSkins() {
+        let card = SkinCard(selected: PixlSkins.currentID, look: cardLook)
+        card.fit()
+        card.onClose = { [weak self] in self?.closeCard() }
+        card.picker.onCancel = { [weak self] in self?.closeCard() }
+        card.picker.onPick = { [weak self] id in
+            self?.closeCard()
+            self?.app.setSkin(id)
+        }
+        showCard(card, name: "skins")
+        cardPanel?.makeFirstResponder(card.picker)
     }
 
     func showMemory() {
