@@ -266,7 +266,56 @@ func run() throws {
     try png(bg, "\(out)/polish-refused.png")
 }
 
+/// `pixl-snapshots --icon <dir.iconset>`: the app icon, Frogg on a rounded paper tile with
+/// the C10 outline and hard shadow, at every size macOS wants (iconutil turns it into .icns).
+@MainActor
+func renderIcon(_ dir: String) throws {
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    PixlSkins.currentID = "frogg"
+    for (base, scales) in [(16, [1, 2]), (32, [1, 2]), (128, [1, 2]), (256, [1, 2]), (512, [1, 2])] {
+        for k in scales {
+            let px = CGFloat(base * k)
+            let img = NSImage(size: NSSize(width: px, height: px), flipped: true) { r in
+                let inset = px * 0.09, radius = px * 0.2
+                let tile = r.insetBy(dx: inset, dy: inset)
+                NSColor(srgbRed: 27 / 255, green: 42 / 255, blue: 26 / 255, alpha: 1).setFill()
+                NSBezierPath(roundedRect: tile.offsetBy(dx: 0, dy: px * 0.025), xRadius: radius, yRadius: radius).fill()
+                let face = NSBezierPath(roundedRect: tile, xRadius: radius, yRadius: radius)
+                NSColor(srgbRed: 1, green: 251 / 255, blue: 242 / 255, alpha: 1).setFill()
+                face.fill()
+                face.lineWidth = max(1, px * 0.02)
+                NSColor(srgbRed: 27 / 255, green: 42 / 255, blue: 26 / 255, alpha: 1).setStroke()
+                face.stroke()
+                // the lily pad under Frogg
+                NSColor(srgbRed: 124 / 255, green: 217 / 255, blue: 58 / 255, alpha: 1).setFill()
+                NSBezierPath(ovalIn: NSRect(x: tile.minX + tile.width * 0.14, y: tile.maxY - tile.height * 0.3, width: tile.width * 0.72, height: tile.height * 0.18)).fill()
+                let art = FroggArt.shared.size("idle_0")
+                let scale = max(1, floor(min(tile.width * 0.8 / art.width, tile.height * 0.62 / art.height)))
+                let w = art.width * scale, h = art.height * scale
+                if let frame = FroggArt.shared.image("idle_0"), let ctx = NSGraphicsContext.current?.cgContext {
+                    ctx.interpolationQuality = .none
+                    ctx.saveGState()
+                    let rect = CGRect(x: tile.midX - w / 2, y: tile.maxY - tile.height * 0.2 - h, width: w, height: h)
+                    ctx.translateBy(x: 0, y: rect.maxY + rect.minY); ctx.scaleBy(x: 1, y: -1)   // the context is flipped; the CGImage isn't
+                    ctx.draw(frame, in: rect)
+                    ctx.restoreGState()
+                }
+                return true
+            }
+            guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:])
+            else { continue }
+            let name = k == 1 ? "icon_\(base)x\(base).png" : "icon_\(base)x\(base)@2x.png"
+            try png.write(to: URL(fileURLWithPath: dir).appending(path: name))
+        }
+    }
+    print("wrote \(dir)")
+}
+
 MainActor.assumeIsolated {
     _ = NSApplication.shared
+    if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--icon" {
+        do { try renderIcon(CommandLine.arguments[2]) } catch { print("error: \(error)"); exit(1) }
+        exit(0)
+    }
     do { try run() } catch { print("error: \(error)"); exit(1) }
 }

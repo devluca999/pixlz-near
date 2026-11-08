@@ -80,6 +80,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# The app icon (Frogg on a paper tile), rendered from the sprite, and where the memory
+# service lives (the app starts it if it isn't running).
+mkdir -p "$APP/Contents/Resources"
+rm -rf build/AppIcon.iconset
+swift run -c release --package-path macos/PixlMemory pixl-snapshots --icon build/AppIcon.iconset >/dev/null
+iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :PixlMemoryServiceDir string $(cd memory && pwd)" "$APP/Contents/Info.plist"
+
 ensure_identity
 # nested code first, then the app (which seals it)
 codesign --force --sign "$IDENTITY" --identifier dev.pixlz.pixl-native-host --timestamp=none "$APP/Contents/MacOS/pixl-native-host"

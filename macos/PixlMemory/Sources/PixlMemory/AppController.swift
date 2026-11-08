@@ -45,6 +45,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var menu = BubbleMenu(app: self)
     lazy var game = GameController(app: self)
     let bridge = BridgeServer()
+    let service = ServiceLauncher()
     /// Where the selection came from: Accessibility, or the browser extension (the bridge).
     var selectionFromWeb = false
     let ui = PixlData.ui
@@ -120,6 +121,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         E2EState.install(self)
         bridge.start()
+        Task { @MainActor in
+            if let why = await service.ensureRunning() {
+                Debug.log("service: \(why)")
+                say("Memory service: \(why)", for: 6)
+            }
+        }
         watcher.onChange = { [weak self] change in self?.windowChanged(change) }
         watcher.start()
         let ws = NSWorkspace.shared.notificationCenter
@@ -1235,11 +1242,55 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             img.size = NSSize(width: 25, height: 18)
             item.button?.image = img
         }
-        item.button?.toolTip = "Pixl Memory"
-        let menu = NSMenu()
-        menu.delegate = self
-        item.menu = menu
+        item.button?.toolTip = "Pixl Memory: click to call your Pixl, right-click for the menu"
+        // left click: summon (or open its bubbles); right click / ⌃-click: the full menu
+        item.button?.target = self
+        item.button?.action = #selector(statusClicked(_:))
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusMenu.delegate = self
         statusItem = item
+    }
+
+    let statusMenu = NSMenu()
+
+    @objc func statusClicked(_ sender: NSStatusBarButton) {
+        let e = NSApp.currentEvent
+        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true || e?.modifierFlags.contains(.option) == true {
+            statusItem?.menu = statusMenu
+            sender.performClick(nil)   // shows the menu at the icon
+            statusItem?.menu = nil
+            return
+        }
+        summon()
+    }
+
+    /// The menu bar icon was clicked: a hidden Pixl springs out of the icon onto your window;
+    /// a visible one opens its bubbles.
+    func summon() {
+        let onScreen = froggPanel.isVisible && froggPanel.alphaValue > 0.5 && !userHidden && !fullscreenHidden
+        Debug.log("summon (on screen: \(onScreen))")
+        if onScreen { menu.open(trigger: "menu bar icon"); return }
+        userHidden = false
+        fullscreenHidden = false
+        paused = false
+        userPlaced = false
+        guard let spot = target() else { return }
+        // start just under the icon, hanging from it, then hop down to the perch
+        var start = CGPoint(x: spot.foot.x, y: (screensTopLeft.first?.minY ?? 0) + spriteSize.height + 4)
+        if let w = statusItem?.button?.window {
+            let icon = topLeft(NSPoint(x: w.frame.midX, y: w.frame.minY))
+            if let screen = screensTopLeft.first(where: { $0.minX <= icon.x && icon.x <= $0.maxX }) {
+                start = CGPoint(x: min(max(icon.x, screen.minX + spriteSize.width / 2), screen.maxX - spriteSize.width / 2),
+                                y: screen.minY + spriteSize.height + 4)
+            }
+        }
+        cancelMotion()
+        place(at: start)
+        showFrogg()
+        let hang = Choreography([.hold(at: start, frame: MotionFrames.hang, mirrored: false, duration: 0.14)])
+        run(Choreography(hang.segments + Choreography.hop(route(from: start, to: spot.foot), notice: false).segments), target: spot.foot)
+        puff(at: start)
+        say("Hi! I'm here.", for: 1.8)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -1252,7 +1303,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(i)
             return i
         }
-        _ = add("Open menu", #selector(openRadialFromMenu))
+        _ = add(userHidden ? "Call \(settings.name)" : "Open \(settings.name)'s menu", #selector(summonFromMenu))
+        let login = add("Open at login", #selector(toggleLogin))
+        login.state = LoginItem.enabled ? .on : .off
         let polish = add("Polish selection", nil)
         polish.submenu = NSMenu()
         instructionItems().forEach { polish.submenu?.addItem($0) }
@@ -1297,6 +1350,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func openRadialFromMenu() { if !userHidden { menu.open(trigger: "menu bar") } }
+    @objc func summonFromMenu() { summon() }
+    @objc func toggleLogin() {
+        let ok = LoginItem.set(!LoginItem.enabled)
+        say(ok ? (LoginItem.enabled ? "I'll be here when you log in." : "Okay, I won't start at login.")
+               : "macOS wants you to allow it in System Settings ▸ General ▸ Login Items.", for: 3)
+    }
     @objc func openMiniMenu() { toggleMiniMenu() }
     @objc func setMischief(_ sender: NSMenuItem) {
         settings.mischief = sender.representedObject as? String ?? "normal"
@@ -1332,6 +1391,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func quit() { NSApp.terminate(nil) }
+
+    func applicationWillTerminate(_ notification: Notification) { service.stop() }
 
     // MARK: self-test (--selftest): clicks through the real panels with posted events
 
