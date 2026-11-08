@@ -27,9 +27,16 @@ Package.resolved
 .vscode/
 .idea/
 
-# Secrets and local overrides (signing team IDs, API keys)
+# Secrets and local overrides (signing team IDs, API keys). This repo goes public:
+# keys live only in .env (copy .env.example), never in tracked files.
 *.local.xcconfig
 .env
+.env.*
+!.env.example
+.near-credentials/
+*.secret
+*-key.json
+*_key.json
 
 # Python
 .venv/

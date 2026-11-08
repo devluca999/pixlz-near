@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("attest", help="verify the NEAR AI TEE for a model (no API key needed)")
     a.add_argument("--model")
     a.add_argument("--json", action="store_true")
-    p = sub.add_parser("polish", help="polish text through a verified TEE (needs NEARAI_API_KEY)")
+    p = sub.add_parser("polish", help="polish text through a verified TEE (needs NEAR_AI_API_KEY in .env)")
     p.add_argument("text", nargs="?", help="text to polish (default: stdin)")
     p.add_argument("-i", "--instruction")
     p.add_argument("--model")

@@ -17,7 +17,7 @@ cd memory
 uv run pytest             # 41 offline tests (fixture: a real NEAR attestation report)
 uv run pytest -m live     # against the real NEAR AI Cloud
 uv run pixl-memory attest # verify the TEE now; no API key needed
-export NEARAI_API_KEY=sk-…   # cloud.near.ai → Credits → API Keys
+cp ../.env.example ../.env  # then set NEAR_AI_API_KEY (cloud.near.ai → Credits → API Keys)
 uv run pixl-memory polish "teh frog sit on the windw"
 uv run pixl-memory serve
 ```
@@ -83,13 +83,13 @@ Every route except `/health` needs `Authorization: Bearer $(uv run pixl-memory t
 - `memory.db`: SQLite. Every text column is AES-256-GCM encrypted, with `table:id:column` as associated data.
 - `store.key`: the encryption key.
 - `token`: the API token.
-- `nearai_api_key`: optional, instead of the env var.
 
 ## Configuration
 
+API keys are read **only** from the repo's `.env` (git-ignored; template: `.env.example`): `NEAR_AI_API_KEY`. Other settings are ordinary environment variables:
+
 | Env | Default |
 |---|---|
-| `NEARAI_API_KEY` | — (needed for polish only) |
 | `PIXL_MODEL` | `z-ai/glm-5.3-flash` |
 | `PIXL_MEMORY_PORT` | `7341` |
 | `PIXL_MEMORY_DIR` | see above |

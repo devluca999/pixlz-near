@@ -95,7 +95,7 @@ class NearAIClient:
         h = {"Accept": "application/json", "Accept-Encoding": "identity", "x-no-aliasing": "true"}
         if auth:
             if not self.api_key:
-                raise NoApiKey("set NEARAI_API_KEY (cloud.near.ai → API Keys)")
+                raise NoApiKey("set NEAR_AI_API_KEY in .env (copy .env.example; key from cloud.near.ai → API Keys)")
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
