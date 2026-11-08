@@ -201,6 +201,7 @@ final class BubbleMenu {
                     ListMenuView.Row(id: "send", title: "Send to device", icon: "send", enabled: false),
                     ListMenuView.Row(id: "focus", title: app.focusUntil == nil ? "Focus for 25 min" : "Stop focus", icon: nil),
                     ListMenuView.Row(id: "signature", title: "Do your thing", icon: nil, trailing: ui.signature),
+                    ListMenuView.Row(id: "game", title: "Mischief: \(ui.game?.name ?? "Catch")", icon: nil, trailing: "20 s"),
                     ListMenuView.Row(id: "skin", title: "Change Pixl", icon: nil, trailing: app.settings.name),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
                     ListMenuView.Row(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")]
@@ -220,6 +221,7 @@ final class BubbleMenu {
         case "focus": app.focusUntil == nil ? app.startFocus(minutes: 25) : app.endFocus(completed: false)
         case "signature": app.signature()
         case "skin": showSkins()
+        case "game": app.game.start()
         case "settings": app.toggleMiniMenu()
         case "hide": app.toggleHidden()
         default: break

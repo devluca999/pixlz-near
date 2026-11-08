@@ -162,6 +162,10 @@ let pixlManifestJSON: [String: String] = [
         "top": -8,
         "right": 18
       }
+    },
+    "game": {
+      "name": "Fly snap",
+      "target": "fly"
     }
   }
 }
@@ -308,6 +312,10 @@ let pixlManifestJSON: [String: String] = [
         "right": -15,
         "bottom": 4
       }
+    },
+    "game": {
+      "name": "Yarn swat",
+      "target": "yarn"
     }
   }
 }
@@ -451,6 +459,10 @@ let pixlManifestJSON: [String: String] = [
         "bottom": -10,
         "left": 24
       }
+    },
+    "game": {
+      "name": "Fetch!",
+      "target": "ball"
     }
   }
 }
@@ -590,7 +602,11 @@ let pixlManifestJSON: [String: String] = [
         "left": 18
       }
     },
-    "menuStyle": "wisp"
+    "menuStyle": "wisp",
+    "game": {
+      "name": "Sock hunt",
+      "target": "sock"
+    }
   }
 }
 """##,
@@ -742,7 +758,11 @@ let pixlManifestJSON: [String: String] = [
         "right": 28
       }
     },
-    "menuStyle": "silk"
+    "menuStyle": "silk",
+    "game": {
+      "name": "Web catch",
+      "target": "fly"
+    }
   }
 }
 """##,

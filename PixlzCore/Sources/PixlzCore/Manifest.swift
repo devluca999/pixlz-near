@@ -106,6 +106,8 @@ public struct PixlUI: Codable, Equatable, Sendable {
     /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a
     /// dithered trail, the ghost), or nil (they just puff out).
     public var menuStyle: String?
+    /// Mischief ▸ Catch: what pops up to be caught ("fly", "yarn", "ball", "sock") and its name.
+    public var game: PixlGame?
 
     public init(accent: String, menuFace: String, glassBody: Bool, signature: String, askPlaceholder: String, personality: String,
                 detail: String? = nil, decal: PixlDecal? = nil) {
@@ -123,4 +125,10 @@ public struct PixlDecal: Codable, Equatable, Sendable {
     public var colors: [String: String]
     public var pos: [String: Double]
     public init(grid: [String], colors: [String: String], pos: [String: Double]) { self.grid = grid; self.colors = colors; self.pos = pos }
+}
+
+public struct PixlGame: Codable, Equatable, Sendable {
+    public var name: String
+    public var target: String
+    public init(name: String, target: String) { self.name = name; self.target = target }
 }

@@ -138,6 +138,10 @@
         "top": -8,
         "right": 18
       }
+    },
+    "game": {
+      "name": "Fly snap",
+      "target": "fly"
     }
   }
 }

@@ -145,6 +145,10 @@
         "right": 28
       }
     },
-    "menuStyle": "silk"
+    "menuStyle": "silk",
+    "game": {
+      "name": "Web catch",
+      "target": "fly"
+    }
   }
 }

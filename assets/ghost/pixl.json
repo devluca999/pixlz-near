@@ -132,6 +132,10 @@
         "left": 18
       }
     },
-    "menuStyle": "wisp"
+    "menuStyle": "wisp",
+    "game": {
+      "name": "Sock hunt",
+      "target": "sock"
+    }
   }
 }

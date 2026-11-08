@@ -139,6 +139,10 @@
         "right": -15,
         "bottom": 4
       }
+    },
+    "game": {
+      "name": "Yarn swat",
+      "target": "yarn"
     }
   }
 }

@@ -136,6 +136,10 @@
         "bottom": -10,
         "left": 24
       }
+    },
+    "game": {
+      "name": "Fetch!",
+      "target": "ball"
     }
   }
 }

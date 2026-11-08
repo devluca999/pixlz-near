@@ -43,6 +43,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
     lazy var menu = BubbleMenu(app: self)
+    lazy var game = GameController(app: self)
     let bridge = BridgeServer()
     /// Where the selection came from: Accessibility, or the browser extension (the bridge).
     var selectionFromWeb = false
@@ -1647,6 +1648,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         await wait(0.3)
         let pill = NSApp.windows.first { $0.isVisible && $0.contentView is CoinPill }
         check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
+
+        // Mischief ▸ Catch: a target pops up near the Pixl, a click on it scores, Esc ends the game
+        game.start()
+        let tg = now
+        while game.targetPanel == nil && now - tg < 3 { await wait(0.02) }
+        check("game: a target pops up near the Pixl", game.targetPanel?.isVisible == true)
+        if let tv = game.targetPanel?.contentView { click(tv, at: NSPoint(x: tv.bounds.midX, y: tv.bounds.midY)) }
+        await wait(0.2)
+        check("game: clicking it scores (\(game.game?.score ?? -1))", game.game?.score == 1)
+        game.end(early: true)
+        await wait(0.3)
+        check("game: Esc / end stops it and frees the Pixl", !game.isOn && !busy && game.targetPanel == nil)
 
         let failed = results.filter { !$0.1 }.count
         print("\(results.count - failed)/\(results.count) passed")
