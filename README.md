@@ -2,7 +2,7 @@
 
 **Frogg, a pixel-art frog that sits on your Mac and edits your writing privately.** Select text in any app, click Frogg, and ask "polish this". Your text goes only to a model running inside a NEAR AI Cloud TEE (Intel TDX + NVIDIA confidential GPUs). Before any text leaves the Mac, Pixl Memory checks the hardware attestation. Every reply arrives with a verification result: which enclave produced it, whether it was fresh for this request, and whether its signature matches.
 
-Frogg also has **its own NEAR account with a small balance it spends on its own inference**. The app holds only a narrowly scoped key for that account, never yours.
+Frogg also has **its own NEAR account with a small balance it spends on its own inference**. The app holds only Frogg's key, never yours, so Frogg's balance is the most it can ever spend.
 
 Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (primary), Agent Economy, AI Security & Defense.
 
@@ -27,7 +27,7 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 | Do | See |
 |---|---|
 | `uv run pixl-memory attest` | 14 checks against the live NEAR AI Cloud: Intel TDX quote and TCB, your nonce inside the signed quote, signing key bound, RTMR3 replay, measured docker-compose, NVIDIA GPU attestation, deployment log |
-| `NEARAI_API_KEY=sk-… uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
+| `cp .env.example .env`, set `NEAR_AI_API_KEY`, then `uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
 | `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
 | `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
 
@@ -46,13 +46,13 @@ Full details: [`memory/README.md`](memory/README.md).
                 ▼
         NEAR AI Cloud  ── gateway TEE ── model TEE (z-ai/glm-5.3-flash)
                 │
-        Frogg's wallet  frogg.<you>.testnet  ── pay_inference(amount, receipt_hash) ─▶ payee
+        Frogg's wallet  frogg.<you>.testnet  ── transfer(cost) ─▶ payee (allowlisted)
 ```
 
 | Part | Status |
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
-| `wallet/`: Frogg's spending-capped NEAR account and policy contract | in progress |
+| Frogg's wallet: funded `frogg.<you>.testnet`, pays per request | next |
 | `macos/PixlMemory/`: overlay app: perch, polish, diff, drag | in progress |
 | `extension/`: Chrome highlight → save → text-fragment backlink | in progress |
 
@@ -60,18 +60,39 @@ Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
 
 ## Frogg's wallet: why your funds stay untouchable
 
-- **You create and fund `frogg.<you>.testnet` yourself.** NEAR gives a parent account no control over a sub-account after creation, and the app never sees your keys.
-- **The app holds one function-call key on Frogg's account.** It is scoped to Frogg's own `frogg-wallet` contract and to the single method `pay_inference`. NEAR enforces three things at the protocol level:
-  - a function-call key **cannot transfer NEAR or attach a deposit**;
-  - it **cannot add keys, deploy or delete**;
-  - its allowance covers gas only.
-- **The contract limits what that one method can do.** It pays a **fixed payee**, at most `max_per_call` per call and `max_per_day` per day, and only while not paused.
-- **The worst case is small.** If the app is compromised, the attacker can pay your chosen payee up to the daily limit, until Frogg's small balance runs out. Your main account is never at risk.
-- **Rejected alternative:** a full-access key on Frogg's account would also protect your main account, but whoever stole it could send Frogg's entire balance anywhere.
-- **NEAR AI Cloud bills in USD credits bought in its dashboard.** There's no documented way to buy them on-chain. So Frogg pays the account that holds the credits: you, or whoever runs the service. The price is the request's real cost from `/v1/billing/costs`, converted at a rate you set.
-- **Receipts stay private.** Only the amount and a salted hash of the receipt go on chain. The full receipt (model, cost, verdict, tx) stays in the local encrypted store.
+**Choice: a plain NEAR sub-account that you fund, e.g. `frogg.<you>.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
+
+**How it works:**
+- **You create `frogg.<you>.testnet` from your own wallet or CLI and send it a small amount.** Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
+- **The app holds only Frogg's own key, for Frogg's account.** The most a stolen key can spend is the balance you chose to give Frogg. That balance is the hard cap, enforced by NEAR itself.
+- **Frogg pays per request with a plain NEAR transfer.** The recipient is the account that holds the NEAR AI credits (you, or whoever runs the service). There is no documented way to buy NEAR AI credits on-chain; they're bought in its dashboard. The amount is the request's real cost from `/v1/billing/costs`, converted at a rate you set. The app refuses to pay any other recipient.
+- **Your balance and receipts appear in Frogg's thought bubble.** On chain is only the amount and transaction. The receipt itself (model, cost, verification verdict) stays in the local encrypted store.
+- **A second cap you can add:** set a USD spend limit on your NEAR AI API key in the cloud.near.ai dashboard. NEAR AI enforces it per key.
+
+**Why not a NEAR Intents agent account** (checked 2026-11-08 against docs.near-intents.org and the `NEAR-Intents-Agent-API` SDK and skills):
+
+| | NEAR Intents Agent API | Funded sub-account |
+|---|---|---|
+| Network | **Mainnet only**, real funds ("experimental, mainnet-only beta") | **Testnet** first, free |
+| Credentials in the app | A partner API key, which the docs say must **never ship in an app**, so it needs our own backend; plus a grant token | One key, for Frogg's account only |
+| Setup | Owner-signed intents to create the account, set policy, issue a grant | One account-creation and one transfer, from your wallet |
+| Limits | Rich policy (destinations, budgets, schedules, freeze), enforced by the service | Balance = hard cap, enforced by the protocol; recipient allowlist in our code |
+| NEAR AI integration | None | None (same) |
+| Code for us | SDK (Node 24) + backend proxy + owner-signing flow | Sign and send one transfer |
+
+Both keep your main funds untouchable. The sub-account does it with far less code, works on testnet, and needs no server.
+- The Agent API's server-side policy engine is the stronger tool for an agent that holds large balances. It is the upgrade path if Frogg ever does.
+- A smaller step is to deploy a tiny policy contract on Frogg's account and give the app only a function-call key for its `pay_inference` method. NEAR function-call keys can't transfer NEAR or add keys, so a stolen key could then only pay the fixed payee within per-call and daily limits. We list that as optional hardening, not part of the first build.
 
 Testnet first. No account is created or funded without the owner's go-ahead.
+
+## Keys and secrets
+
+This repo is public, so **API keys live only in `.env`**, which is git-ignored. Copy `.env.example` (empty values) to `.env` and fill in `NEAR_AI_API_KEY`. The service reads keys from that file only: not from code, arguments or the shell environment. It never prints them.
+
+`scripts/check-secrets.sh` blocks commits containing anything key-shaped or any `.env` file. Turn it on per clone with `git config core.hooksPath .githooks`. The test suite runs it over every tracked file.
+
+Frogg's own NEAR key isn't an API key. It's stored outside the repo, in `~/Library/Application Support/PixlMemory/` (mode 0600).
 
 ## Baseline vs hackathon work
 
@@ -85,7 +106,7 @@ Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR inte
 **Diff of all hackathon work:** https://github.com/devluca999/pixlz/compare/pre-hackathon...hackathon-submission
 
 - **Baseline:** `PixlzCore/` (pet needs, behavior, world map, physics, PetState, Mac↔iPhone travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`, `assets/`.
-- **New in the hackathon:** `memory/`, `wallet/`, `macos/PixlMemory/`, `extension/`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
+- **New in the hackathon:** `memory/`, `macos/PixlMemory/`, `extension/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
 
 Pixlz also plans a **Solana** layer. It is not part of this submission.
 
@@ -102,6 +123,7 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 | [dcap-qvl](https://github.com/Phala-Network/dcap-qvl) (Phala) | Intel TDX quote verification |
 | [eth-account](https://github.com/ethereum/eth-account) | EIP-191 signature recovery |
 | [cryptography](https://cryptography.io) | AES-GCM at rest |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | reads API keys from `.env` |
 | pytest, hatchling | tests, build |
 
 **External services:**
@@ -111,7 +133,7 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 **Baseline:** Swift 6, Swift Package Manager, no third-party Swift packages.
 
-`wallet/`, `macos/` and `extension/` will list their libraries here as they land.
+The wallet code, `macos/` and `extension/` will list their libraries here as they land.
 
 **AI-generated content:**
 - The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
@@ -122,7 +144,6 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 ```
 memory/      Hackathon: local service, NEAR AI private inference + verification
-wallet/      Hackathon: Frogg's NEAR wallet contract and scripts (in progress)
 macos/       macOS app; PixlMemory/ overlay is hackathon work (in progress)
 extension/   Hackathon: Chrome extension (in progress)
 PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)

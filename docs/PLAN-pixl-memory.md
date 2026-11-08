@@ -14,7 +14,7 @@ Pixl Memory forks Pixlz. Frogg sits on the window you're working in, keeps the p
 | Hackathon | Started 2026-11-08 on branch `near-hackathon`. Tag `hackathon-submission` at the end. |
 | Diff | `https://github.com/devluca999/pixlz/compare/pre-hackathon...hackathon-submission` |
 
-Baseline = `PixlzCore/` (needs, behavior, world map, physics, PetState, travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`. Everything under `memory/`, `wallet/`, `macos/PixlMemory/`, `extension/` and this file is new.
+Baseline = `PixlzCore/` (needs, behavior, world map, physics, PetState, travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`. Everything under `memory/`, `macos/PixlMemory/`, `extension/`, `scripts/`, `.githooks/`, `.env.example` and this file is new.
 
 ## What the user sees
 
@@ -29,7 +29,6 @@ Baseline = `PixlzCore/` (needs, behavior, world map, physics, PetState, travel p
 | Dir | Stack | Job |
 |---|---|---|
 | `memory/` | Python 3.12 (uv), FastAPI, SQLite | Local service on `127.0.0.1:7341`. Stores highlights and drafts (encrypted at rest). Runs every inference through NEAR AI Cloud and verifies it. Pays per request from Frogg's wallet. CLI: `pixl-memory serve · attest · polish · wallet · token`. |
-| `wallet/` | Rust, near-sdk (cargo-near) | `frogg-wallet` policy contract deployed **on Frogg's own account**. Setup and teardown scripts. |
 | `macos/PixlMemory/` | Swift 6, AppKit, SwiftPM executable using `PixlzCore` | Overlay panel per SPEC §12: borderless, non-activating, click-through except Frogg's opaque pixels. Perches on the frontmost window's top edge (§7.1). Click → menu (§11.2) → Polish → diff panel → drag source. Thought bubble (§11.6) for balance and receipts. |
 | `extension/` | Chrome MV3, no build step | Context menu and popup. Builds text-fragment URLs and posts them to `memory/`. |
 
@@ -62,46 +61,34 @@ Only NEAR-hosted (`owned_by: nearai`) models are allowed. "Incognito" models (Op
 
 ## Frogg's wallet
 
-### Facts that shape the design (docs.near.org, read 2026-11-08)
+**Decision (2026-11-08, after reading docs.near.org, docs.near-intents.org, and the NEAR-Intents-Agent-API skills and SDK): a funded NEAR sub-account.** The README explains the choice for judges.
 
-- Function-call keys: one `receiver_id`, optional method list, and an allowance that **covers gas only**. They **cannot attach a deposit and cannot transfer NEAR**.
-- Full-access keys can transfer, add keys, deploy and delete.
-- A parent has **no control** over a sub-account after creating it.
-- Creating an account burns a fixed 0.007 Ⓝ.
-- `DeleteAccount` to a missing beneficiary burns the balance.
-- NEAR AI Cloud credits are bought **only in the dashboard**. No on-chain purchase path is documented. Staking-for-inference exists, but its contract and method aren't documented. Per-request cost **is** available: `POST /v1/billing/costs` with the `inference-id` header from the completion.
+Facts that decided it:
+- **NEAR Intents Agent API: mainnet-only beta, real funds.** Its partner key must never ship in an app, so we'd need a backend proxy. Creating the account, setting policy and issuing grants are all owner-signed intents. It has no NEAR AI integration. "Agent Connect" itself is linked from the SDK README, but its repo couldn't be read (GitHub 504). Its server-side policy engine (destinations, budgets, freeze) is the upgrade path for large balances.
+- **NEAR accounts:** a parent has no control over a sub-account after creation. A function-call key cannot transfer NEAR or attach a deposit, and its allowance covers only gas.
+- **NEAR AI Cloud:**
+  - Credits are bought only in the dashboard; there's no documented on-chain purchase, x402 or Intents path.
+  - Per-request cost: `POST /v1/billing/costs` with the `inference-id` header.
+  - Per-API-key USD spend limits exist (`PATCH /v1/workspaces/{id}/api-keys/{key}/spend-limit`, session token only), so the user sets them in the dashboard.
 
-### Options considered
-
-| Design | What a stolen app key can do | Verdict |
-|---|---|---|
-| App holds the user's key | Everything | Rejected |
-| App holds a **full-access key on `frogg.<user>`** | Drain Frogg's whole balance to anyone, add keys, delete the account. Main account safe. | Cap holds, but the whole balance is exposed |
-| App holds a **function-call key on `frogg.<user>`** for its own `frogg-wallet` contract, method `pay_inference` only | Pay the **fixed payee** at most `max_per_call` per call and `max_per_day` per UTC day, out of Frogg's balance. Nothing else: no other receivers, no new keys, no deploy, no delete. Gas comes from the key's allowance, which is also capped. | **Chosen** |
-
-### Chosen design
-
-- `frogg.<user>.testnet` is created and funded by the user from their own wallet or CLI. The setup script runs `near` CLI commands that the **user** signs. The app never sees the user's key.
-- The user deploys `frogg-wallet` to Frogg's account and calls `new` with:
-  - `owner` = the user;
-  - `payee` = the account that holds the NEAR AI credits (the user, or whoever runs the service);
-  - `max_per_call`, `max_per_day`.
-- The user adds one **function-call key** for the app: receiver `frogg.<user>.testnet`, methods `["pay_inference"]`, allowance 0.25 Ⓝ for gas. The app generates this key pair locally and only shows its public key.
-- The full-access key used for setup stays with the user; it lets them sweep or delete Frogg later. The README tells them to keep it offline, or remove it to make the account policy-only. They can add one back only with the full-access key they still hold.
-- `pay_inference(amount, receipt_hash)`:
-  - only callable by the account itself (that is, the function-call key);
-  - asserts the amount is within both limits;
-  - transfers to `payee`;
-  - emits a NEP-297 event `{amount, receipt_hash, spent_today}`.
-- Owner-only methods: `set_limits`, `set_payee`, `pause`, `sweep(to_owner)`.
-- **Hard cap, in layers:** Frogg's balance; then the per-call and per-day limits in the contract; then the gas allowance on the key. The user's main account is untouchable because no key for it ever touches the Mac.
-- **Pricing:** NEAR AI bills in USD. `memory/` asks `/v1/billing/costs` for the request's `costNanoUsd` and converts at a fixed rate the user sets (`PIXL_NEAR_PER_USD`). If the cost isn't visible yet, it uses a flat per-request price. Real-time oracle pricing is out of scope.
-- **Privacy of receipts:** the chain is public, so only `amount` and a **salted hash** of the receipt go on chain. The full receipt (inference id, model, cost, response hash, verdict, tx hash) stays in the local encrypted DB. The user can reveal one by publishing the salt.
-- **Order:** inference first, then payment. If the payment fails (cap reached, paused), Frogg shows "I'm out of allowance" and refuses further polishes until topped up. The finished result is still shown.
-- **Signing from Python:** a function-call transaction built and signed in `memory/` (Borsh + ed25519), using `py-near` or `near-kit` after a spike. If neither fits, a ~150-line encoder tested against near-cli output.
-- **Testnet first.** Mainnet only if there's time, with tiny amounts.
-
-**I will ask the owner before creating or funding any account, testnet included.** Contract tests run in near-workspaces' local sandbox, which creates no real accounts.
+Design:
+- **Setup.** The user creates `frogg.<user>.testnet` and funds it with a small balance from their own wallet or CLI. The app generates Frogg's key pair locally and shows the public key; the user adds it when creating the account. The private key stays in the data directory (0600), never in the repo and never in `.env`.
+- **Payment.** Per polish, after the result is shown:
+  - cost = `costNanoUsd` × `PIXL_NEAR_PER_USD`, or a flat fallback price if billing hasn't caught up;
+  - one `Transfer` from Frogg to the allowlisted payee;
+  - the payee comes from config, and the app refuses any other recipient.
+- **Caps.**
+  1. Frogg's balance: protocol-enforced; the user's main account is unreachable.
+  2. Per-request maximum and daily maximum: enforced in the app.
+  3. Optional NEAR AI per-key USD spend limit: enforced by NEAR AI.
+- **Receipts.**
+  - On chain: amount and transaction hash only.
+  - Stored locally, encrypted with the draft: inference id, model, cost, verdict, tx hash.
+  - The thought bubble shows the balance (`view_account`) and the last receipt with a testnet explorer link.
+- **Out of allowance.** If the balance or the daily cap is reached, Frogg says so and refuses further polishes until topped up.
+- **Signing.** One `Transfer` transaction (Borsh + ed25519), via `py-near` or `near-kit` after a spike, or a small encoder tested against near-cli output.
+- **Optional hardening, if time allows.** A tiny policy contract on Frogg's account; the app then holds only a function-call key for `pay_inference` (fixed payee, per-call and daily caps enforced on chain). A stolen app key could then pay nobody but the payee.
+- **Testnet first.** **Ask the owner before creating or funding any account.**
 
 ## Storage
 
@@ -115,28 +102,32 @@ SQLite at `~/Library/Application Support/PixlMemory/memory.db` (override: `PIXL_
   - Fixture: a real attestation report captured 2026-11-08, plus forged variants: wrong nonce, swapped signer, tampered compose, tampered event, debug TD, GPU fail.
   - Signature tests use a locally generated secp256k1 key.
   - The HTTP flow runs end to end against a fake NEAR server (`httpx.MockTransport`), including "attestation fails → text never sent".
-  - Live tests (`-m live`): attestation needs only the network; polish needs `NEARAI_API_KEY`.
-- `wallet/`: `cargo test` unit tests plus near-workspaces sandbox tests. Limits, payee lock, pause, an attacker calling from another account, and a function-call key trying to transfer, add a key or delete — each must fail.
+  - Live tests (`-m live`): attestation needs only the network; polish needs `NEAR_AI_API_KEY` in `.env`.
+- Wallet: transaction encoding checked against near-cli output; payee allowlist, per-request and daily caps, and out-of-balance handling unit-tested; one live testnet payment (after owner approval).
+- Secrets: `.env` is the only key source; `.env*` ignored; `scripts/check-secrets.sh --all` passes over tracked files (run by pytest).
 - `extension/`: text-fragment builder with `node --test`.
 - `macos/`: diff and layout logic unit-tested; the overlay checked by hand.
 
 ## Security demo (AI Security & Defense)
 
-A script with a logged run. It plays a compromised app holding Frogg's function-call key:
-- `Transfer` → rejected by the protocol;
-- `AddKey` → rejected;
-- `pay_inference` to itself → payee is fixed;
-- 1000× `pay_inference` → per-day limit;
-- calling the user's account → wrong receiver.
-
-Each attempt fails. The log goes in `wallet/ATTACKS.md`.
+A logged script, saved in `docs/ATTACKS.md`, plays a compromised Pixl Memory. Each attempt must fail:
+- Attestation preflight:
+  - forged or replayed TEE report: text not sent;
+  - incognito model: refused;
+  - reply signed by an unattested key: marked failed.
+- Wallet:
+  - pay a recipient that isn't on the allowlist: refused;
+  - exceed the per-request or daily cap: refused;
+  - spend more than Frogg's balance: rejected by NEAR;
+  - reach the user's main account: no key on the Mac.
+- Secrets: commit a key or a `.env`: blocked by the hook.
 
 ## Order
 
 | Day | Work |
 |---|---|
 | Nov 8 | Plan, tag, branch. `memory/` core: verification, store, polish, server, CLI, tests. `pixl-memory attest` works with no key. |
-| Nov 9 | `wallet/` contract and sandbox tests. Python signing spike. **Ask owner → create and fund `frogg.<user>.testnet`.** Extension. |
+| Nov 9 | Wallet: signing spike, payments, receipts, caps (tests offline). **Ask owner → create and fund `frogg.<user>.testnet`.** Extension. |
 | Nov 10 | `memory/` payments and receipts, end to end on testnet. Live polish with an API key. |
 | Nov 11–12 | macOS overlay: perch, click menu, AX selection, polish panel, diff, drag, thought bubble. |
 | Nov 13 | Attack demo log, README, screenshots, demo video. |

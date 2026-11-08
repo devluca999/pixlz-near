@@ -144,17 +144,48 @@ class NrasGpuVerifier:
     def verify(self, payload: dict[str, Any]) -> GpuResult:
         r = self.http.post(self.url, json=payload, timeout=60)
         r.raise_for_status()
-        body = r.json()
-        token = next((item[1] for item in body if isinstance(item, list) and item[0] == "JWT"), None)
-        if not token:
-            return GpuResult(False, "NRAS returned no JWT")
-        claims = _jwt_claims(token)
-        gpus = len(body[1]) if len(body) > 1 and isinstance(body[1], dict) else 0
-        if claims.get("x-nvidia-overall-att-result") is not True:
-            return GpuResult(False, "NVIDIA reported the GPU attestation as failed")
-        if claims.get("eat_nonce") != payload.get("nonce"):
-            return GpuResult(False, "NRAS token nonce does not match the evidence nonce")
-        return GpuResult(True, f"NVIDIA NRAS: overall result true for {gpus} GPU(s)")
+        return check_nras_response(r.json(), str(payload.get("nonce", "")), time.time())
+
+
+def check_nras_response(body: Any, nonce: str, now: float) -> GpuResult:
+    """Checks from NEAR's near-ai-cloud agent skill: overall result, nonce on every
+    token, and per GPU: secure boot on, debug disabled, every x-nvidia-* boolean
+    check true, no attestation warning, token not expired.
+    The JWTs arrive over TLS from NVIDIA; their ES384 signatures are not re-checked here."""
+    if not isinstance(body, list) or not body:
+        return GpuResult(False, "NRAS returned an unexpected response")
+    token = next((item[1] for item in body if isinstance(item, list) and item[:1] == ["JWT"]), None)
+    if not token:
+        return GpuResult(False, "NRAS returned no JWT")
+    overall = _jwt_claims(token)
+    if overall.get("x-nvidia-overall-att-result") is not True:
+        return GpuResult(False, "NVIDIA reported the GPU attestation as failed")
+    if overall.get("eat_nonce") != nonce:
+        return GpuResult(False, "NRAS token nonce does not match ours")
+    if float(overall.get("exp", 0)) <= now:
+        return GpuResult(False, "NRAS token expired")
+    gpus = body[1] if len(body) > 1 and isinstance(body[1], dict) else {}
+    if not gpus:
+        return GpuResult(False, "NRAS returned no per-GPU results")
+    models = set()
+    for name, gtoken in gpus.items():
+        g = _jwt_claims(gtoken)
+        models.add(str(g.get("hwmodel", "?")))
+        problems = []
+        if g.get("eat_nonce") != nonce:
+            problems.append("nonce")
+        if g.get("secboot") is not True:
+            problems.append("secure boot off")
+        if g.get("dbgstat") != "disabled":
+            problems.append("debug enabled")
+        if g.get("x-nvidia-attestation-warning") is not None:
+            problems.append(f"warning: {g.get('x-nvidia-attestation-warning')}")
+        problems += [k for k, v in g.items() if k.startswith("x-nvidia-") and isinstance(v, bool) and v is not True]
+        if float(g.get("exp", 0)) <= now:
+            problems.append("expired")
+        if problems:
+            return GpuResult(False, f"{name}: {', '.join(problems)}")
+    return GpuResult(True, f"NVIDIA NRAS: {len(gpus)} × {'/'.join(sorted(models))}, secure boot on, debug off, all checks true")
 
 
 def _jwt_claims(token: str) -> dict[str, Any]:
