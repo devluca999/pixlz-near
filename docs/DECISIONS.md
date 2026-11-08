@@ -162,3 +162,13 @@ Each milestone includes an Instruments check against these numbers.
 - [x] Copyright holder name (D5): "Luca M" from the GitHub profile; owner can override.
 - [ ] **Legacy Windows code:** the design readme refers to an earlier WPF `pixlz` codebase (SPEC v2, `MiniMenu.cs`, `FroggPainter.cs`). It isn't on GitHub; it's probably on the Windows laptop. When it's back, push it to a separate repo or branch and fold anything useful into `SPEC.md`.
 - [ ] **Design PNGs:** `design/assets`, `design/screenshots`, `design/uploads` are not pulled yet. They wait for Git LFS.
+
+---
+
+## D15. NEAR Hackathon fork: Pixl Memory (2026-11-08)
+- Branch `near-hackathon` from tag `pre-hackathon` (`8f546ec`). Plan: `docs/PLAN-pixl-memory.md`.
+- **Overrides D10 on this branch only:** AI/LLM calls (NEAR AI Cloud TEE models only, attested before any text is sent), a local service (`memory/`), and a NEAR wallet for Frogg (testnet first).
+- Inference only on models served from NEAR AI's own TEEs (`owned_by: nearai`); "incognito" models refused.
+- Frogg's wallet: a sub-account created and funded by the user; the app holds only a function-call key for `pay_inference` on Frogg's own policy contract. The app never holds the user's keys.
+- Ground rules R1–R8 still apply. Text reaches the user's apps only by the user dragging it (R4: no synthetic keystrokes or pastes).
+- License unchanged (proprietary). The repo goes public for judging by 2026-11-14 23:59 UTC.

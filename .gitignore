@@ -30,3 +30,9 @@ Package.resolved
 # Secrets and local overrides (signing team IDs, API keys)
 *.local.xcconfig
 .env
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
