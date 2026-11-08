@@ -5,9 +5,11 @@ extension SurfaceView {
     public static func card(_ content: NSView, look: Look) -> SurfaceView {
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize.width > 0 ? content.fittingSize : content.frame.size
-        let s = SurfaceView(frame: NSRect(x: 0, y: 0, width: size.width, height: size.height + (look.glass ? 0 : 3)),
+        // room on the edge where the Pixl's decal sits (top or bottom), so it never covers a control
+        let r = DecalArt.reserve(PixlData.ui)
+        let s = SurfaceView(frame: NSRect(x: 0, y: 0, width: size.width, height: size.height + r.top + r.bottom + (look.glass ? 0 : 3)),
                             shape: .rounded(16), look: look)
-        content.frame = NSRect(origin: .zero, size: size)
+        content.frame = NSRect(origin: NSPoint(x: 0, y: r.top), size: size)
         s.content.addSubview(content)
         DecalArt.attach(to: s.content, ui: PixlData.ui, look: look)  // the Pixl's own detail (C10)
         s.setAccessibilityElement(true)
@@ -500,10 +502,15 @@ public final class AskCard: PixlCard {
         hand.setAccessibilityLabel("Hand off to another app")
         setFooter([saveB, hand], hint: nil)
         let v = r.verification
-        hint.stringValue = (v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count)" + (r.receipt.map { " · " + $0.bubble } ?? "")
-        hint.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed
+        // the verdict sits under the answer (the footer is for the buttons)
         sources.forEach { $0.removeFromSuperview() }
         sources = []
+        let verdict = text((v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge) · \(v.passed)/\(v.checks.count) checks" + (r.receipt.map { " · " + $0.bubble } ?? ""),
+                           size: 10, weight: .bold, mono: true)
+        verdict.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed
+        stack.addArrangedSubview(verdict)
+        sources.append(verdict)
+        hint.stringValue = ""
         if let hs = r.highlights, !hs.isEmpty {
             let cap = caption("FROM YOUR HIGHLIGHTS", look: look)
             stack.addArrangedSubview(cap)

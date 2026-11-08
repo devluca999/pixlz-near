@@ -123,20 +123,23 @@
     "detail": "Lily-pad notch, top edge",
     "decal": {
       "grid": [
-        "..kkk...kk..",
-        ".kaaak.kaak.",
-        "kaabaakaaaak",
-        "kaaaaaaaaaak",
-        ".kaaaaaaaak.",
-        "..kkkkkkkk.."
+        "....kkk..kkk....",
+        "..kkaak..kaakk..",
+        ".kaaaaak.kaaaak.",
+        "kaabaaaakaaaaaak",
+        "kaabaaaaaaaaaaak",
+        "kaaaaaaaaaabaaak",
+        ".kaaaaaaaaaaaak.",
+        "..kkaaaaaaaakk..",
+        "....kkkkkkkk...."
       ],
       "colors": {
         "a": "#5CB82A",
         "b": "#A6EC70"
       },
       "pos": {
-        "top": -8,
-        "right": 18
+        "bottom": 8,
+        "left": 12
       }
     },
     "game": {

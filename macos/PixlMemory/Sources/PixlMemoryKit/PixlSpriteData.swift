@@ -147,20 +147,23 @@ let pixlManifestJSON: [String: String] = [
     "detail": "Lily-pad notch, top edge",
     "decal": {
       "grid": [
-        "..kkk...kk..",
-        ".kaaak.kaak.",
-        "kaabaakaaaak",
-        "kaaaaaaaaaak",
-        ".kaaaaaaaak.",
-        "..kkkkkkkk.."
+        "....kkk..kkk....",
+        "..kkaak..kaakk..",
+        ".kaaaaak.kaaaak.",
+        "kaabaaaakaaaaaak",
+        "kaabaaaaaaaaaaak",
+        "kaaaaaaaaaabaaak",
+        ".kaaaaaaaaaaaak.",
+        "..kkaaaaaaaakk..",
+        "....kkkkkkkk...."
       ],
       "colors": {
         "a": "#5CB82A",
         "b": "#A6EC70"
       },
       "pos": {
-        "top": -8,
-        "right": 18
+        "bottom": 8,
+        "left": 12
       }
     },
     "game": {
@@ -294,23 +297,21 @@ let pixlManifestJSON: [String: String] = [
     "detail": "Tail curl off the right edge",
     "decal": {
       "grid": [
-        ".....kkkk.",
-        "....kaaaak",
-        "....kabkak",
-        ".....k.kak",
-        ".......kak",
-        "kkk...kaak",
-        "kaakkkaak.",
-        ".kaaaaak..",
-        "..kkkkk..."
+        "....kkkkkk......",
+        "..kkaaaaaakk..kk",
+        ".kaakaaaaaaakkak",
+        "kaaaaaaaaaaaaak.",
+        ".kccccccccccckak",
+        "..kkccccccckk.kk",
+        "....kkkkkkk....."
       ],
       "colors": {
-        "a": "#2A2A36",
-        "b": "#4A4C62"
+        "a": "#7C93B4",
+        "c": "#C9D6E6"
       },
       "pos": {
-        "right": -15,
-        "bottom": 4
+        "bottom": 8,
+        "right": 12
       }
     },
     "game": {
@@ -444,20 +445,21 @@ let pixlManifestJSON: [String: String] = [
     "detail": "Teal bandana tab, bottom edge",
     "decal": {
       "grid": [
-        "kkkkkkkkkk",
-        "kaaaaaaaak",
-        ".kaaaaaak.",
-        "..kaabak..",
-        "...kaak...",
-        "....kk...."
+        ".kk..........kk.",
+        "kaak........kaak",
+        "kaaakkkkkkkkaaak",
+        ".kaaaaaaaaaaaak.",
+        "kaabkkkkkkkkbaak",
+        "kabk........kbak",
+        ".kk..........kk."
       ],
       "colors": {
-        "a": "#2E9A9C",
-        "b": "#7AD8D2"
+        "a": "#F3E6C8",
+        "b": "#D2BA8C"
       },
       "pos": {
-        "bottom": -10,
-        "left": 24
+        "bottom": 8,
+        "left": 12
       }
     },
     "game": {
@@ -591,15 +593,26 @@ let pixlManifestJSON: [String: String] = [
     "detail": "Rippled sheet hem, bottom edge",
     "decal": {
       "grid": [
-        "fffffffffffff",
-        "kfffkfffkfffk",
-        ".kfk.kfk.kfk.",
-        "..k...k...k.."
+        "..oooo..............",
+        ".owwwwo.............",
+        "owowwowo............",
+        "owwwwwwo......oo....",
+        "owwwwwwo.....obao...",
+        "owwwwwwo......oo....",
+        "o.oo.oo...oooooo....",
+        "........ooababababo.",
+        ".......oabababababao",
+        "........ooooooooooo."
       ],
-      "colors": {},
+      "colors": {
+        "a": "#7FA8F0",
+        "b": "#C6DAFF",
+        "o": "#4A5F92",
+        "w": "#EEF3FF"
+      },
       "pos": {
-        "bottom": -6,
-        "left": 18
+        "bottom": 8,
+        "right": 12
       }
     },
     "menuStyle": "wisp",
@@ -736,26 +749,27 @@ let pixlManifestJSON: [String: String] = [
     "detail": "Silk thread + tiny spider, top edge",
     "decal": {
       "grid": [
-        ".k...k.",
-        "..kak..",
-        "kkaaakk",
-        "..kak..",
-        ".k.s.k.",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s..."
+        "sssssssssssss",
+        "sss.s...s...s",
+        "ss.ss...s..s.",
+        "s.s..s.s...s.",
+        "sss...ss...s.",
+        "s..s.kkksss..",
+        "s...skak..s..",
+        "s..sskkk.s...",
+        "sss..s..s....",
+        "s....s.s.....",
+        "s....ss......",
+        "s.sss........",
+        "ss..........."
       ],
       "colors": {
         "a": "#E5232E",
-        "s": "#B8BECC"
+        "s": "#8C93A6"
       },
       "pos": {
-        "top": -24,
-        "right": 28
+        "top": 5,
+        "left": 5
       }
     },
     "menuStyle": "silk",

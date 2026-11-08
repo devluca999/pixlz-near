@@ -121,20 +121,21 @@
     "detail": "Teal bandana tab, bottom edge",
     "decal": {
       "grid": [
-        "kkkkkkkkkk",
-        "kaaaaaaaak",
-        ".kaaaaaak.",
-        "..kaabak..",
-        "...kaak...",
-        "....kk...."
+        ".kk..........kk.",
+        "kaak........kaak",
+        "kaaakkkkkkkkaaak",
+        ".kaaaaaaaaaaaak.",
+        "kaabkkkkkkkkbaak",
+        "kabk........kbak",
+        ".kk..........kk."
       ],
       "colors": {
-        "a": "#2E9A9C",
-        "b": "#7AD8D2"
+        "a": "#F3E6C8",
+        "b": "#D2BA8C"
       },
       "pos": {
-        "bottom": -10,
-        "left": 24
+        "bottom": 8,
+        "left": 12
       }
     },
     "game": {

@@ -313,6 +313,14 @@ func renderIcon(_ dir: String) throws {
 
 MainActor.assumeIsolated {
     _ = NSApplication.shared
+    if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--story" {
+        do {
+            let fixture = URL(fileURLWithPath: CommandLine.arguments[2])
+            let r = try JSONDecoder().decode(PolishResult.self, from: Data(contentsOf: fixture))
+            try Story.render(r, fixture: fixture, out: CommandLine.arguments[3])
+        } catch { print("error: \(error)"); exit(1) }
+        exit(0)
+    }
     if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--icon" {
         do { try renderIcon(CommandLine.arguments[2]) } catch { print("error: \(error)"); exit(1) }
         exit(0)

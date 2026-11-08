@@ -23,14 +23,24 @@ public final class ListMenuView: NSView {
     public private(set) var focusIndex: Int?
     let rowViews: [ListRow]
     static let width: CGFloat = 220
+    /// Wide enough for the longest row (a long device name), between 220 and 320 pt.
+    static func width(for rows: [Row]) -> CGFloat {
+        let title = NSFont.systemFont(ofSize: 13, weight: .semibold), mono = Theme.mono(10)
+        let need = rows.map { r in
+            (r.title as NSString).size(withAttributes: [.font: title]).width + 42 + 20 +
+            (r.trailing.map { ($0 as NSString).size(withAttributes: [.font: mono]).width + 10 } ?? 0)
+        }.max() ?? 0
+        return min(max(ceil(need), 220), 320)
+    }
     static let rowHeight: CGFloat = 34
 
     public init(rows: [Row], look: SurfaceView.Look) {
         self.rows = rows
         let h = CGFloat(rows.count) * (Self.rowHeight + 2) + 12
-        surface = SurfaceView(frame: NSRect(x: 0, y: 0, width: Self.width, height: h + (look.glass ? 0 : 3)), shape: .rounded(16), look: look)
+        let w = Self.width(for: rows)
+        surface = SurfaceView(frame: NSRect(x: 0, y: 0, width: w, height: h + (look.glass ? 0 : 3)), shape: .rounded(16), look: look)
         rowViews = rows.enumerated().map { i, r in
-            ListRow(row: r, look: look, frame: NSRect(x: 6, y: 6 + CGFloat(i) * (Self.rowHeight + 2), width: Self.width - 12, height: Self.rowHeight))
+            ListRow(row: r, look: look, frame: NSRect(x: 6, y: 6 + CGFloat(i) * (Self.rowHeight + 2), width: w - 12, height: Self.rowHeight))
         }
         super.init(frame: surface.frame)
         appearance = look.appearance

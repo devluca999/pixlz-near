@@ -123,26 +123,27 @@
     "detail": "Silk thread + tiny spider, top edge",
     "decal": {
       "grid": [
-        ".k...k.",
-        "..kak..",
-        "kkaaakk",
-        "..kak..",
-        ".k.s.k.",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s...",
-        "...s..."
+        "sssssssssssss",
+        "sss.s...s...s",
+        "ss.ss...s..s.",
+        "s.s..s.s...s.",
+        "sss...ss...s.",
+        "s..s.kkksss..",
+        "s...skak..s..",
+        "s..sskkk.s...",
+        "sss..s..s....",
+        "s....s.s.....",
+        "s....ss......",
+        "s.sss........",
+        "ss..........."
       ],
       "colors": {
         "a": "#E5232E",
-        "s": "#B8BECC"
+        "s": "#8C93A6"
       },
       "pos": {
-        "top": -24,
-        "right": 28
+        "top": 5,
+        "left": 5
       }
     },
     "menuStyle": "silk",

@@ -121,23 +121,21 @@
     "detail": "Tail curl off the right edge",
     "decal": {
       "grid": [
-        ".....kkkk.",
-        "....kaaaak",
-        "....kabkak",
-        ".....k.kak",
-        ".......kak",
-        "kkk...kaak",
-        "kaakkkaak.",
-        ".kaaaaak..",
-        "..kkkkk..."
+        "....kkkkkk......",
+        "..kkaaaaaakk..kk",
+        ".kaakaaaaaaakkak",
+        "kaaaaaaaaaaaaak.",
+        ".kccccccccccckak",
+        "..kkccccccckk.kk",
+        "....kkkkkkk....."
       ],
       "colors": {
-        "a": "#2A2A36",
-        "b": "#4A4C62"
+        "a": "#7C93B4",
+        "c": "#C9D6E6"
       },
       "pos": {
-        "right": -15,
-        "bottom": 4
+        "bottom": 8,
+        "right": 12
       }
     },
     "game": {

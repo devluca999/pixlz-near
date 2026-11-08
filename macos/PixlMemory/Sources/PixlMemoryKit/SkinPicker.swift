@@ -181,29 +181,25 @@ public enum DecalArt {
         return img
     }
 
-    /// Room to leave for the decal so it never sits on text: its height on a top or bottom
-    /// edge, its width on a side.
+    /// Room to leave for the decal so it never sits on text: a strip along the edge it sits on.
     public static func reserve(_ ui: PixlUI) -> NSEdgeInsets {
         guard let d = ui.decal else { return NSEdgeInsets() }
-        let h = CGFloat(d.grid.count) * 2, w = CGFloat(d.grid.map(\.count).max() ?? 0) * 2
-        if d.pos["top"] != nil { return NSEdgeInsets(top: h - 4, left: 0, bottom: 0, right: 0) }
-        if (d.pos["right"] ?? 0) < 0 { return NSEdgeInsets(top: 0, left: 0, bottom: 0, right: w - 2) }
-        if (d.pos["left"] ?? 0) < 0 { return NSEdgeInsets(top: 0, left: w - 2, bottom: 0, right: 0) }
-        return NSEdgeInsets(top: 0, left: 0, bottom: h - 4, right: 0)
+        let h = CGFloat(d.grid.count) * 2
+        if let t = d.pos["top"] { return NSEdgeInsets(top: h + max(3, t) - 4, left: 0, bottom: 0, right: 0) }
+        return NSEdgeInsets(top: 0, left: 0, bottom: h + max(3, d.pos["bottom"] ?? 0) - 4, right: 0)
     }
 
-    /// Adds the decal to `view` (flipped), inside its edges: `pos` comes from the design, where
-    /// it may stick out past the edge; a panel clips anything outside, so it's tucked in.
+    /// Adds the decal to `view` (flipped). `pos` is a margin from the edges, so the whole
+    /// decal sits inside the surface: nothing is ever cut off by the rounded border.
     public static func attach(to view: NSView, ui: PixlUI, look: SurfaceView.Look) {
         guard let d = ui.decal, let img = DecalArt.image(d, accent: ui.accent, look: look) else { return }
         let iv = NSImageView(image: img)
         iv.imageScaling = .scaleNone
         let s = img.size, b = view.bounds
         var x = (b.width - s.width) / 2, y: CGFloat = 0
-        if let l = d.pos["left"] { x = max(2, l) }
-        // on the top edge, keep clear of the header's × (it sits in the top-right corner)
-        if let r = d.pos["right"] { x = b.width - s.width - max(2, r) - (d.pos["top"] != nil ? 30 : 0) }
-        if let t = d.pos["top"] { y = max(0, t) } else if let bt = d.pos["bottom"] { y = b.height - s.height - max(0, bt) }
+        if let l = d.pos["left"] { x = max(4, l) }
+        if let r = d.pos["right"] { x = b.width - s.width - max(4, r) }
+        if let t = d.pos["top"] { y = max(3, t) } else { y = b.height - s.height - max(3, d.pos["bottom"] ?? 0) }
         iv.frame = NSRect(x: x.rounded(), y: y.rounded(), width: s.width, height: s.height)
         iv.setAccessibilityElement(false)
         view.addSubview(iv)
