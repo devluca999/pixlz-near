@@ -7,7 +7,8 @@ import AppKit
 public final class FroggView: NSView {
     public var frameName: String { didSet { if frameName != oldValue { needsDisplay = true } } }
     public let scale: CGFloat
-    public var onClick: ((NSEvent) -> Void)?
+    public enum MouseEvent { case down, dragged, up, right }
+    public var onMouse: ((MouseEvent, NSEvent) -> Void)?
     private let art = FroggArt.shared
 
     public init(scale: CGFloat = 2, frameName: String = "idle_0") {
@@ -40,8 +41,18 @@ public final class FroggView: NSView {
         return hitsArt(at: local) ? self : nil
     }
 
+    /// Where a hanging frame's pin (the toe pad held by the cursor) is, in view coordinates.
+    public func pinPoint(_ name: String) -> NSPoint? {
+        guard let f = art.frames[name], let pin = f.pin, pin.count == 2 else { return nil }
+        let x0 = (bounds.midX - CGFloat(f.w) * scale / 2).rounded(.down)
+        return NSPoint(x: x0 + (CGFloat(pin[0]) + 0.5) * scale, y: (CGFloat(f.h - pin[1]) - 0.5) * scale)
+    }
+
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    public override func mouseDown(with event: NSEvent) { onClick?(event) }
+    public override func mouseDown(with event: NSEvent) { onMouse?(.down, event) }
+    public override func mouseDragged(with event: NSEvent) { onMouse?(.dragged, event) }
+    public override func mouseUp(with event: NSEvent) { onMouse?(.up, event) }
+    public override func rightMouseDown(with event: NSEvent) { onMouse?(.right, event) }
 }
 
 /// The speech bubble (SPEC §11.6): white box, 3 pt ink outline, tail toward the Pixl,

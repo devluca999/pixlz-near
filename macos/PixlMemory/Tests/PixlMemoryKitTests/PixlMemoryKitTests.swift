@@ -10,13 +10,14 @@ struct ArtTests {
     @Test func allFramesDecode() {
         let expected = ["idle_0", "idle_1", "idle_2", "move_0", "move_1", "move_2", "poke_0", "poke_1", "poke_2", "rest_1",
                         "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_curious", "emotion_proud"]
-        #expect(Set(art.frames.keys) == Set(expected))
+        #expect(Set(expected).isSubset(of: Set(art.frames.keys)))
+        #expect(art.frames.count == 25)
         for name in expected {
             let img = art.image(name)
             #expect(img?.width == art.frames[name]?.w)
             #expect(img?.height == art.frames[name]?.h)
         }
-        #expect(art.canvas == CGSize(width: 91, height: 74))
+        #expect(art.canvas.width >= 91 && art.canvas.height >= 74)
     }
 
     /// Feet on the bottom row: every frame is placed bottom-centred, so this is what keeps

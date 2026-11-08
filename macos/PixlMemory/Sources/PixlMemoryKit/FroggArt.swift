@@ -8,6 +8,8 @@ public final class FroggArt {
         public let w: Int
         public let h: Int
         public let rows: [String]
+        /// For hanging frames: the art pixel (x, y from top-left) held by the cursor.
+        public let pin: [Int]?
     }
 
     struct File: Decodable {

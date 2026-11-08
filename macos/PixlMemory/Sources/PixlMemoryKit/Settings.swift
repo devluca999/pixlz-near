@@ -1,0 +1,40 @@
+import Foundation
+
+/// Per-device settings (SPEC §10.1: not part of PetState). Stored in UserDefaults.
+public struct PixlSettings: Codable, Equatable, Sendable {
+    public var name = "Frogg"
+    public var scale = 2              // 2×, 3× or 4× (SPEC §3.1)
+    public var perchOnWindows = true  // off: Frogg stays on the ground
+    public var hideInFullscreen = true
+    public var mischief = "normal"    // chill | normal | chaos (stored; mischief acts aren't built yet)
+    public var distractingApps: [String] = []  // focus guardian nudges when one of these is activated
+
+    public init() {}
+
+    public static let key = "PixlMemory.settings"
+
+    public static func load(_ defaults: UserDefaults = .standard) -> PixlSettings {
+        guard let data = defaults.data(forKey: key), var s = try? JSONDecoder().decode(PixlSettings.self, from: data)
+        else { return PixlSettings() }
+        s.scale = [2, 3, 4].contains(s.scale) ? s.scale : 2
+        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Frogg" : String(s.name.prefix(24))
+        return s
+    }
+
+    public func save(_ defaults: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(self) { defaults.set(data, forKey: Self.key) }
+    }
+}
+
+/// What the mini menu shows about the service and the wallet.
+public struct ServiceStatus: Sendable, Equatable {
+    public var service: String
+    public var model: String?
+    public var wallet: String?
+    public var walletReady: Bool
+    public var lastVerdict: String?
+
+    public init(service: String, model: String? = nil, wallet: String? = nil, walletReady: Bool = false, lastVerdict: String? = nil) {
+        self.service = service; self.model = model; self.wallet = wallet; self.walletReady = walletReady; self.lastVerdict = lastVerdict
+    }
+}

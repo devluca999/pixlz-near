@@ -4,7 +4,7 @@ import PixlzCore
 
 /// A borderless panel that never becomes key or main (SPEC R5): the app you're
 /// typing in keeps focus and its selection while you use Frogg.
-final class OverlayPanel: NSPanel {
+class OverlayPanel: NSPanel {
     init(size: NSSize) {
         super.init(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
@@ -12,7 +12,7 @@ final class OverlayPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
@@ -21,42 +21,69 @@ final class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// The mini menu takes typing (its name field) without activating the app.
+final class KeyPanel: OverlayPanel {
+    var onCancel: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+}
+
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate {
-    let scale: CGFloat = 2
+final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    enum Mode { case perched, held, airborne, dropping }
+
+    var settings = PixlSettings.load()
     let client = MemoryClient()
     let watcher = WindowWatcher()
-    lazy var frogg = FroggView(scale: scale)
-    lazy var froggPanel = OverlayPanel(size: frogg.frame.size)
+    var frogg: FroggView!
+    var froggPanel: OverlayPanel!
     let bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
+    var radialPanel: OverlayPanel?
+    var miniPanel: KeyPanel?
     var statusItem: NSStatusItem?
 
-    var foot: CGPoint?                // current foot position, top-left coordinates
+    var mode = Mode.perched
+    var foot: CGPoint?                 // feet, top-left global coordinates
     var hop: (plan: HopPlan, start: TimeInterval)?
+    var flight: ThrowFlight?
+    var drop: (from: CGPoint, to: CGPoint, start: TimeInterval)?
     var motionTimer: Timer?
+    var animTimers: [Timer] = []
     var idleTimer: Timer?
     var bubbleTimer: Timer?
     var permissionTimer: Timer?
+    var clickTimer: Timer?
+    var focusTimer: Timer?
+
+    var gesture: PointerGesture?
+    var dragSamples: [(TimeInterval, CGPoint)] = []
+    var pokes = PokeCounter()
+    var userPlaced = false             // the user put Frogg somewhere; stay until the next window switch
+    var userHidden = false
+    var fullscreenHidden = false
+    var paused = false
     var busy = false
-    var hidden = false
+    var spaceTransition = false
+    var focusUntil: Date?
+    var lastNudge = Date.distantPast
+    var lastVerdict: String?
+    var monitors: [Any] = []
+
+    var scale: CGFloat { CGFloat(settings.scale) }
+    var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     // MARK: lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        froggPanel.contentView = frogg
-        frogg.onClick = { [weak self] e in self?.froggClicked(e) }
+        buildFrogg()
         setUpStatusItem()
+        HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
+        HotKeys.shared.register(.space) { [weak self] in self?.chatStub() }
+        HotKeys.shared.register(.h) { [weak self] in self?.toggleHidden() }
         if !AX.trusted {
             AX.requestTrust()
             say("I need Accessibility to see your window and selection", for: 8)
-        }
-        watcher.onChange = { [weak self] in self?.reposition() }
-        watcher.start()
-        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
-                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        // Re-check permission until granted, then start following windows.
-        if !AX.trusted {
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, AX.trusted else { return }
@@ -66,35 +93,106 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
             permissionTimer?.tolerance = 1
         }
-        reposition()
+        watcher.onChange = { [weak self] change in self?.windowChanged(change) }
+        watcher.start()
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        reposition(force: true)
         froggPanel.orderFrontRegardless()
         scheduleIdle()
     }
 
-    @objc func screensChanged() { reposition() }
-
-    // MARK: placement and motion
-
-    var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
-
-    var screensTopLeft: [CGRect] {
-        NSScreen.screens.map { Perch.toAppKit($0.visibleFrame, primaryHeight: primaryHeight) }  // same flip both ways
+    func buildFrogg() {
+        let current = foot
+        froggPanel?.orderOut(nil)
+        frogg = FroggView(scale: scale)
+        frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
+        froggPanel = OverlayPanel(size: frogg.frame.size)
+        froggPanel.contentView = frogg
+        if let current { place(at: current) }
     }
 
+    @objc func screensChanged() { reposition(force: true) }
+
+    // MARK: geometry
+
+    var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
+    func topLeft(_ r: CGRect) -> CGRect { Perch.toAppKit(r, primaryHeight: primaryHeight) }  // same flip both ways
+    func topLeft(_ p: NSPoint) -> CGPoint { CGPoint(x: p.x, y: primaryHeight - p.y) }
+    var screensTopLeft: [CGRect] { NSScreen.screens.map { topLeft($0.visibleFrame) } }
     var spriteSize: CGSize {
-        // The idle silhouette, for clearance; the panel itself is the full canvas.
         let s = FroggArt.shared.size("idle_0")
         return CGSize(width: s.width * scale, height: s.height * scale)
     }
 
-    func reposition() {
-        guard !hidden, let spot = Perch.spot(window: watcher.activeWindowFrame, screens: screensTopLeft, sprite: spriteSize) else { return }
+    func target() -> Perch.Spot? {
+        let window = settings.perchOnWindows && focusUntil == nil ? watcher.activeWindowFrame : nil
+        return Perch.spot(window: window, screens: screensTopLeft, sprite: spriteSize)
+    }
+
+    // MARK: following windows and Spaces
+
+    func windowChanged(_ change: WindowWatcher.Change) {
+        if change == .switched {
+            userPlaced = false
+            nudgeIfDistracting()
+        }
+        guard !spaceTransition else { return }
+        updateFullscreen()
+        if change == .moved, mode == .perched, hop == nil, !userPlaced, let spot = target() {
+            place(at: spot.foot)  // ride along while the window is dragged
+            return
+        }
+        reposition(force: change == .switched)
+    }
+
+    /// Hop to the perch. `force` hops even a short distance (a different window, not a drag).
+    func reposition(force: Bool = false) {
+        guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced,
+              let spot = target() else { return }
         guard let current = foot else { place(at: spot.foot); return }
         let d = hypot(spot.foot.x - current.x, spot.foot.y - current.y)
         if d < 1 { return }
-        // Small moves are the window being dragged: ride along. Big ones: hop over.
-        if hop == nil && d < 60 { place(at: spot.foot) } else { hopTo(spot.foot) }
+        if !force && d < 60 { place(at: spot.foot) } else { hopTo(spot.foot) }
     }
+
+    /// Swiping between Spaces: Frogg leaves, then drops in from above onto the new
+    /// active window (the travel entrance, SPEC D9).
+    @objc func spaceChanged() {
+        guard !userHidden else { return }
+        spaceTransition = true
+        cancelMotion()
+        hideOverlays(fade: 0.12)
+        Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.watcher.attachToFrontmost()
+                self.spaceTransition = false
+                if self.settings.hideInFullscreen && self.watcher.activeWindowIsFullscreen {
+                    self.fullscreenHidden = true
+                    return
+                }
+                self.fullscreenHidden = false
+                if let spot = self.target() { self.dropIn(to: spot.foot) }
+            }
+        }
+    }
+
+    func updateFullscreen() {
+        let fs = settings.hideInFullscreen && watcher.activeWindowIsFullscreen
+        if fs && !fullscreenHidden {
+            fullscreenHidden = true
+            cancelMotion()
+            hideOverlays(fade: 0.2)
+        } else if !fs && fullscreenHidden {
+            fullscreenHidden = false
+            if !userHidden, let spot = target() { dropIn(to: spot.foot) }
+        }
+    }
+
+    // MARK: motion (display timer only while moving, SPEC R6)
 
     func place(at p: CGPoint) {
         foot = p
@@ -102,99 +200,235 @@ final class AppController: NSObject, NSApplicationDelegate {
         positionBubble()
     }
 
+    func cancelMotion() {
+        motionTimer?.invalidate()
+        hop = nil; flight = nil; drop = nil
+        if mode != .held { mode = .perched }
+    }
+
+    func startMotionTimer(_ step: @escaping @MainActor () -> Void) {
+        motionTimer?.invalidate()
+        motionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
+            MainActor.assumeIsolated { step() }
+        }
+    }
+
     func hopTo(_ target: CGPoint) {
         guard let start = foot else { place(at: target); return }
-        let g = 900 * Double(scale)  // pixl.json gravity, apx/s² → pt/s²
-        hop = (HopPlan(from: start, to: target, apexHeight: 30 * Double(scale), gravity: g), ProcessInfo.processInfo.systemUptime + 0.2)
+        cancelAnimations()
+        hop = (HopPlan(from: start, to: target, apexHeight: 30 * Double(scale), gravity: 900 * Double(scale)), now + 0.2)
         frogg.frameName = "move_0"  // coil
-        idleTimer?.invalidate()
-        motionTimer?.invalidate()
-        // The display timer runs only while Frogg is moving (SPEC R6).
-        motionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.stepHop() }
-        }
+        startMotionTimer { [weak self] in self?.stepHop() }
     }
 
     func stepHop() {
         guard let (plan, t0) = hop else { motionTimer?.invalidate(); return }
-        let t = ProcessInfo.processInfo.systemUptime - t0
-        if t < 0 { return }  // still coiling
+        let t = now - t0
+        if t < 0 { return }
         if t >= plan.duration {
             hop = nil
             motionTimer?.invalidate()
             place(at: plan.end)
-            frogg.frameName = "move_2"
-            Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.backToIdle() }
-            }
+            land(frame: "move_2")
             return
         }
         frogg.frameName = "move_1"
         place(at: plan.position(at: t))
     }
 
-    // MARK: idle (timers only on frame changes, SPEC §4.4)
+    func dropIn(to target: CGPoint) {
+        cancelAnimations()
+        let screen = screensTopLeft.first { $0.minX <= target.x && target.x <= $0.maxX } ?? screensTopLeft.first ?? .zero
+        let from = CGPoint(x: target.x, y: screen.minY + 4)  // just under the menu bar
+        mode = .dropping
+        drop = (from, target, now)
+        frogg.frameName = "move_1"
+        place(at: from)
+        froggPanel.alphaValue = 1
+        froggPanel.orderFrontRegardless()
+        startMotionTimer { [weak self] in self?.stepDrop() }
+    }
+
+    func stepDrop() {
+        guard let (from, to, t0) = drop else { motionTimer?.invalidate(); return }
+        let g = 900 * Double(scale)
+        let t = now - t0
+        let y = from.y + 0.5 * g * t * t
+        if y >= to.y {
+            drop = nil
+            motionTimer?.invalidate()
+            mode = .perched
+            place(at: to)
+            land(frame: "grab_2")  // squash on landing
+            return
+        }
+        place(at: CGPoint(x: to.x, y: y))
+    }
+
+    func land(frame: String) {
+        frogg.frameName = frame
+        after(0.3) { [weak self] in self?.backToIdle() }
+    }
+
+    // MARK: animation (frame changes only)
+
+    func after(_ seconds: TimeInterval, _ block: @escaping @MainActor () -> Void) {
+        let t = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in MainActor.assumeIsolated { block() } }
+        animTimers.append(t)
+    }
+
+    func cancelAnimations() {
+        animTimers.forEach { $0.invalidate() }
+        animTimers.removeAll()
+        idleTimer?.invalidate()
+    }
+
+    func play(_ anim: SlotAnimation, then next: (@MainActor () -> Void)? = nil) {
+        cancelAnimations()
+        for (frame, at) in anim.schedule {
+            if at == 0 { frogg.frameName = frame } else { after(at) { [weak self] in self?.frogg.frameName = frame } }
+        }
+        after(anim.duration) { [weak self] in
+            if let next { next() } else { self?.backToIdle() }
+        }
+    }
+
+    func show(_ frame: String, for seconds: TimeInterval) {
+        cancelAnimations()
+        frogg.frameName = frame
+        after(seconds) { [weak self] in self?.backToIdle() }
+    }
 
     func backToIdle() {
-        guard hop == nil else { return }
+        guard mode == .perched, hop == nil else { return }
         frogg.frameName = "idle_0"
         scheduleIdle()
     }
 
     func scheduleIdle() {
         idleTimer?.invalidate()
-        let wait = Double.random(in: 3...8)
-        idleTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
+        guard !paused else { return }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 3...8), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.hop == nil, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
+                guard let self, self.mode == .perched, self.hop == nil, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
                 let next = Bool.random() ? "idle_1" : "idle_2"  // blink or throat puff
                 self.frogg.frameName = next
-                self.idleTimer = Timer.scheduledTimer(withTimeInterval: next == "idle_1" ? 0.17 : 0.66, repeats: false) { _ in
-                    MainActor.assumeIsolated { self.backToIdle() }
-                }
+                self.after(next == "idle_1" ? 0.17 : 0.66) { [weak self] in self?.backToIdle() }
             }
         }
         idleTimer?.tolerance = 0.5
     }
 
-    func show(_ frame: String, for seconds: TimeInterval) {
-        idleTimer?.invalidate()
-        frogg.frameName = frame
-        idleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.backToIdle() }
+    // MARK: mouse (SPEC §11.1)
+
+    var mouseTopLeft: CGPoint { topLeft(NSEvent.mouseLocation) }
+
+    func mouse(_ kind: FroggView.MouseEvent, _ event: NSEvent) {
+        switch kind {
+        case .down:
+            closeRadial()
+            if event.clickCount == 2 {
+                clickTimer?.invalidate()
+                gesture = nil
+                signature()
+                return
+            }
+            gesture = PointerGesture(at: mouseTopLeft, time: now)
+            dragSamples = [(now, mouseTopLeft)]
+        case .dragged:
+            guard var g = gesture else { return }
+            dragSamples.append((now, mouseTopLeft))
+            if g.moved(to: mouseTopLeft) { startGrab() }
+            gesture = g
+            if mode == .held { moveHeld() }
+        case .up:
+            defer { gesture = nil }
+            if mode == .held { release(); return }
+            if let g = gesture, g.isClick(releasedAt: mouseTopLeft, time: now) { clicked(event) }
+        case .right:
+            showRadial()
         }
     }
 
-    // MARK: bubble
+    /// Poke: instant reaction; with text selected, the polish menu follows unless this
+    /// turns out to be the first half of a double-click.
+    func clicked(_ event: NSEvent) {
+        let selection = readSelection()
+        if pokes.poke(at: now) {
+            show("emotion_annoyed", for: 2)
+            say("Hey! \(settings.name) is busy being a frog.", for: 2)
+            return
+        }
+        play(.poke)
+        if let until = focusUntil {
+            say("Focus: \(Int(until.timeIntervalSinceNow / 60) + 1) min left", for: 2)
+            return
+        }
+        guard selection != nil else {
+            if !AX.trusted { say("Allow Accessibility so I can read your selection", for: 3) }
+            return
+        }
+        clickTimer?.invalidate()
+        clickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showPolishMenu() }
+        }
+    }
 
-    func say(_ text: String, for seconds: TimeInterval? = 3) {
-        let bubble = BubbleView(text: text)
-        bubblePanel.contentView = bubble
-        bubblePanel.setContentSize(bubble.frame.size)
-        positionBubble()
-        bubblePanel.orderFrontRegardless()
-        bubbleTimer?.invalidate()
-        if let seconds {
-            bubbleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.bubblePanel.orderOut(nil) }
+    func signature() {
+        play(.signature) { [weak self] in
+            self?.show("emotion_proud", for: 2)
+        }
+    }
+
+    // grab and throw
+
+    func startGrab() {
+        cancelMotion()
+        cancelAnimations()
+        clickTimer?.invalidate()
+        mode = .held
+        bubblePanel.orderOut(nil)
+        frogg.frameName = "grab_0"  // peel-stretch
+        after(0.25) { [weak self] in if self?.mode == .held { self?.frogg.frameName = "grab_1" } }  // limp sway
+        moveHeld()
+    }
+
+    func moveHeld() {
+        let pin = frogg.pinPoint(frogg.frameName) ?? NSPoint(x: frogg.bounds.midX, y: frogg.bounds.maxY)
+        let m = NSEvent.mouseLocation
+        froggPanel.setFrameOrigin(NSPoint(x: (m.x - pin.x).rounded(), y: (m.y - pin.y).rounded()))
+        let f = froggPanel.frame
+        foot = CGPoint(x: f.midX, y: primaryHeight - f.minY)
+    }
+
+    func release() {
+        guard let start = foot else { mode = .perched; return }
+        let v = Body.throwVelocity(samples: dragSamples, at: now, cap: 3000)
+        let screens = NSScreen.screens.map { (frame: topLeft($0.frame), visible: topLeft($0.visibleFrame)) }
+        flight = ThrowFlight(foot: start, velocity: v, scale: scale, screens: screens,
+                             window: settings.perchOnWindows ? watcher.activeWindowFrame : nil, halfWidth: spriteSize.width / 2)
+        mode = .airborne
+        frogg.frameName = "move_1"
+        var last = now
+        startMotionTimer { [weak self] in
+            guard let self, var f = self.flight else { return }
+            let t = self.now
+            let landed = f.step(dt: min(t - last, 1.0 / 30))
+            last = t
+            self.flight = f
+            self.place(at: f.body.position)
+            if let spot = landed {
+                self.flight = nil
+                self.motionTimer?.invalidate()
+                self.mode = .perched
+                self.userPlaced = true
+                self.place(at: spot)
+                self.land(frame: "grab_2")  // splat
             }
         }
     }
 
-    func positionBubble() {
-        let f = froggPanel.frame
-        let s = bubblePanel.frame.size
-        let art = FroggArt.shared.size(frogg.frameName)
-        let headTop = f.minY + art.height * scale
-        var origin = NSPoint(x: f.midX - s.width / 2, y: headTop + 2)
-        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) })?.visibleFrame {
-            origin.x = min(max(origin.x, screen.minX + 4), screen.maxX - s.width - 4)
-            if origin.y + s.height > screen.maxY { origin.y = f.minY - s.height }  // no room above: say it below
-        }
-        bubblePanel.setFrameOrigin(origin)
-    }
-
-    // MARK: clicking Frogg
+    // MARK: polish
 
     struct Instruction {
         let title: String
@@ -210,37 +444,38 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     var pendingSelection: (text: String, app: String?)?
 
-    func froggClicked(_ event: NSEvent) {
+    @discardableResult
+    func readSelection() -> String? {
         let front = NSWorkspace.shared.frontmostApplication
-        let pid = front?.processIdentifier ?? 0
-        let text = AX.trusted ? AX.selectedText(pid: pid) : nil
+        let text = AX.trusted ? AX.selectedText(pid: front?.processIdentifier ?? 0) : nil
         pendingSelection = text.map { ($0, front?.localizedName) }
-        show("poke_1", for: 1.2)
+        return text
+    }
 
-        let menu = NSMenu()
-        if busy {
-            menu.addItem(withTitle: "Working on it…", action: nil, keyEquivalent: "")
-        } else if let text {
-            let preview = text.replacingOccurrences(of: "\n", with: " ")
-            let header = NSMenuItem(title: "“\(preview.prefix(40))\(preview.count > 40 ? "…" : "")”", action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
-            for (i, ins) in instructions.enumerated() {
-                let item = NSMenuItem(title: ins.title, action: #selector(polishChosen(_:)), keyEquivalent: "")
-                item.tag = i
-                item.target = self
-                menu.addItem(item)
-            }
-        } else {
-            let item = NSMenuItem(title: AX.trusted ? "Select some text first" : "Allow Accessibility to read selections",
-                                  action: AX.trusted ? nil : #selector(openAccessibility), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
+    func instructionItems() -> [NSMenuItem] {
+        guard let sel = pendingSelection else {
+            let i = NSMenuItem(title: AX.trusted ? "Select some text first" : "Allow Accessibility to read selections",
+                               action: AX.trusted ? nil : #selector(openAccessibility), keyEquivalent: "")
+            i.target = self
+            return [i]
         }
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Hide Frogg", action: #selector(toggleHidden), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Quit Pixl Memory", action: #selector(quit), keyEquivalent: "").target = self
-        menu.popUp(positioning: nil, at: frogg.convert(event.locationInWindow, from: nil), in: frogg)
+        let preview = sel.text.replacingOccurrences(of: "\n", with: " ")
+        let header = NSMenuItem(title: "“\(preview.prefix(40))\(preview.count > 40 ? "…" : "")”", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        return [header] + instructions.enumerated().map { i, ins in
+            let item = NSMenuItem(title: ins.title, action: #selector(polishChosen(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = self
+            return item
+        }
+    }
+
+    func showPolishMenu() {
+        let menu = NSMenu()
+        if busy { menu.addItem(withTitle: "Working on it…", action: nil, keyEquivalent: "") }
+        else { instructionItems().forEach { menu.addItem($0) } }
+        let p = NSPoint(x: frogg.bounds.midX, y: FroggArt.shared.size(frogg.frameName).height * scale)
+        menu.popUp(positioning: nil, at: p, in: frogg)
     }
 
     @objc func polishChosen(_ sender: NSMenuItem) {
@@ -258,6 +493,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             do {
                 let r = try await client.polish(sel.text, instruction: ins.prompt)
                 let v = r.verification
+                lastVerdict = "\(v.badge) · \(v.passed)/\(v.checks.count)"
                 show(v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed", for: 4)
                 let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
                 say(r.receipt.map { verdict + "\n" + $0.bubble } ?? verdict, for: 5)
@@ -274,8 +510,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: result panel
-
     func showResult(_ content: PolishView.Content) {
         let view = PolishView(content)
         view.fit()
@@ -284,6 +518,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         panel.level = .popUpMenu
         panel.contentView = view
         panel.setContentSize(view.frame.size)
+        panel.alphaValue = 1
         view.onClose = { [weak panel] in panel?.orderOut(nil) }
         view.onCopy = { [weak self] s in
             NSPasteboard.general.clearContents()
@@ -299,23 +534,215 @@ final class AppController: NSObject, NSApplicationDelegate {
         view.onResize = { [weak self, weak panel, weak view] in
             guard let self, let panel, let view else { return }
             panel.setContentSize(view.frame.size)
-            self.placeResultPanel(panel)
+            self.placeBeside(panel)
         }
-        placeResultPanel(panel)
+        placeBeside(panel)
         panel.orderFrontRegardless()
     }
 
-    func placeResultPanel(_ panel: NSPanel) {
+    func placeBeside(_ panel: NSPanel) {
         let f = froggPanel.frame
         let s = panel.frame.size
         guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) })?.visibleFrame ?? NSScreen.main?.visibleFrame else { return }
-        // Beside Frogg, preferring the left (Frogg sits near the window's right edge).
         var x = f.minX - s.width - 8
         if x < screen.minX + 8 { x = f.maxX + 8 }
         x = min(max(x, screen.minX + 8), screen.maxX - s.width - 8)
-        var y = f.maxY - s.height
-        y = min(max(y, screen.minY + 8), screen.maxY - s.height - 8)
+        let y = min(max(f.maxY - s.height, screen.minY + 8), screen.maxY - s.height - 8)
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // MARK: radial menu (SPEC §11.2)
+
+    func showRadial() {
+        closeRadial()
+        readSelection()
+        let items = [
+            RadialMenuView.Item(id: "polish", title: "Polish", glyph: "✎", enabled: pendingSelection != nil),
+            RadialMenuView.Item(id: "focus", title: focusUntil == nil ? "Focus" : "Stop focus", glyph: "◷"),
+            RadialMenuView.Item(id: "chat", title: "Chat", glyph: "💬", enabled: false),
+            RadialMenuView.Item(id: "mic", title: "Mic", glyph: "🎙", enabled: false),
+            RadialMenuView.Item(id: "hide", title: "Hide", glyph: "◌"),
+            RadialMenuView.Item(id: "settings", title: "Settings", glyph: "⚙"),
+        ]
+        let view = RadialMenuView(items: items)
+        view.onSelect = { [weak self] item in self?.radialSelected(item) }
+        let panel = OverlayPanel(size: RadialMenuView.size)
+        panel.level = .popUpMenu
+        panel.contentView = view
+        let body = NSPoint(x: froggPanel.frame.midX, y: froggPanel.frame.minY + spriteSize.height / 2)
+        panel.setFrameOrigin(NSPoint(x: body.x - RadialMenuView.size.width / 2, y: body.y - RadialMenuView.size.height / 2))
+        panel.orderFrontRegardless()
+        radialPanel = panel
+        // Any click elsewhere, or a key, closes it.
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeRadial() }
+        }) { monitors.append(m) }
+    }
+
+    func closeRadial() {
+        radialPanel?.orderOut(nil)
+        radialPanel = nil
+        monitors.forEach { NSEvent.removeMonitor($0) }
+        monitors.removeAll()
+    }
+
+    func radialSelected(_ item: RadialMenuView.Item) {
+        closeRadial()
+        guard item.enabled else {
+            say(item.id == "polish" ? "Select some text first" : "\(item.title) is coming soon 🐸", for: 2.5)
+            return
+        }
+        switch item.id {
+        case "polish": showPolishMenu()
+        case "focus": focusUntil == nil ? showFocusMenu() : endFocus(completed: false)
+        case "hide": toggleHidden()
+        case "settings": toggleMiniMenu()
+        default: break
+        }
+    }
+
+    // MARK: focus guardian (SPEC §6.6)
+
+    func showFocusMenu() {
+        let menu = NSMenu()
+        for minutes in [25, 50] {
+            let item = NSMenuItem(title: "Focus for \(minutes) min", action: #selector(startFocus(_:)), keyEquivalent: "")
+            item.tag = minutes
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: frogg.bounds.midX, y: frogg.bounds.midY), in: frogg)
+    }
+
+    @objc func startFocus(_ sender: NSMenuItem) {
+        focusUntil = Date().addingTimeInterval(TimeInterval(sender.tag * 60))
+        say("Focus for \(sender.tag) min. I'll sit still.", for: 3)
+        focusTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(sender.tag * 60), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.endFocus(completed: true) }
+        }
+        userPlaced = false
+        reposition(force: true)  // to the ground: no hopping between windows during a session
+    }
+
+    func endFocus(completed: Bool) {
+        focusTimer?.invalidate()
+        focusUntil = nil
+        if completed {
+            show("emotion_proud", for: 4)
+            say("Focus session done! 🎉", for: 4)
+        } else {
+            say("Focus stopped", for: 2)
+        }
+        reposition(force: true)
+    }
+
+    func nudgeIfDistracting() {
+        guard focusUntil != nil, Date().timeIntervalSince(lastNudge) > 120,
+              let name = NSWorkspace.shared.frontmostApplication?.localizedName,
+              settings.distractingApps.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
+        lastNudge = Date()
+        play(.nudge)
+        say("\(name)? Back to focus soon 🐸", for: 3)
+    }
+
+    // MARK: bubble (SPEC §11.6)
+
+    func say(_ text: String, for seconds: TimeInterval? = 3) {
+        guard !userHidden, !fullscreenHidden else { return }
+        let bubble = BubbleView(text: text)
+        bubblePanel.contentView = bubble
+        bubblePanel.setContentSize(bubble.frame.size)
+        bubblePanel.alphaValue = 1
+        positionBubble()
+        bubblePanel.orderFrontRegardless()
+        bubbleTimer?.invalidate()
+        if let seconds {
+            bubbleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.bubblePanel.orderOut(nil) }
+            }
+        }
+    }
+
+    func positionBubble() {
+        guard let froggPanel, let frogg else { return }
+        let f = froggPanel.frame
+        let s = bubblePanel.frame.size
+        let headTop = f.minY + FroggArt.shared.size(frogg.frameName).height * scale
+        var origin = NSPoint(x: f.midX - s.width / 2, y: headTop + 2)
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(f) })?.visibleFrame {
+            origin.x = min(max(origin.x, screen.minX + 4), screen.maxX - s.width - 4)
+            if origin.y + s.height > screen.maxY { origin.y = f.minY - s.height }
+        }
+        bubblePanel.setFrameOrigin(origin)
+    }
+
+    func chatStub() {
+        guard !userHidden else { return }
+        show("idle_0", for: 3)  // turns to face you
+        say("Chat is coming soon 🐸", for: 3)
+    }
+
+    // MARK: hide / show (⌃⌥H, the screen-share panic button)
+
+    func hideOverlays(fade: TimeInterval) {
+        for p in [froggPanel, bubblePanel, resultPanel, radialPanel].compactMap({ $0 }) {
+            NSAnimationContext.runAnimationGroup({ $0.duration = fade; p.animator().alphaValue = 0 },
+                                                 completionHandler: { MainActor.assumeIsolated { p.orderOut(nil) } })
+        }
+    }
+
+    @objc func toggleHidden() {
+        userHidden.toggle()
+        closeRadial()
+        if userHidden {
+            cancelMotion()
+            hideOverlays(fade: 0.15)
+        } else if !fullscreenHidden, let spot = target() {
+            userPlaced = false
+            dropIn(to: spot.foot)
+        }
+    }
+
+    // MARK: mini menu (⌃⌥P, SPEC §11.5)
+
+    func toggleMiniMenu() {
+        if let p = miniPanel, p.isVisible { p.orderOut(nil); miniPanel = nil; return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var status = await client.status()
+            status.lastVerdict = lastVerdict
+            let view = MiniMenuView(settings: settings, status: status)
+            view.fit()
+            let panel = KeyPanel(size: view.frame.size)
+            panel.level = .popUpMenu
+            panel.contentView = view
+            panel.onCancel = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil }
+            view.onClose = panel.onCancel
+            view.onChange = { [weak self] s in self?.apply(s) }
+            view.onOpenWallet = { [weak self] in self?.openWallet() }
+            placeBeside(panel)
+            panel.makeKeyAndOrderFront(nil)
+            miniPanel = panel
+        }
+    }
+
+    func apply(_ new: PixlSettings) {
+        let old = settings
+        settings = new
+        if new.scale != old.scale { setSize(new.scale) }
+        if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
+        if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
+    }
+
+    func setSize(_ s: Int) {
+        settings.scale = s
+        settings.save()
+        cancelMotion()
+        buildFrogg()
+        froggPanel.orderFrontRegardless()
+        userPlaced = false
+        reposition(force: true)
+        backToIdle()
     }
 
     // MARK: menu bar (SPEC §11.3)
@@ -328,22 +755,93 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         item.button?.toolTip = "Pixl Memory"
         let menu = NSMenu()
-        menu.addItem(withTitle: "Hide / show Frogg", action: #selector(toggleHidden), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Accessibility settings…", action: #selector(openAccessibility), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Pixl Memory", action: #selector(quit), keyEquivalent: "q").target = self
+        menu.delegate = self
         item.menu = menu
         statusItem = item
     }
 
-    @objc func toggleHidden() {
-        hidden.toggle()
-        if hidden {
-            froggPanel.orderOut(nil); bubblePanel.orderOut(nil); resultPanel?.orderOut(nil)
-        } else {
-            froggPanel.orderFrontRegardless()
-            reposition()
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        readSelection()
+        func add(_ title: String, _ action: Selector?, _ key: String = "") -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            i.target = self
+            menu.addItem(i)
+            return i
         }
+        _ = add("Open menu", #selector(openRadialFromMenu))
+        let polish = add("Polish selection", nil)
+        polish.submenu = NSMenu()
+        instructionItems().forEach { polish.submenu?.addItem($0) }
+        let send = add("Send to", nil)
+        send.submenu = NSMenu()
+        send.submenu?.addItem(withTitle: "No devices nearby", action: nil, keyEquivalent: "").isEnabled = false
+
+        let mischief = add("Mischief", nil)
+        mischief.submenu = NSMenu()
+        for level in ["chill", "normal", "chaos"] {
+            let i = NSMenuItem(title: level.capitalized, action: #selector(setMischief(_:)), keyEquivalent: "")
+            i.representedObject = level
+            i.target = self
+            i.state = settings.mischief == level ? .on : .off
+            mischief.submenu?.addItem(i)
+        }
+        mischief.submenu?.addItem(.separator())
+        mischief.submenu?.addItem(withTitle: "Mischief acts come in a later version", action: nil, keyEquivalent: "").isEnabled = false
+
+        let size = add("Size", nil)
+        size.submenu = NSMenu()
+        for s in [2, 3, 4] {
+            let i = NSMenuItem(title: "\(s)×", action: #selector(sizeChosen(_:)), keyEquivalent: "")
+            i.tag = s
+            i.target = self
+            i.state = settings.scale == s ? .on : .off
+            size.submenu?.addItem(i)
+        }
+        _ = add(paused ? "Resume" : "Pause", #selector(togglePause))
+        _ = add("Reset position", #selector(resetPosition))
+        _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
+        menu.addItem(.separator())
+        let wallet = add("Frogg's wallet…", #selector(openWallet))
+        Task { @MainActor in
+            let s = await client.status()
+            wallet.title = "Wallet: " + (s.wallet ?? "not set up")
+        }
+        _ = add("Settings…  ⌃⌥P", #selector(openMiniMenu))
+        _ = add("Permissions…", #selector(openAccessibility))
+        menu.addItem(.separator())
+        _ = add("Quit Pixl Memory", #selector(quit), "q")
+    }
+
+    @objc func openRadialFromMenu() { if !userHidden { showRadial() } }
+    @objc func openMiniMenu() { toggleMiniMenu() }
+    @objc func setMischief(_ sender: NSMenuItem) {
+        settings.mischief = sender.representedObject as? String ?? "normal"
+        settings.save()
+    }
+    @objc func sizeChosen(_ sender: NSMenuItem) { setSize(sender.tag) }
+
+    @objc func togglePause() {
+        paused.toggle()
+        if paused {
+            cancelMotion()
+            cancelAnimations()
+            frogg.frameName = "idle_0"
+            say("Paused", for: 1.5)
+        } else {
+            reposition(force: true)
+            scheduleIdle()
+        }
+    }
+
+    @objc func resetPosition() {
+        userPlaced = false
+        paused = false
+        reposition(force: true)
+    }
+
+    @objc func openWallet() {
+        NSWorkspace.shared.open(URL(string: "http://127.0.0.1:\(client.port)/wallet/setup")!)
     }
 
     @objc func openAccessibility() {

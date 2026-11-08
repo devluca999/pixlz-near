@@ -24,6 +24,7 @@ public final class PolishView: NSView {
     public init(_ content: Content, showDetails: Bool = false) {
         self.content = content
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 200))
+        appearance = NSAppearance(named: .aqua)  // paper-and-ink design: always light, even in dark mode
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12

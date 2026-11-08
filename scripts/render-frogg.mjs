@@ -32,7 +32,17 @@ const poses = {
   poke_0: fr({ eyes: "low", head: { dy: 3, rot: -5 } }),
   poke_1: fr({ eyes: "half", look: [1.4, -1.4], head: { rot: -8 } }),
   poke_2: fr({ eyes: "smug", throat: 1, mouth: "smile", head: { dy: -2, rot: -3 } }),
+  rest_0: fr({ eyes: "closed", mouth: "yawn", head: { rot: -6, dy: -1 } }),
   rest_1: "sleep",
+  rest_2: fr({ eyes: "closed", throat: 0.4, head: { rot: 12, dy: 2 } }),
+  // Grab: hangs from the cursor by one toe pad (pin = the toe, from behavior.js `at: [36, 10]`).
+  grab_0: { pose: { v: "hang", ph: 0 }, pin: [36, 10] },
+  grab_1: { pose: { v: "hang", ph: 1 }, pin: [36, 10] },
+  grab_2: fr({ splat: true, eyes: "half", mouth: "line", arms: "out" }),
+  perch_2: fr({ eyes: "half", arms: "out" }),
+  signature_0: fr({ eyes: "round", look: [1.8, -1], head: { rot: -6 } }),
+  signature_1: "snap",
+  signature_2: fr({ eyes: "closed", throat: 1, mouth: "smile" }),
 };
 for (const [label, pose] of ctx.PX3.emotions.frogg) poses["emotion_" + label.toLowerCase()] = pose;
 
@@ -40,7 +50,8 @@ const palette = [];
 const index = new Map();
 const CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-/:;<=>?@[]^_{|}~";
 const frames = {};
-for (const [name, pose] of Object.entries(poses)) {
+for (const [name, entry] of Object.entries(poses)) {
+  const pose = entry && entry.pose ? entry.pose : entry;
   const spr = Object.assign(frogg.build(pose), { shadow: null });
   const r = render(spr, frogg.pal, { rim: frogg.rim, rimTop: frogg.rimTop });
   const [x0, y0, x1, y1] = cropBox(r, spr);
@@ -60,14 +71,20 @@ for (const [name, pose] of Object.entries(poses)) {
     rows.push(row);
   }
   // cropBox pads one transparent pixel on each side; trim it so the feet are the bottom row.
-  while (rows.length && /^\.+$/.test(rows[0])) rows.shift();
+  let trimmedTop = 0;
+  while (rows.length && /^\.+$/.test(rows[0])) { rows.shift(); trimmedTop++; }
   while (rows.length && /^\.+$/.test(rows[rows.length - 1])) rows.pop();
   const opaqueCol = (i) => rows.some((r) => r[i] !== ".");
   let left = 0, right = rows[0].length - 1;
   while (!opaqueCol(left)) left++;
   while (!opaqueCol(right)) right--;
+  const top = trimmedTop;
   const trimmed = rows.map((r) => r.slice(left, right + 1));
   frames[name] = { w: right - left + 1, h: trimmed.length, rows: trimmed };
+  if (entry && entry.pin) {
+    // the pin in sprite-canvas pixels, moved into the cropped and trimmed frame
+    frames[name].pin = [entry.pin[0] - x0 - left, entry.pin[1] - y0 - top];
+  }
 }
 
 const json = JSON.stringify({

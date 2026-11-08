@@ -41,6 +41,23 @@ public struct MemoryClient: Sendable {
         return try Self.decodePolish(data: data, status: status)
     }
 
+    /// Service, model and wallet lines for the mini menu and the menu bar.
+    public func status() async -> ServiceStatus {
+        struct Health: Decodable { let model: String; let has_api_key: Bool }
+        struct Wallet: Decodable { let ready: Bool?; let account: String?; let balance_near: String?; let setup: String? }
+        guard let (hd, hs) = try? await send(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/health")!)), hs == 200,
+              let h = try? JSONDecoder().decode(Health.self, from: hd) else {
+            return ServiceStatus(service: "not running (make -C memory serve)")
+        }
+        var st = ServiceStatus(service: h.has_api_key ? "running" : "running, no NEAR AI key", model: h.model)
+        if let r = try? request("/wallet"), let (wd, ws) = try? await send(r), ws == 200,
+           let w = try? JSONDecoder().decode(Wallet.self, from: wd) {
+            st.walletReady = w.ready == true
+            st.wallet = w.ready == true ? "\(w.account ?? "Frogg") · \(w.balance_near ?? "?") Ⓝ" : (w.setup ?? "not set up")
+        }
+        return st
+    }
+
     public func markAccepted(draftId: String) async {
         guard let r = try? request("/drafts/\(draftId)/status", method: "POST", body: ["status": "accepted"]) else { return }
         _ = try? await session.data(for: r)

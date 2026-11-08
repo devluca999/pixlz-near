@@ -41,6 +41,12 @@ enum AX {
         return CGRect(origin: pos, size: size)
     }
 
+    /// Whether a window is in native fullscreen (its own Space).
+    static func isFullscreen(_ window: AXUIElement) -> Bool {
+        let v: Bool? = attr(window, "AXFullScreen")
+        return v == true
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }
@@ -56,7 +62,8 @@ final class WindowWatcher {
     private var appElement: AXUIElement?
     private var windowElement: AXUIElement?
     private var appToken: NSObjectProtocol?
-    var onChange: (() -> Void)?
+    enum Change { case switched, moved }
+    var onChange: ((Change) -> Void)?
 
     func start() {
         appToken = NSWorkspace.shared.notificationCenter.addObserver(
@@ -69,15 +76,16 @@ final class WindowWatcher {
     func attachToFrontmost() {
         detach()
         guard AX.trusted, let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { onChange?(); return }
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { onChange?(.switched); return }
         let pid = app.processIdentifier
         var obs: AXObserver?
-        let callback: AXObserverCallback = { _, _, _, refcon in
+        let callback: AXObserverCallback = { _, _, notification, refcon in
             guard let refcon else { return }
             let me = Unmanaged<WindowWatcher>.fromOpaque(refcon).takeUnretainedValue()
-            MainActor.assumeIsolated { me.windowEvent() }
+            let moved = [kAXMovedNotification, kAXResizedNotification].contains(notification as String)
+            MainActor.assumeIsolated { me.windowEvent(moved ? .moved : .switched) }
         }
-        guard AXObserverCreate(pid, callback, &obs) == .success, let obs else { onChange?(); return }
+        guard AXObserverCreate(pid, callback, &obs) == .success, let obs else { onChange?(.switched); return }
         observer = obs
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         let appEl = AX.app(pid)
@@ -86,7 +94,7 @@ final class WindowWatcher {
         AXObserverAddNotification(obs, appEl, kAXMainWindowChangedNotification as CFString, refcon)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
         watchWindow()
-        onChange?()
+        onChange?(.switched)
     }
 
     private func watchWindow() {
@@ -105,10 +113,12 @@ final class WindowWatcher {
         }
     }
 
-    private func windowEvent() {
-        watchWindow()
-        onChange?()
+    private func windowEvent(_ change: Change) {
+        if change == .switched { watchWindow() }
+        onChange?(change)
     }
+
+    var activeWindowIsFullscreen: Bool { windowElement.map(AX.isFullscreen) ?? false }
 
     func detach() {
         if let obs = observer {

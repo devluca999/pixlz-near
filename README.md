@@ -18,8 +18,10 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 | All 17 checks behind the verdict, from the same live request. | If the enclave fails verification, your text is never sent. |
 | ![Chrome: a saved highlight reopened](docs/screenshots/backlink-long-passage.png) | ![Chrome: the right "the frog" out of 35](docs/screenshots/backlink-the-frog.png) |
 | Chrome extension: a saved passage, reopened from its link, scrolled and highlighted. | The link picks the right "the frog" out of 35 on the page. |
+| ![Right-click: the radial menu](docs/screenshots/radial-menu.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
+| Right-click Frogg: Polish, Focus, Hide, Settings (Chat and Mic are marked coming soon). | ⌃⌥P: name, size, behaviour, Focus apps, hotkeys, service and wallet status. |
 | ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) |
-| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's 16 frames, exported from the Claude Design C7 engine. |
+| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's 25 frames (idle, hop, poke, grab, signature, nap, emotions), exported from the Claude Design C7 engine. |
 
 App screenshots are rendered offscreen from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
 
@@ -71,7 +73,7 @@ Full details: [`memory/README.md`](memory/README.md).
 |---|---|
 | `memory/`: local service, verification, encrypted store, CLI | **working**, 41 tests |
 | Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
-| `macos/PixlMemory/`: overlay app: Frogg perches on the active window; click → polish → diff → drag the result into your text | built, 16 tests; `scripts/build-mac-app.sh --open` |
+| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and drops in when you swipe to another Space. Click to poke (with text selected: polish → diff → drag the result into your text), double-click for its signature, drag to grab and toss, right-click for the radial menu; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built, 30 tests; `scripts/build-mac-app.sh --open` |
 | `extension/`: Chrome highlight → save → text-fragment backlink | built, 10 tests; first run in Chrome pending |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).

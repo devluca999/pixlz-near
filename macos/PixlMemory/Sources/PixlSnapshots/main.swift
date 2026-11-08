@@ -45,11 +45,13 @@ func run() throws {
     let art = FroggArt.shared
 
     // 1. Every frame Frogg has, at 3×, labelled.
-    let names = ["idle_0", "idle_1", "idle_2", "move_0", "move_1", "move_2", "poke_0", "poke_1", "poke_2", "rest_1",
-                 "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_curious", "emotion_proud"]
+    let names = ["idle_0", "idle_1", "idle_2", "move_0", "move_1", "move_2", "poke_0", "poke_1", "poke_2",
+                 "grab_0", "grab_1", "grab_2", "signature_0", "signature_1", "signature_2", "rest_0", "rest_1", "rest_2",
+                 "perch_2", "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_curious", "emotion_proud"]
     let cell = NSSize(width: art.canvas.width * 3 + 24, height: art.canvas.height * 3 + 40)
-    let cols = 4
-    let sheet = Canvas(NSSize(width: cell.width * CGFloat(cols) + 24, height: cell.height * 4 + 70), fill: Theme.paper) { _ in
+    let cols = 5
+    let rows = (names.count + cols - 1) / cols
+    let sheet = Canvas(NSSize(width: cell.width * CGFloat(cols) + 24, height: cell.height * CGFloat(rows) + 70), fill: Theme.paper) { _ in
         label("Frogg · rendered from the Claude Design C7 engine · 3×", Theme.mono(18, .bold), Theme.ink, at: NSPoint(x: 24, y: 20))
     }
     for (i, n) in names.enumerated() {
@@ -107,6 +109,30 @@ func run() throws {
         bg.addSubview(panel)
         try png(bg, "\(out)/\(name).png")
     }
+
+    // 3b. Right-click: the radial menu around Frogg, and the ⌃⌥P mini menu.
+    let radialScene = Canvas(NSSize(width: RadialMenuView.size.width + 40, height: RadialMenuView.size.height + 40),
+                             fill: NSColor(srgbRed: 0.42, green: 0.55, blue: 0.70, alpha: 1))
+    let rf = FroggView(scale: 2, frameName: "poke_1")
+    rf.frame.origin = NSPoint(x: radialScene.bounds.midX - rf.frame.width / 2,
+                              y: radialScene.bounds.midY + art.size("idle_0").height - rf.frame.height)
+    radialScene.addSubview(rf)
+    let radial = RadialMenuView(items: [
+        .init(id: "polish", title: "Polish", glyph: "✎"), .init(id: "focus", title: "Focus", glyph: "◷"),
+        .init(id: "chat", title: "Chat", glyph: "💬", enabled: false), .init(id: "mic", title: "Mic", glyph: "🎙", enabled: false),
+        .init(id: "hide", title: "Hide", glyph: "◌"), .init(id: "settings", title: "Settings", glyph: "⚙")])
+    radial.frame.origin = NSPoint(x: 20, y: 20)
+    radialScene.addSubview(radial)
+    try png(radialScene, "\(out)/radial-menu.png")
+
+    let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(
+        service: "running", model: "z-ai/glm-5.3-flash", wallet: "frogg.sylversurferr.testnet doesn't exist yet: open /wallet/setup and approve in Meteor",
+        lastVerdict: "Verified in TEE · 17/17"))
+    mini.fit()
+    let miniBG = Canvas(NSSize(width: mini.frame.width + 48, height: mini.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+    mini.frame.origin = NSPoint(x: 24, y: 24)
+    miniBG.addSubview(mini)
+    try png(miniBG, "\(out)/mini-menu.png")
 
     // 4. What the user sees if the enclave fails verification.
     let failed = PolishView(.error(.attestationFailed("Not verified: model fresh for this request failed. Treat this result as untrusted.", nil), app: "Mail"))
