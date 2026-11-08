@@ -58,6 +58,32 @@ public struct MemoryClient: Sendable {
         return st
     }
 
+    public func ask(_ question: String, name: String, personality: String) async throws(MemoryError) -> AskResult {
+        let (data, status) = try await send(try request("/ask", method: "POST",
+                                                        body: ["question": question, "name": name, "personality": personality]))
+        if status == 200 {
+            do { return try JSONDecoder().decode(AskResult.self, from: data) } catch { throw .upstream("Unreadable reply from the service") }
+        }
+        throw Self.error(data: data, status: status)
+    }
+
+    public func highlights(limit: Int = 30) async -> [HighlightItem] {
+        struct List: Decodable { let highlights: [HighlightItem] }
+        guard let r = try? request("/highlights?limit=\(limit)"), let (d, s) = try? await send(r), s == 200 else { return [] }
+        return (try? JSONDecoder().decode(List.self, from: d))?.highlights ?? []
+    }
+
+    public func wallet() async -> WalletInfo? {
+        guard let r = try? request("/wallet"), let (d, s) = try? await send(r), s == 200 else { return nil }
+        return try? JSONDecoder().decode(WalletInfo.self, from: d)
+    }
+
+    public func payments(limit: Int = 5) async -> [Receipt] {
+        struct List: Decodable { let payments: [Receipt] }
+        guard let r = try? request("/wallet/payments?limit=\(limit)"), let (d, s) = try? await send(r), s == 200 else { return [] }
+        return (try? JSONDecoder().decode(List.self, from: d))?.payments ?? []
+    }
+
     public func markAccepted(draftId: String) async {
         guard let r = try? request("/drafts/\(draftId)/status", method: "POST", body: ["status": "accepted"]) else { return }
         _ = try? await session.data(for: r)
@@ -78,16 +104,21 @@ public struct MemoryClient: Sendable {
         if status == 200 {
             do { return try JSONDecoder().decode(PolishResult.self, from: data) } catch { throw .upstream("Unreadable reply from the service") }
         }
+        throw error(data: data, status: status)
+    }
+
+    public static func error(data: Data, status: Int) -> MemoryError {
+        struct Err: Decodable { let error: String?; let message: String?; let verification: Verification? }
         let e = try? JSONDecoder().decode(Err.self, from: data)
         let msg = e?.message ?? "HTTP \(status)"
         switch (status, e?.error) {
-        case (401, _): throw .badToken
-        case (409, _): throw .attestationFailed(msg, e?.verification)
-        case (412, _): throw .noApiKey(msg)
-        case (402, "frogg_out_of_allowance"): throw .outOfAllowance(msg)
-        case (402, _): throw .noCredits(msg)
-        case (400, "not_private"): throw .notPrivate(msg)
-        default: throw .upstream(msg)
+        case (401, _): return .badToken
+        case (409, _): return .attestationFailed(msg, e?.verification)
+        case (412, _): return .noApiKey(msg)
+        case (402, "frogg_out_of_allowance"): return .outOfAllowance(msg)
+        case (402, _): return .noCredits(msg)
+        case (400, "not_private"): return .notPrivate(msg)
+        default: return .upstream(msg)
         }
     }
 }

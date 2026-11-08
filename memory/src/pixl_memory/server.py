@@ -31,6 +31,14 @@ class PolishIn(BaseModel):
     model: str | None = None
 
 
+class AskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    name: str = Field(default="Frogg", max_length=40)
+    personality: str = Field(default="a friendly pixel frog", max_length=300)
+    use_highlights: bool = True
+    model: str | None = None
+
+
 class StatusIn(BaseModel):
     status: str
 
@@ -144,6 +152,38 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             "usage": comp.usage,
             "inference_id": comp.inference_id,
         })
+
+    @app.post("/ask", dependencies=guarded)
+    def do_ask(a: AskIn) -> JSONResponse:
+        """Ask the Pixl anything: same attest-before-send flow as polish; the user's recent
+        highlights (decrypted locally) go along as context, only to the attested enclave."""
+        model = a.model or default_model
+        if wallet and (why := wallet.blocked()):
+            return JSONResponse({"error": "frogg_out_of_allowance", "message": why}, status_code=402)
+        notes = [h.text for h in store.list_highlights(limit=5)] if a.use_highlights else []
+        try:
+            comp = client.chat(polish.ask_messages(a.question, a.name, a.personality, notes), model,
+                               temperature=0.5, max_tokens=1024)
+        except NoApiKey as e:
+            return JSONResponse({"error": "no_api_key", "message": str(e)}, status_code=412)
+        except NotPrivateModel as e:
+            return JSONResponse({"error": "not_private", "message": str(e)}, status_code=400)
+        except AttestationFailed as e:
+            return JSONResponse({"error": "attestation_failed", "message": str(e),
+                                 "verification": e.verification.to_dict()}, status_code=409)
+        except NoCredits as e:
+            return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
+        except UpstreamError as e:
+            return JSONResponse({"error": "upstream", "message": str(e)}, status_code=502)
+        answer = polish.clean(comp.content, "")
+        verification = comp.verification.to_dict()
+        receipt = None
+        if wallet:
+            cost = client.request_cost_nano_usd(comp.inference_id) if comp.inference_id else None
+            receipt = wallet.pay(cost, {"kind": "ask", "model": comp.model, "verdict": verification["verdict"],
+                                        "inference_id": comp.inference_id})
+        return JSONResponse({"answer": answer, "verification": verification, "receipt": receipt,
+                             "used_highlights": len(notes), "inference_id": comp.inference_id})
 
     # -- Frogg's wallet --
 

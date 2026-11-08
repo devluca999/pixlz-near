@@ -8,7 +8,7 @@ import PixlzCore
 /// clicks were lost and holds turned into throws. Double-click comes from the click count.
 public struct PointerGesture: Sendable {
     public static let clickTime: TimeInterval = 0.5
-    public static let longPressTime: TimeInterval = 0.5
+    public static let longPressTime: TimeInterval = 0.45  // C8 --pz-bubble-longpress
     public static let dragDistance: CGFloat = 6
 
     public let start: CGPoint

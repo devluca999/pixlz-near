@@ -27,10 +27,13 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     private var nameField: NSTextField!
     private var appsField: NSTextField!
 
-    public init(settings: PixlSettings, status: ServiceStatus) {
+    public let look: SurfaceView.Look
+
+    public init(settings: PixlSettings, status: ServiceStatus, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1)) {
         self.settings = settings
+        self.look = look
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 400))
-        appearance = NSAppearance(named: .aqua)  // paper-and-ink design: always light, even in dark mode
+        appearance = look.appearance  // light or dark text, per the legibility pick
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -51,6 +54,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     public override var isFlipped: Bool { true }
 
     public override func draw(_ dirtyRect: NSRect) {
+        return  // the shared SurfaceView draws the material; see SurfaceView.card
         let card = NSRect(x: 0, y: 0, width: bounds.width - Theme.shadowOffset, height: bounds.height - Theme.shadowOffset)
         Theme.ink.setFill(); NSBezierPath(rect: card.offsetBy(dx: Theme.shadowOffset, dy: Theme.shadowOffset)).fill()
         Theme.paper.setFill(); NSBezierPath(rect: card).fill()
@@ -73,7 +77,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         nameField.delegate = self
         nameField.placeholderString = "Name"
         nameField.widthAnchor.constraint(equalToConstant: 180).isActive = true
-        let species = label("Red-eyed tree frog · the only Pixl in v1", Theme.mono(10), Theme.muted)
+        let species = label("Red-eyed tree frog · the only Pixl in v1", Theme.mono(10), Theme.textMuted)
         let nameCol = NSStackView(views: [nameField, species]); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 4
         let close = PixelButton(title: "✕", primary: false) { [weak self] in self?.onClose?() }
         closeButton = close
@@ -107,9 +111,9 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(chips)
 
         stack.addArrangedSubview(section("PIXL MEMORY"))
-        serviceLabel = label("", Theme.mono(11), Theme.ink)
-        modelLabel = label("", Theme.mono(11), Theme.ink)
-        lastLabel = label("", Theme.mono(11), Theme.ink)
+        serviceLabel = label("", Theme.mono(11), Theme.text)
+        modelLabel = label("", Theme.mono(11), Theme.text)
+        lastLabel = label("", Theme.mono(11), Theme.text)
         walletLabel = label("", Theme.mono(11), Theme.partial)
         walletButton = PixelButton(title: "Set up Frogg's wallet", primary: true) { [weak self] in self?.onOpenWallet?() }
         [serviceLabel, modelLabel, lastLabel, walletLabel, walletButton].forEach { stack.addArrangedSubview($0!) }
@@ -142,7 +146,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         return l
     }
 
-    private func section(_ s: String) -> NSTextField { label(s, Theme.mono(10, .bold), Theme.muted) }
+    private func section(_ s: String) -> NSTextField { label(s, Theme.mono(10, .bold), Theme.textMuted) }
 
     private func check(_ title: String, _ on: Bool, _ action: Selector?) -> NSButton {
         let b = NSButton(checkboxWithTitle: title, target: self, action: action)

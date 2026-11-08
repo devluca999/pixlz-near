@@ -6,7 +6,7 @@ public enum DiffText {
         let out = NSMutableAttributedString()
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 3
-        let base: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size), .foregroundColor: Theme.ink,
+        let base: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size), .foregroundColor: Theme.text,
                                                    .paragraphStyle: para]
         for op in ops {
             var a = base

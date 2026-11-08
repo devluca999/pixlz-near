@@ -178,3 +178,25 @@ def test_no_credits_is_a_clear_402(tmp_path, captured):
     assert r.status_code == 402
     assert r.json()["error"] == "no_credits" and "cloud.near.ai" in r.json()["message"]
     assert store.list_drafts() == []
+
+
+def test_ask_is_verified_and_uses_highlights_as_context(tmp_path, captured):
+    fake = FakeNear(captured, reply="Frogs breathe partly through their skin.")
+    tc, store = make(tmp_path, fake)
+    store.add_highlight("Frogs absorb oxygen through their skin")
+    r = tc.post("/ask", json={"question": "how do frogs breathe?", "personality": "a deadpan frog"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["answer"] == "Frogs breathe partly through their skin."
+    assert body["verification"]["verdict"] == "verified" and body["used_highlights"] == 1
+    sent = json.loads(fake.completions["chat123"][0])
+    assert "a deadpan frog" in sent["messages"][0]["content"]
+    assert "Frogs absorb oxygen" in sent["messages"][0]["content"]  # context went only to the enclave
+    assert sent["messages"][1]["content"] == "how do frogs breathe?"
+
+
+def test_ask_refuses_before_sending_when_attestation_fails(tmp_path, captured):
+    fake = FakeNear(captured, attest_nonce_override="00" * 32)
+    tc, _ = make(tmp_path, fake)
+    r = tc.post("/ask", json={"question": "secret?"})
+    assert r.status_code == 409 and "/chat/completions" not in fake.calls

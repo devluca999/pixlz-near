@@ -321,7 +321,7 @@ Heavy typing comes from the opt-in Input Monitoring count (D12), which never rea
 
 ### 6.6 Focus guardian (D12)
 
-- Started from the radial menu: 25 min, 50 min, or custom.
+- Started from the option bubbles (More ▸ Focus): 25 min on the Mac build.
 - During a session the Pixl sits still on the Dock or the bottom of the screen; no mischief, no autonomous moves.
 - If the user activates an app on their "distracting" list, the Pixl plays a gentle nudge (`poke` frames 1–2 toward that window, `curious`). At most once per 2 min. It never blocks or closes anything.
 - On completion: `proud`, fun +10.
@@ -541,26 +541,35 @@ protocol PetTransport {
 
 | Action | macOS | iPhone stage |
 |---|---|---|
-| **Poke** | Click (press + release < 250 ms, < 4 pt movement) | Tap |
-| **Signature** | Double-click | Double-tap |
-| **Grab / throw** | Drag (after 4 pt movement), release to throw | Drag, release to toss; bounces off screen edges |
-| **Radial menu** | Right-click | Long-press |
+| **Poke** | Click (press + release < 250 ms, < 6 pt movement). A single click only pokes | Tap |
+| **Option bubbles** (§11.2) | Double-click, right-click, or press and hold 450 ms. The poke from the first click is cut short | Double-tap or long-press |
+| **Grab / throw** | Drag (after 6 pt movement), release to throw. Starting a drag pops any open bubbles | Drag, release to toss; bounces off screen edges |
+| **Signature** | An idle quirk (now and then while perched), or More ▸ "Do your thing" | Same |
 
 - Poke reaction: `poke` slot, fun +3, affection +4. 3 pokes in 4 s → `annoyed`. A poke while asleep → `startled`, then `annoyed`.
 - Mouse hits only on opaque pixels of the current frame (R2).
+- 6 pt (not 4) so trackpad jitter during a slow click isn't read as a drag.
 
-### 11.2 Radial menu
+### 11.2 Option bubbles (design C8 "Menus & Bubbles")
 
-Items, clockwise from the top:
+44 pt round bubbles puff out of the Pixl's head along an arc (32° apart; radius 56 + 16 × scale), one by one: 45 ms stagger, 320 ms spring (0.2 → 1.14 → 0.95 → 1.02 → 1). While open, the Pixl shows its `ui.menuFace` (pixl.json).
 
-| Item | Notes |
-|---|---|
-| Send to <device> | Only while a paired peer is reachable |
-| Focus | macOS: 25 / 50 / custom (§6.6). Hidden on iOS |
-| Chat | Greyed out, "coming soon" |
-| Mic | Greyed out, "coming soon" |
-| Hide | macOS only |
-| Settings | Opens the mini menu (Mac) or settings sheet (iPhone) |
+| Slot | Shows | Opens |
+|---|---|---|
+| 1 | **Polish** when text is selected, otherwise **Ask** | Polish: the instruction list. Ask: the Ask card (attested TEE answer, paid from the Pixl's wallet) |
+| 2 | **Memory** | Recent highlights with backlinks, searchable |
+| 3 | **Wallet** (sub-label: balance) | Balance, cap and recent receipts; "Set up" if the sub-account doesn't exist |
+| 4 | **Send to <device>** | Only while a paired peer is reachable (none in the hackathon build) |
+| last | **More** | The mini list: Ask ⌘K · Memory · Wallet · Send to device · Focus · Do your thing · Pixl settings ⌃⌥P · Hide for now ⌃⌥H |
+
+- **Close:** Esc, a click anywhere else, or a click on the Pixl → reverse stagger (30 ms, 170 ms). Starting a drag → all bubbles pop at once (130 ms, with a 220 ms dither ring).
+- **States:** hover lifts 3 pt and grows ×1.1 over 120 ms; press shrinks ×0.9 (glass) or ×0.96 and sinks 2 pt (paper); keyboard focus draws a 2 pt accent ring and shows the label pill.
+- **Keyboard:** ←/↑ previous, →/↓/Tab next, Return/Enter/Space choose, Esc close, ⌘K Ask. Focus returns to the app you were in when the menu closes.
+- **Accessibility:** the arc is a group "Frogg's menu"; every bubble and list row is a button/menu item with a spoken label ("Wallet, 0.48 NEAR").
+- **Placement:** above the head by default; flips left, right or below to stay fully on the visible screen and never cover the caret or the selection being polished (read through Accessibility). The arc follows the Pixl if it moves while open.
+- **Surface:** one material for every overlay (bubbles, label pills, the More list, cards, the speech bubble, the polish result, the mini menu): Liquid Glass (`NSGlassEffectView`) on macOS 26+, the paper fallback (paper fill, 2 pt ink ring, hard 3 pt ink shadow) on older systems or with Reduce Transparency.
+- **Legibility:** no screen capture (D12), so text surfaces use a backdrop dim that keeps text ≥ 4.5:1 over *any* backdrop (worst case black…white), choosing the light or dark variant from the system appearance. Icon-only bubbles keep the design fill (outlined icons).
+- **Per-pet data:** accent, menu face, signature name, Ask placeholder and personality live in `pixl.json` → `ui`, not code.
 
 ### 11.3 macOS menu bar item
 
@@ -578,11 +587,13 @@ All rebindable in the mini menu.
 
 ### 11.5 Mini menu
 
+Opened from More ▸ Pixl settings or ⌃⌥P, on the shared surface (§11.2).
+
 Name field · Pixl card (Frogg only in v1) · Behavior toggles (file ride, perch, mischief level) · Size · FX (particles & aura on/off) · Hotkey chips · Distracting apps list (for Focus) · "Talk to Frogg" prompt, disabled, "coming soon". Styling follows the design tokens (`design/tokens/colors.css`): ink `#1B2A1A`, paper `#FFFBF2`, accent `#7CD93A`, 3 pt ink borders, hard 8 pt offset shadow.
 
 ### 11.6 Speech bubble
 
-White box, 3 pt ink outline, tail toward the Pixl's head, one line of bold monospace text, shows for 3 s. In v1 used only by the chat stub and the "…" travel bubble.
+On the shared surface (§11.2), tail toward the Pixl's head, bold monospace text, shows for 3 s. In v1 used only by the chat stub and the "…" travel bubble.
 
 ---
 

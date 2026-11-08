@@ -173,3 +173,11 @@ Each milestone includes an Instruments check against these numbers.
 - Ground rules R1–R8 still apply. Text reaches the user's apps only by the user dragging it (R4: no synthetic keystrokes or pastes).
 - License unchanged (proprietary). The repo goes public for judging by 2026-11-14 23:59 UTC.
 - **PNGs leave Git LFS** (amends D6): sprites are a few KB each and screenshots a few hundred KB. A clone or ZIP download without LFS would show judges pointer files, and every download would spend the owner's LFS bandwidth. GIF, WebP, Aseprite and PSD stay in LFS.
+
+## D16. Menus & Bubbles (design C8) replace the radial menu (2026-11-08)
+
+- **Option bubbles** open on double-click, right-click or a 450 ms press; a single click only pokes. The signature moved to an idle quirk and More ▸ "Do your thing" (SPEC §11).
+- **One surface material** for every overlay: Liquid Glass (`NSGlassEffectView`) on macOS 26+, paper fallback otherwise or with Reduce Transparency.
+- **Legibility without screen capture.** D12 rules out Screen Recording, so text surfaces never sample what's behind them. Instead they use the smallest backdrop dim that keeps text at 4.5:1 over any backdrop (`Legibility.pick`, unit tested).
+- **Per-pet UI data** (accent, menu face, signature, Ask placeholder, personality) lives in `pixl.json` → `ui`.
+- The iPhone stage (long-press, previously the radial menu) will use the same bubbles when the iPhone app is built.

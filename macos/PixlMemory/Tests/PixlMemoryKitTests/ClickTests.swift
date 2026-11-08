@@ -38,65 +38,6 @@ enum Click {
 
 @MainActor
 struct ClickTests {
-    func radial(_ enabled: Bool = true) -> RadialMenuView {
-        RadialMenuView(items: [
-            .init(id: "polish", title: "Polish", glyph: "✎", enabled: enabled), .init(id: "focus", title: "Focus", glyph: "◷"),
-            .init(id: "chat", title: "Chat", glyph: "💬", enabled: false), .init(id: "mic", title: "Mic", glyph: "🎙", enabled: false),
-            .init(id: "hide", title: "Hide", glyph: "◌"), .init(id: "settings", title: "Settings", glyph: "⚙")])
-    }
-
-    @Test func radialButtonsFireOnClick() {
-        let view = radial()
-        let w = Click.host(view)
-        defer { w.close() }
-        var picked: [String] = []
-        view.onSelect = { picked.append($0.id) }
-        let centers = RadialMenuView.centers(count: 6, in: view.bounds.size)
-        Click.click(view, at: centers[1])
-        Click.click(view, at: centers[5])
-        #expect(picked == ["focus", "settings"])
-    }
-
-    @Test func radialReportsDisabledItemsToo() {
-        // Disabled items still fire, so Frogg can say "coming soon" instead of ignoring the click.
-        let view = radial()
-        let w = Click.host(view)
-        defer { w.close() }
-        var picked: [RadialMenuView.Item] = []
-        view.onSelect = { picked.append($0) }
-        Click.click(view, at: RadialMenuView.centers(count: 6, in: view.bounds.size)[2])
-        #expect(picked.map(\.id) == ["chat"] && picked.first?.enabled == false)
-    }
-
-    @Test func radialIgnoresClicksBetweenButtonsAndPressThenSlideOff() {
-        let view = radial()
-        let w = Click.host(view)
-        defer { w.close() }
-        var picked = 0
-        view.onSelect = { _ in picked += 1 }
-        Click.click(view, at: NSPoint(x: view.bounds.midX, y: view.bounds.midY))  // Frogg's spot: click-through
-        let c = RadialMenuView.centers(count: 6, in: view.bounds.size)
-        w.sendEvent(Click.event(.leftMouseDown, at: view.convert(c[0], to: nil), in: w))
-        w.sendEvent(Click.event(.leftMouseUp, at: view.convert(c[3], to: nil), in: w))  // released on another button
-        #expect(picked == 0)
-    }
-
-    @Test func choiceButtonsFire() throws {
-        var picked: [Int] = []
-        let view = ChoiceMenuView(title: "Focus", options: ["25 min", "50 min"], style: .round) { picked.append($0) }
-        let w = Click.host(view)
-        defer { w.close() }
-        for i in [1, 0] { Click.click(view, at: try #require(view.center(of: i))) }
-        #expect(picked == [1, 0])
-
-        var chosen: [Int] = []
-        let list = ChoiceMenuView(title: "“hey team…”", options: ["Polish this", "Make it shorter"], style: .list) { chosen.append($0) }
-        let w2 = Click.host(list)
-        defer { w2.close() }
-        Click.click(list, at: try #require(list.center(of: 1)))
-        #expect(chosen == [1])
-    }
-
     @Test func pixelButtonsInThePanelsFire() throws {
         let r = try MemoryClient.decodePolish(data: ClientTests().fixture(), status: 200)
         let panel = PolishView(.result(r, instruction: "Polish this", app: "Mail"))

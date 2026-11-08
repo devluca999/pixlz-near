@@ -5,12 +5,21 @@ public enum Theme {
     public static let ink = NSColor(srgbRed: 0x1B / 255, green: 0x2A / 255, blue: 0x1A / 255, alpha: 1)
     public static let paper = NSColor(srgbRed: 0xFF / 255, green: 0xFB / 255, blue: 0xF2 / 255, alpha: 1)
     public static let accent = NSColor(srgbRed: 0x7C / 255, green: 0xD9 / 255, blue: 0x3A / 255, alpha: 1)
+    public static let selected = NSColor(srgbRed: 0xF4 / 255, green: 0xFB / 255, blue: 0xE9 / 255, alpha: 1)  // --pz-selected
     public static let muted = NSColor(srgbRed: 0x5D / 255, green: 0x6B / 255, blue: 0x5C / 255, alpha: 1)
     public static let verified = NSColor(srgbRed: 0x2B / 255, green: 0x8A / 255, blue: 0x3E / 255, alpha: 1)
     public static let partial = NSColor(srgbRed: 0xE6 / 255, green: 0x77 / 255, blue: 0x00 / 255, alpha: 1)
     public static let failed = NSColor(srgbRed: 0xC9 / 255, green: 0x2A / 255, blue: 0x2A / 255, alpha: 1)
     public static let insertBG = NSColor(srgbRed: 0xD3 / 255, green: 0xF9 / 255, blue: 0xD8 / 255, alpha: 1)
     public static let deleteBG = NSColor(srgbRed: 0xFF / 255, green: 0xE3 / 255, blue: 0xE3 / 255, alpha: 1)
+
+    /// Text on a surface: ink on light, paper on dark glass (follows the view's appearance).
+    public static let text = NSColor(name: "pixl.text") { ap in
+        ap.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? paper : ink
+    }
+    public static let textMuted = NSColor(name: "pixl.textMuted") { ap in
+        ap.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? paper.withAlphaComponent(0.72) : muted
+    }
 
     public static let border: CGFloat = 3
     public static let shadowOffset: CGFloat = 6

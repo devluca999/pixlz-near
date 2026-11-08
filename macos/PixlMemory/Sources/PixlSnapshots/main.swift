@@ -104,42 +104,84 @@ func run() throws {
     for (name, details) in [("polish-panel", false), ("polish-panel-checks", true)] {
         let panel = PolishView(.result(result, instruction: "Polish this", app: "Mail"), showDetails: details)
         panel.fit()
-        let bg = Canvas(NSSize(width: panel.frame.width + 48, height: panel.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
-        panel.frame.origin = NSPoint(x: 24, y: 24)
-        bg.addSubview(panel)
+        let card = SurfaceView.card(panel, look: SurfaceView.Look(glass: false, variant: .light, dim: 1))
+        let bg = Canvas(NSSize(width: card.frame.width + 48, height: card.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+        card.frame.origin = NSPoint(x: 24, y: 24)
+        bg.addSubview(card)
         try png(bg, "\(out)/\(name).png")
     }
 
-    // 3b. Right-click: the radial menu around Frogg, and the ⌃⌥P mini menu.
-    let radialScene = Canvas(NSSize(width: RadialMenuView.size.width + 40, height: RadialMenuView.size.height + 40),
-                             fill: NSColor(srgbRed: 0.42, green: 0.55, blue: 0.70, alpha: 1))
-    let rf = FroggView(scale: 2, frameName: "poke_1")
-    rf.frame.origin = NSPoint(x: radialScene.bounds.midX - rf.frame.width / 2,
-                              y: radialScene.bounds.midY + art.size("idle_0").height - rf.frame.height)
-    radialScene.addSubview(rf)
-    let radial = RadialMenuView(items: [
-        .init(id: "polish", title: "Polish", glyph: "✎"), .init(id: "focus", title: "Focus", glyph: "◷"),
-        .init(id: "chat", title: "Chat", glyph: "💬", enabled: false), .init(id: "mic", title: "Mic", glyph: "🎙", enabled: false),
-        .init(id: "hide", title: "Hide", glyph: "◌"), .init(id: "settings", title: "Settings", glyph: "⚙")])
-    radial.frame.origin = NSPoint(x: 20, y: 20)
-    radialScene.addSubview(radial)
-    try png(radialScene, "\(out)/radial-menu.png")
+    // 3b. C8 option bubbles over three backgrounds (paper fallback: glass needs the live compositor).
+    let paper = SurfaceView.Look(glass: false, variant: .light, dim: 1)
+    let backdrops: [(String, NSColor, ((NSRect) -> Void)?)] = [
+        ("white-doc", NSColor(white: 0.99, alpha: 1), { r in
+            NSColor(white: 0.82, alpha: 1).setFill()
+            for k in stride(from: 30.0, to: r.height - 20, by: 22) { NSRect(x: 30, y: k, width: r.width - 60 - CGFloat(Int(k) % 90), height: 6).fill() }
+        }),
+        ("dark-editor", NSColor(srgbRed: 0.11, green: 0.12, blue: 0.15, alpha: 1), { r in
+            let cols: [NSColor] = [.systemPink, .systemTeal, .systemYellow, NSColor(white: 0.6, alpha: 1)]
+            for (n, k) in stride(from: 24.0, to: r.height - 20, by: 18).enumerated() {
+                cols[n % 4].withAlphaComponent(0.8).setFill()
+                NSRect(x: 30 + CGFloat(n % 3) * 20, y: k, width: CGFloat(80 + (n * 37) % 200), height: 7).fill()
+            }
+        }),
+        ("busy-photo", .black, { r in
+            for x in stride(from: 0.0, to: r.width, by: 12) { for y in stride(from: 0.0, to: r.height, by: 12) {
+                let h = (sin(x * 0.031) + cos(y * 0.047) + sin((x + y) * 0.013)) / 6 + 0.5
+                NSColor(hue: h, saturation: 0.7, brightness: 0.35 + 0.6 * abs(sin(x * y * 0.0007)), alpha: 1).setFill()
+                NSRect(x: x, y: y, width: 12, height: 12).fill()
+            } }
+        }),
+    ]
+    let slots = BubbleMenuModel.slots(selection: true, peer: nil, walletSub: "0.48 Ⓝ")
+    for (name, fill, draws) in backdrops {
+        let scene = Canvas(NSSize(width: 420, height: 300), fill: fill, draws: draws)
+        let head = CGPoint(x: 210, y: 190)  // the canvas and the bubbles view are both flipped
+        let centers = BubbleMenuModel.arc(count: slots.count, head: head, radius: BubbleMenuModel.radius(scale: 2), direction: .up)
+        let f = FroggView(scale: 2, frameName: "emotion_curious")
+        let feet = head.y + art.size("emotion_curious").height * 2 - 10  // the app puts the head 5 art px below the top
+        f.frame.origin = NSPoint(x: 210 - f.frame.width / 2, y: feet - f.frame.height)
+        scene.addSubview(f)
+        let v = OptionBubblesView(frame: scene.bounds, slots: slots, head: head, centers: centers, look: paper, labelLook: paper)
+        v.open(at: 0)
+        v.advance(to: 2)
+        v.setFocus(0)
+        for k in 1...60 { v.advance(to: 2 + Double(k) / 60) }  // the focused bubble's label fades in
+        scene.addSubview(v)
+        try png(scene, "\(out)/bubbles-\(name).png")
+    }
+
+    // The More list and the Ask card on the same surface.
+    let more = ListMenuView(rows: [
+        .init(id: "ask", title: "Ask", icon: "ask", trailing: "⌘K"), .init(id: "memory", title: "Memory", icon: "memory"),
+        .init(id: "wallet", title: "Wallet", icon: "wallet", trailing: "0.48 Ⓝ"),
+        .init(id: "send", title: "Send to device", icon: "send", enabled: false),
+        .init(id: "signature", title: "Do your thing", icon: nil, trailing: "Tongue snap"),
+        .init(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
+        .init(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")], look: paper)
+    more.setFocus(2)
+    let moreBG = Canvas(NSSize(width: more.frame.width + 48, height: more.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+    more.frame.origin = NSPoint(x: 24, y: 24)
+    moreBG.addSubview(more)
+    try png(moreBG, "\(out)/more-list.png")
 
     let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(
         service: "running", model: "z-ai/glm-5.3-flash", wallet: "frogg.sylversurferr.testnet doesn't exist yet: open /wallet/setup and approve in Meteor",
-        lastVerdict: "Verified in TEE · 17/17"))
+        lastVerdict: "Verified in TEE · 17/17"), look: paper)
     mini.fit()
-    let miniBG = Canvas(NSSize(width: mini.frame.width + 48, height: mini.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
-    mini.frame.origin = NSPoint(x: 24, y: 24)
-    miniBG.addSubview(mini)
+    let miniCard = SurfaceView.card(mini, look: paper)
+    let miniBG = Canvas(NSSize(width: miniCard.frame.width + 48, height: miniCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+    miniCard.frame.origin = NSPoint(x: 24, y: 24)
+    miniBG.addSubview(miniCard)
     try png(miniBG, "\(out)/mini-menu.png")
 
     // 4. What the user sees if the enclave fails verification.
     let failed = PolishView(.error(.attestationFailed("Not verified: model fresh for this request failed. Treat this result as untrusted.", nil), app: "Mail"))
     failed.fit()
-    let bg = Canvas(NSSize(width: failed.frame.width + 48, height: failed.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
-    failed.frame.origin = NSPoint(x: 24, y: 24)
-    bg.addSubview(failed)
+    let failedCard = SurfaceView.card(failed, look: paper)
+    let bg = Canvas(NSSize(width: failedCard.frame.width + 48, height: failedCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+    failedCard.frame.origin = NSPoint(x: 24, y: 24)
+    bg.addSubview(failedCard)
     try png(bg, "\(out)/polish-refused.png")
 }
 

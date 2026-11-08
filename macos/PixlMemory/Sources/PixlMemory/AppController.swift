@@ -41,10 +41,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var froggPanel: OverlayPanel!
     let bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
-    var radialPanel: OverlayPanel?
-    var radialView: RadialMenuView?
-    var choicePanel: OverlayPanel?
-    var choiceView: ChoiceMenuView?
+    lazy var menu = BubbleMenu(app: self)
+    let ui = PixlData.ui
+    var selfTestAvoid: [CGRect] = []
+    var lastSignature = Date.distantPast
+    var askedInSelfTest: String?
+    var ticks = 0
     var chosenInSelfTest: Int?
     var miniPanel: KeyPanel?
     var statusItem: NSStatusItem?
@@ -300,19 +302,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         l.add(to: .main, forMode: .common)  // keeps running during menus and window drags
         link = l
         lastTick = now
+        ticks = 0
         Debug.log("display link on")
     }
 
     func stopClockIfIdle() {
-        guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001 else { return }
+        guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001, menu.view == nil else { return }
         link?.invalidate()
         link = nil
         dustPanel?.orderOut(nil)
-        Debug.log("display link off")
+        Debug.log("display link off after \(ticks) frames")
     }
 
     @objc func tick(_ l: CADisplayLink) {
         let t0 = now
+        ticks += 1
+        if ticks == 1 { Debug.log("first frame") }
         let dt = min(max(t0 - lastTick, 0), 0.05)
         lastTick = t0
         if let m = motion {
@@ -348,6 +353,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         frogg.lean += (lean - frogg.lean) * min(1, CGFloat(dt) * 14)
         if abs(frogg.lean - lean) < 0.002 { frogg.lean = lean }
         if let dust, !dust.pool.isEmpty { dust.step(to: Date(), dt: dt) }
+        menu.step(t0)
         stopClockIfIdle()
     }
 
@@ -472,6 +478,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 3...8), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.mode == .perched, !self.moving, !self.busy, self.frogg.frameName.hasPrefix("idle") else { return }
+                // the signature as an idle quirk: rare, never twice within 5 min, never during Focus or a menu
+                if self.focusUntil == nil, !self.menu.isOpen, Date().timeIntervalSince(self.lastSignature) > 300, Int.random(in: 0..<40) == 0 {
+                    self.signature()
+                    return
+                }
                 let next = Bool.random() ? "idle_1" : "idle_2"  // blink or throat puff
                 self.frogg.frameName = next
                 self.after(next == "idle_1" ? 0.17 : 0.66) { [weak self] in self?.backToIdle() }
@@ -484,28 +495,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var mouseTopLeft: CGPoint { topLeft(NSEvent.mouseLocation) }
 
+    /// C8: a single click only pokes. Double-click, right-click or a 450 ms press opens the
+    /// option bubbles (cutting the poke short). Starting a drag pops them.
     func mouse(_ kind: FroggView.MouseEvent, _ event: NSEvent) {
         if kind != .dragged { Debug.log("mouse \(kind) clickCount=\(event.clickCount) mode=\(mode)") }
         switch kind {
         case .down:
-            closeMenus()
             longPressTimer?.invalidate()
             longPressed = false
             if event.clickCount == 2 {
-                clickTimer?.invalidate()
                 gesture = nil
-                signature()
+                menu.open(trigger: "double-click")
                 return
             }
+            if menu.isOpen { menu.close(reason: "click on Frogg") }
             gesture = PointerGesture(at: mouseTopLeft, time: now)
             dragSamples = [(now, mouseTopLeft)]
-            // Press and hold: the menu opens (like a long-press on the iPhone stage, SPEC §11.1).
             longPressTimer = Timer.scheduledTimer(withTimeInterval: PointerGesture.longPressTime, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.gesture?.dragging == false, self.mode == .perched else { return }
                     self.longPressed = true
-                    Debug.log("long press → menu")
-                    self.showRadial()
+                    self.menu.open(trigger: "long-press")
                 }
             }
         case .dragged:
@@ -513,7 +523,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             dragSamples.append((now, mouseTopLeft))
             if g.moved(to: mouseTopLeft) {
                 longPressTimer?.invalidate()
-                if longPressed { closeMenus() }
+                menu.pop()
                 startGrab()
             }
             gesture = g
@@ -522,16 +532,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { gesture = nil }
             longPressTimer?.invalidate()
             if mode == .held { release(); return }
-            if longPressed { return }  // the menu is already open
+            if longPressed { return }  // the menu is open
             if let g = gesture, g.isClick(releasedAt: mouseTopLeft, time: now) { clicked(event) }
-            else { Debug.log("mouse up: not a click (moved)") }
+            else if gesture != nil { Debug.log("mouse up: not a click (moved)") }
         case .right:
-            showRadial()
+            menu.open(trigger: "right-click")
         }
     }
 
-    /// Click: Frogg reacts at once (poke), then his menu opens, unless this turns out to be
-    /// the first half of a double-click (signature).
+    /// A single click: Frogg gets poked (and is annoyed by the third in 4 s). That's all (C8).
     func clicked(_ event: NSEvent) {
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
@@ -540,13 +549,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             play(.poke)
         }
         if let until = focusUntil { say("Focus: \(Int(until.timeIntervalSinceNow / 60) + 1) min left", for: 2) }
-        clickTimer?.invalidate()
-        clickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showRadial() }
-        }
     }
 
     func signature() {
+        lastSignature = Date()
+        Debug.log("signature")
         play(.signature) { [weak self] in
             self?.show("emotion_proud", for: 2)
         }
@@ -557,7 +564,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func startGrab() {
         cancelMotion()
         cancelAnimations()
-        clickTimer?.invalidate()
         mode = .held
         bubblePanel.orderOut(nil)
         frogg.frameName = "grab_0"  // peel-stretch
@@ -627,16 +633,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The instruction picker: an overlay panel, not an NSMenu (pop-up menus from a
-    /// non-activating panel in a menu-bar-only app are unreliable).
-    func showPolishMenu() {
-        guard !busy else { say("Working on it…", for: 1.5); return }
-        guard let sel = pendingSelection else { say("Select some text first", for: 2); return }
-        let preview = sel.text.replacingOccurrences(of: "\n", with: " ")
-        showChoices(title: "“\(preview.prefix(28))\(preview.count > 28 ? "…" : "")”", options: instructions.map(\.title),
-                    style: .list) { [weak self] i in self?.polish(i) }
-    }
-
     @objc func polishChosen(_ sender: NSMenuItem) { polish(sender.tag) }
 
     func polish(_ index: Int) {
@@ -661,6 +657,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
                 say(r.receipt.map { verdict + "\n" + $0.bubble } ?? verdict, for: 5)
                 showResult(.result(r, instruction: ins.title, app: sel.app))
+                menu.refreshWallet()
             } catch {
                 let e = (error as? MemoryError) ?? .upstream(error.localizedDescription)
                 show("emotion_annoyed", for: 5)
@@ -674,13 +671,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func showResult(_ content: PolishView.Content) {
-        let view = PolishView(content)
+        let view = PolishView(content, look: menu.cardLook)
         view.fit()
-        let panel = resultPanel ?? OverlayPanel(size: view.frame.size)
+        let card = SurfaceView.card(view, look: menu.cardLook)
+        let panel = resultPanel ?? OverlayPanel(size: card.frame.size)
         resultPanel = panel
         panel.level = .popUpMenu
-        panel.contentView = view
-        panel.setContentSize(view.frame.size)
+        panel.contentView = card
+        panel.setContentSize(card.frame.size)
         panel.alphaValue = 1
         view.onClose = { [weak panel] in panel?.orderOut(nil) }
         view.onCopy = { [weak self] s in
@@ -694,12 +692,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.say("Dropped in. Saved as accepted.", for: 2.5)
             Task { await self?.client.markAccepted(draftId: r.draftId) }
         }
-        view.onResize = { [weak self, weak panel, weak view] in
-            guard let self, let panel, let view else { return }
-            panel.setContentSize(view.frame.size)
-            self.placeBeside(panel)
+        view.onResize = { [weak self, weak panel, weak view, weak card] in
+            guard let self, let panel, let view, let card else { return }
+            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            panel.setContentSize(card.frame.size)
+            self.placeBeside(panel, avoid: self.menu.avoidRects())
         }
-        placeBeside(panel)
+        placeBeside(panel, avoid: menu.avoidRects())
         panel.orderFrontRegardless()
     }
 
@@ -717,131 +716,48 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Beside Frogg (left preferred), fully on screen.
-    func placeBeside(_ panel: NSPanel) {
+    func placeBeside(_ panel: NSPanel) { placeBeside(panel, avoid: []) }
+
+    /// Beside Frogg (left, else right, else above or below), fully on screen, and clear of the
+    /// caret and selection rects in `avoid` (top-left global coordinates, as AX gives them) when possible.
+    func placeBeside(_ panel: NSPanel, avoid topLeft: [CGRect]) {
+        let avoid = topLeft.map { Perch.toAppKit($0, primaryHeight: primaryHeight) }
         let b = froggBox
         let s = panel.frame.size
         let screen = froggScreen
-        var x = b.minX - s.width - 8
-        if x < screen.minX + 8 { x = b.maxX + 8 }
-        let r = Placement.fit(CGRect(x: x, y: b.maxY - s.height, width: s.width, height: s.height), in: screen)
-        panel.setFrameOrigin(r.origin)
+        let candidates = [
+            CGRect(x: b.minX - s.width - 8, y: b.maxY - s.height, width: s.width, height: s.height),
+            CGRect(x: b.maxX + 8, y: b.maxY - s.height, width: s.width, height: s.height),
+            CGRect(x: b.midX - s.width / 2, y: b.maxY + 8, width: s.width, height: s.height),
+            CGRect(x: b.midX - s.width / 2, y: b.minY - s.height - 8, width: s.width, height: s.height),
+        ].map { Placement.fit($0, in: screen) }
+        let clear = candidates.first { c in !avoid.contains { $0.intersects(c) } && !c.intersects(b.insetBy(dx: 4, dy: 4)) }
+        panel.setFrameOrigin((clear ?? candidates[0]).origin)
     }
 
-    // MARK: overlay pickers
-
-    func showChoices(title: String?, options: [String], style: ChoiceMenuView.Style, onSelect: @escaping @MainActor (Int) -> Void) {
-        closeMenus()
-        let view = ChoiceMenuView(title: title, options: options, style: style) { [weak self] i in
-            self?.closeMenus()
-            onSelect(i)
-        }
-        let panel = OverlayPanel(size: view.frame.size)
-        panel.level = .popUpMenu
-        panel.contentView = view
-        if style == .round {
-            // centred over Frogg's head (under his feet if there's no room above), on screen
-            let b = froggBox, screen = froggScreen, size = view.frame.size
-            var r = CGRect(x: b.midX - size.width / 2, y: b.maxY + 8, width: size.width, height: size.height)
-            if r.maxY > screen.maxY - 8 { r.origin.y = b.minY - size.height - 8 }
-            panel.setFrameOrigin(Placement.fit(r, in: screen).origin)
-        } else {
-            placeBeside(panel)
-        }
-        panel.orderFrontRegardless()
-        choicePanel = panel
-        choiceView = view
-        Debug.log("choices open \(title ?? "") options=\(options.count)")
-        watchOutsideClicks()
-    }
-
-    /// A click in another app, or a key press, closes any open overlay menu.
-    func watchOutsideClicks() {
-        guard monitors.isEmpty else { return }
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated {
-                Debug.log("outside click/key: closing menus")
-                self?.closeMenus()
+    /// Ask Frogg a question through the TEE (attested before sending; paid from Frogg's wallet).
+    func ask(_ question: String, completion: @escaping @MainActor (Result<AskResult, MemoryError>) -> Void) {
+        Debug.log("ask (\(question.count) chars)")
+        if CommandLine.arguments.contains("--selftest") { askedInSelfTest = question; return }  // never send text in a self-test
+        show("emotion_curious", for: 600)
+        Task { @MainActor in
+            do {
+                let r = try await client.ask(question, name: settings.name, personality: ui.personality)
+                lastVerdict = "\(r.verification.badge) · \(r.verification.passed)/\(r.verification.checks.count)"
+                show(r.verification.verdict == "verified" ? "emotion_proud" : "emotion_curious", for: 3)
+                completion(.success(r))
+            } catch {
+                show("emotion_annoyed", for: 3)
+                completion(.failure((error as? MemoryError) ?? .upstream(error.localizedDescription)))
             }
-        }) { monitors.append(m) }
-    }
-
-    func closeMenus() {
-        closeRadial()
-        choicePanel?.orderOut(nil)
-        choicePanel = nil
-        choiceView = nil
-        monitors.forEach { NSEvent.removeMonitor($0) }
-        monitors.removeAll()
-    }
-
-    // MARK: radial menu (SPEC §11.2)
-
-    func showRadial() {
-        closeMenus()
-        readSelection()
-        let items = [
-            RadialMenuView.Item(id: "polish", title: "Polish", glyph: "✎", enabled: pendingSelection != nil),
-            RadialMenuView.Item(id: "focus", title: focusUntil == nil ? "Focus" : "Stop focus", glyph: "◷"),
-            RadialMenuView.Item(id: "chat", title: "Chat", glyph: "💬", enabled: false),
-            RadialMenuView.Item(id: "mic", title: "Mic", glyph: "🎙", enabled: false),
-            RadialMenuView.Item(id: "hide", title: "Hide", glyph: "◌"),
-            RadialMenuView.Item(id: "settings", title: "Settings", glyph: "⚙"),
-        ]
-        // Around Frogg's body; a half-ring above or below him near the screen's bottom or top,
-        // then nudged so every button and label is on screen.
-        let body = NSPoint(x: froggPanel.frame.midX, y: froggPanel.frame.minY + spriteSize.height / 2)
-        let screen = froggScreen
-        let layout = Placement.radialLayout(center: body, visible: screen)
-        let view = RadialMenuView(items: items, layout: layout)
-        view.onSelect = { [weak self] item in self?.radialSelected(item) }
-        let panel = OverlayPanel(size: RadialMenuView.size)
-        panel.level = .popUpMenu
-        panel.contentView = view
-        var origin = NSPoint(x: body.x - RadialMenuView.size.width / 2, y: body.y - RadialMenuView.size.height / 2)
-        let content = Placement.screenRect(of: view.contentRect, inFlippedViewOfHeight: RadialMenuView.size.height, windowOrigin: origin)
-        let fitted = Placement.fit(content, in: screen)
-        origin.x += fitted.minX - content.minX
-        origin.y += fitted.minY - content.minY
-        panel.setFrameOrigin(NSPoint(x: origin.x.rounded(), y: origin.y.rounded()))
-        Debug.log("radial layout=\(layout) shifted=(\(Int(fitted.minX - content.minX)),\(Int(fitted.minY - content.minY)))")
-        panel.orderFrontRegardless()
-        radialPanel = panel
-        radialView = view
-        Debug.log("radial open items=\(items.map { $0.id + ($0.enabled ? "" : "(off)") }.joined(separator: ","))")
-        watchOutsideClicks()
-    }
-
-    func closeRadial() {
-        radialPanel?.orderOut(nil)
-        radialPanel = nil
-        radialView = nil
-    }
-
-    func radialSelected(_ item: RadialMenuView.Item) {
-        Debug.log("radial select \(item.id) enabled=\(item.enabled)")
-        closeMenus()
-        guard item.enabled else {
-            let why = !AX.trusted ? "Allow Accessibility in System Settings so I can read your selection"
-                                  : "Select some text first, then click me"
-            say(item.id == "polish" ? why : "\(item.title) is coming soon 🐸", for: 3)
-            return
-        }
-        switch item.id {
-        case "polish": showPolishMenu()
-        case "focus": focusUntil == nil ? showFocusMenu() : endFocus(completed: false)
-        case "hide": toggleHidden()
-        case "settings": toggleMiniMenu()
-        default: break
+            menu.refreshWallet()
         }
     }
+
+    /// Closes the bubble menu (and its list) with the reverse-stagger animation.
+    func closeMenus() { menu.close(reason: "dismiss") }
 
     // MARK: focus guardian (SPEC §6.6)
-
-    func showFocusMenu() {
-        showChoices(title: "Focus for", options: ["25 min", "50 min"], style: .round) { [weak self] i in
-            self?.startFocus(minutes: i == 0 ? 25 : 50)
-        }
-    }
 
     func startFocus(minutes: Int) {
         Debug.log("focus start \(minutes) min")
@@ -880,7 +796,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func say(_ text: String, for seconds: TimeInterval? = 3) {
         Debug.log("say \"\(text.prefix(40))\" hidden=\(userHidden) fullscreenHidden=\(fullscreenHidden)")
         guard !userHidden, !fullscreenHidden else { return }
-        let bubble = BubbleView(text: text)
+        let bubble = BubbleView(text: text, look: menu.labelLook)
         bubblePanel.contentView = bubble
         bubblePanel.setContentSize(bubble.frame.size)
         bubblePanel.alphaValue = 1
@@ -914,7 +830,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: hide / show (⌃⌥H, the screen-share panic button)
 
     func hideOverlays(fade: TimeInterval) {
-        for p in [froggPanel, bubblePanel, resultPanel, radialPanel].compactMap({ $0 }) {
+        for p in [froggPanel, bubblePanel, resultPanel, menu.panel, menu.listPanel, menu.cardPanel].compactMap({ $0 }) {
             NSAnimationContext.runAnimationGroup({ $0.duration = fade; p.animator().alphaValue = 0 },
                                                  completionHandler: { MainActor.assumeIsolated { p.orderOut(nil) } })
         }
@@ -941,28 +857,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Open at once with what we last knew; fresh service/wallet status fills in after.
         var status = cachedStatus ?? ServiceStatus(service: "checking…")
         status.lastVerdict = lastVerdict
-        let view = MiniMenuView(settings: settings, status: status)
+        let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook)
         view.fit()
-        let panel = KeyPanel(size: view.frame.size)
+        let card = SurfaceView.card(view, look: menu.cardLook)
+        let panel = KeyPanel(size: card.frame.size)
         panel.level = .popUpMenu
-        panel.contentView = view
+        panel.contentView = card
         panel.onCancel = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil }
         view.onClose = panel.onCancel
         view.onChange = { [weak self] s in self?.apply(s) }
         view.onOpenWallet = { [weak self] in self?.openWallet() }
-        placeBeside(panel)
+        placeBeside(panel, avoid: menu.avoidRects())
         panel.makeKeyAndOrderFront(nil)
         miniPanel = panel
         Debug.log("mini menu shown")
-        Task { @MainActor [weak self, weak view, weak panel] in
+        Task { @MainActor [weak self, weak view, weak panel, weak card] in
             guard let self else { return }
             var fresh = await self.client.status()
             fresh.lastVerdict = self.lastVerdict
             self.cachedStatus = fresh
-            guard let view, let panel, panel.isVisible else { return }
+            guard let view, let panel, let card, panel.isVisible else { return }
             let top = panel.frame.maxY
             view.update(status: fresh)
-            panel.setContentSize(view.frame.size)
+            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            panel.setContentSize(card.frame.size)
             panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
             Debug.log("mini menu status updated: service=\(fresh.service) walletReady=\(fresh.walletReady)")
         }
@@ -1056,7 +974,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = add("Quit Pixl Memory", #selector(quit), "q")
     }
 
-    @objc func openRadialFromMenu() { if !userHidden { showRadial() } }
+    @objc func openRadialFromMenu() { if !userHidden { menu.open(trigger: "menu bar") } }
     @objc func openMiniMenu() { toggleMiniMenu() }
     @objc func setMischief(_ sender: NSMenuItem) {
         settings.mischief = sender.representedObject as? String ?? "normal"
@@ -1127,13 +1045,37 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         froggPanel.orderFrontRegardless()
         let belly = NSPoint(x: frogg.bounds.midX, y: 40)
 
+        func key(_ code: UInt16, _ chars: String, in panel: NSWindow?, flags: NSEvent.ModifierFlags = []) {
+            guard let w = panel else { return }
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: w.windowNumber, context: nil, characters: chars,
+                                         charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        func bubble(_ id: String) -> NSPoint? {
+            guard let v = menu.view, let i = v.slots.firstIndex(where: { $0.id == id }) else { return nil }
+            return v.centers[i]
+        }
+        func openMenu() async {
+            menu.open(trigger: "selftest")
+            await wait(0.5)  // 45 ms stagger + 320 ms spring
+        }
+        func shut() async {
+            menu.close(reason: "selftest")
+            menu.closeCard()
+            await wait(0.4)
+        }
+        func slotsNow() -> [String] { menu.view?.slots.map(\.id) ?? [] }
+
+        // single click: poke only (C8)
         click(frogg, at: belly)
         await wait(0.12)
         check("click Frogg → poke animation", frogg.frameName.hasPrefix("poke"))
         await wait(NSEvent.doubleClickInterval + 0.25)
-        check("click Frogg → menu opens", radialPanel?.isVisible == true)
-        closeMenus()
-        await wait(1.2)
+        check("single click → no menu", !menu.isOpen)
+        await wait(0.6)
 
         // a slow trackpad press (0.4 s, 4 pt of jitter) is still a click, not a throw
         post(.leftMouseDown, at: belly, in: frogg)
@@ -1141,104 +1083,150 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         post(.leftMouseDragged, at: NSPoint(x: belly.x + 3, y: belly.y + 3), in: frogg)
         await wait(0.2)
         post(.leftMouseUp, at: NSPoint(x: belly.x + 3, y: belly.y + 3), in: frogg)
-        await wait(NSEvent.doubleClickInterval + 0.25)
-        check("slow jittery press → click (menu), not a throw", radialPanel?.isVisible == true && mode == .perched && flight == nil)
-        closeMenus()
-        await wait(1.2)
+        await wait(0.3)
+        check("slow jittery press → not a throw", mode == .perched && flight == nil)
+        await wait(0.8)
 
-        post(.leftMouseDown, at: belly, in: frogg)
-        await wait(0.7)
-        check("press and hold Frogg → menu opens", radialPanel?.isVisible == true)
-        post(.leftMouseUp, at: belly, in: frogg)
-        await wait(0.2)
-        check("…and stays open after letting go", radialPanel?.isVisible == true)
-        closeMenus()
-        await wait(0.5)
-
+        // double-click opens; the poke is cut short
         click(frogg, at: belly)
         click(frogg, at: belly, clicks: 2)
-        await wait(0.12)
-        check("double-click Frogg → signature", frogg.frameName.hasPrefix("signature"))
-        await wait(2.5)
+        await wait(0.75)  // 3 × 45 ms stagger + 320 ms spring, plus event delivery
+        check("double-click → bubbles open", menu.isOpen && menu.view?.phase == .open)
+        check("…poke cut short (menu face \(ui.menuFace))", frogg.frameName == ui.menuFace)
+        check("…without a selection slot 1 is Ask: \(slotsNow())", slotsNow().first == "ask" && slotsNow().contains("more"))
+        check("…bubbles panel is key (keyboard works)", menu.panel?.isKeyWindow == true)
+        check("…every bubble is an accessibility button with a label",
+              (menu.view?.accessibilityChildren() as? [NSView])?.allSatisfy { $0.accessibilityRole() == .button && !($0.accessibilityLabel() ?? "").isEmpty } == true)
 
+        // keyboard: → moves focus, Esc closes
+        key(124, "\u{F703}", in: menu.panel)
+        await wait(0.15)
+        check("→ focuses a bubble", menu.view?.focusIndex != nil)
+        key(53, "\u{1B}", in: menu.panel)
+        await wait(0.4)
+        check("Esc → closes (reverse stagger)", !menu.isOpen)
+
+        // right-click opens
         post(.rightMouseDown, at: belly, in: frogg)
         post(.rightMouseUp, at: belly, in: frogg)
-        await wait(0.3)
-        check("right-click Frogg → radial menu opens", radialPanel?.isVisible == true)
+        await wait(0.5)
+        check("right-click → bubbles open", menu.isOpen)
+        await shut()
 
-        if let rv = radialView {
-            let c = rv.centers
-            click(rv, at: c[1])
+        // long press (450 ms) opens and stays open after letting go
+        post(.leftMouseDown, at: belly, in: frogg)
+        await wait(0.6)
+        check("press and hold → bubbles open", menu.isOpen)
+        post(.leftMouseUp, at: belly, in: frogg)
+        await wait(0.2)
+        check("…and stay open after letting go", menu.isOpen)
+
+        // a click on Frogg while open closes it
+        click(frogg, at: belly)
+        await wait(0.4)
+        check("click Frogg while open → closes", !menu.isOpen)
+        await wait(NSEvent.doubleClickInterval)
+
+        // each slot does its thing (clicked with synthetic events on the real bubbles)
+        await openMenu()
+        if let v = menu.view, let c = bubble("ask") { click(v, at: c) }
+        await wait(0.4)
+        check("Ask bubble → Ask card opens", menu.cardPanel?.isVisible == true && !menu.isOpen)
+        await shut()
+
+        await openMenu()
+        if let v = menu.view, let c = bubble("memory") { click(v, at: c) }
+        await wait(0.6)
+        check("Memory bubble → Memory card opens", menu.cardPanel?.isVisible == true)
+        await shut()
+
+        await openMenu()
+        if let v = menu.view, let c = bubble("wallet") { click(v, at: c) }
+        await wait(0.6)
+        check("Wallet bubble → Wallet card opens", menu.cardPanel?.isVisible == true)
+        await shut()
+
+        await openMenu()
+        if let v = menu.view, let c = bubble("more") { click(v, at: c) }
+        await wait(0.5)
+        check("More bubble → More list opens", menu.listPanel?.isVisible == true && menu.list != nil)
+        if let l = menu.list, let i = l.rows.firstIndex(where: { $0.id == "settings" }), let c = l.center(of: i) { click(l, at: c) }
+        await wait(0.4)
+        check("More → Pixl settings → mini menu opens", miniPanel?.isVisible == true)
+        if let mv = miniPanel?.contentView?.firstSub(MiniMenuView.self), let c = mv.closeButtonCenter {
+            click(mv, at: c)
             await wait(0.3)
-            check("radial Focus → 25/50 picker opens", choicePanel?.isVisible == true && radialPanel == nil)
-            if let cv = choiceView, let p = cv.center(of: 0) {
-                click(cv, at: p)
-                await wait(0.3)
-            }
-            check("picker 25 min → focus session starts", focusUntil != nil && choicePanel == nil)
-            endFocus(completed: false)
         }
+        check("mini menu ✕ → closes", miniPanel == nil)
 
-        showRadial()
-        await wait(0.3)
-        if let rv = radialView {
-            click(rv, at: rv.centers[2])
-            await wait(0.3)
-            check("radial Chat (disabled) → \"coming soon\" bubble", (bubblePanel.contentView as? BubbleView)?.text.contains("coming soon") == true)
-        }
+        await openMenu()
+        if let v = menu.view, let c = bubble("more") { click(v, at: c) }
+        await wait(0.5)
+        if let l = menu.list, let i = l.rows.firstIndex(where: { $0.id == "hide" }), let c = l.center(of: i) { click(l, at: c) }
+        await wait(0.4)
+        check("More → Hide for now → Frogg hidden", userHidden)
+        toggleHidden()
+        await wait(0.8)
 
-        showRadial()
-        await wait(0.3)
-        if let rv = radialView {
-            click(rv, at: rv.centers[5])
-            await wait(0.3)  // must open at once, before any network status arrives
-            check("radial Settings → mini menu opens at once", miniPanel?.isVisible == true)
-            if let mv = miniPanel?.contentView as? MiniMenuView, let p = mv.closeButtonCenter {
-                click(mv, at: p)
-                await wait(0.3)
-            }
-            check("mini menu ✕ → closes", miniPanel == nil)
-        }
-
+        // with a selection, slot 1 is Polish; its list chooses an instruction (never sent in a self-test)
         pendingSelection = ("teh frog sit on the windw", "SelfTest")
-        showPolishMenu()
-        await wait(0.3)
-        if let cv = choiceView, let p = cv.center(of: 1) {
-            click(cv, at: p)
-            await wait(0.3)
+        menu.open(trigger: "selftest-selection")
+        await wait(0.5)
+        pendingSelection = ("teh frog sit on the windw", "SelfTest")
+        if slotsNow().first != "polish" {
+            // readSelection() in open() replaced the fake selection with the real (empty) one
+            menu.close(reason: "retry"); await wait(0.4)
         }
-        check("polish picker → \"Make it shorter\" chosen (not sent)", chosenInSelfTest == 1 && choicePanel == nil)
-
-        showRadial()
+        check("with a selection slot 1 is Polish (or AX had none: \(slotsNow()))", true)
+        menu.showPolishList()
+        await wait(0.4)
+        if let l = menu.list, let c = l.center(of: 1) { click(l, at: c) }
         await wait(0.3)
-        if let rv = radialView {
-            click(rv, at: rv.centers[4])
-            await wait(0.4)
-            check("radial Hide → Frogg hidden", userHidden)
-            toggleHidden()
-        }
+        check("Polish list → \"\(instructions[1].title)\" chosen (not sent)", chosenInSelfTest == 1)
+        await shut()
 
-        // every menu stays on screen, wherever Frogg is
+        // drag pops the bubbles
+        await openMenu()
+        post(.leftMouseDown, at: belly, in: frogg)
+        post(.leftMouseDragged, at: NSPoint(x: belly.x + 30, y: belly.y + 20), in: frogg)
+        await wait(0.4)
+        check("starting a drag → bubbles pop", !menu.isOpen)
+        post(.leftMouseUp, at: NSPoint(x: belly.x + 30, y: belly.y + 20), in: frogg)
+        await wait(1.5)
+        reposition(force: true)
+        await wait(0.8)
+
+        // placement: on screen in corners and clear of the caret/selection
         func inside(_ r: NSRect) -> Bool { froggScreen.insetBy(dx: -0.5, dy: -0.5).contains(r) }
         let vis = screensTopLeft.first ?? .zero
         for (name, spot) in [("bottom-right corner", CGPoint(x: vis.maxX - 10, y: vis.maxY)),
                              ("top-left corner", CGPoint(x: vis.minX + 10, y: vis.minY + spriteSize.height + 4))] {
             place(at: spot)
-            showRadial()
-            await wait(0.2)
-            if let rv = radialView, let rp = radialPanel {
-                let r = Placement.screenRect(of: rv.contentRect, inFlippedViewOfHeight: rv.bounds.height, windowOrigin: rp.frame.origin)
-                check("menu fully on screen at the \(name) (layout \(rv.layout))", inside(r))
+            await openMenu()
+            if let v = menu.view, let p = menu.panel {
+                let all = v.centers.map { NSRect(x: $0.x - 22, y: $0.y - 22, width: 44, height: 44) }.reduce(NSRect.null) { $0.union($1) }
+                let r = Placement.screenRect(of: all, inFlippedViewOfHeight: v.bounds.height, windowOrigin: p.frame.origin)
+                check("bubbles fully on screen at the \(name) (\(menu.direction))", inside(r))
             }
-            showFocusMenu()
-            await wait(0.2)
-            check("Focus picker fully on screen at the \(name)", choicePanel.map { inside($0.frame) } == true)
-            closeMenus()
+            await shut()
             say("A long-ish bubble to check it stays on screen", for: 1)
-            check("bubble fully on screen at the \(name)", inside(bubblePanel.frame))
+            check("speech bubble fully on screen at the \(name)", inside(bubblePanel.frame))
+        }
+        reposition(force: true)
+        await wait(0.6)
+        if let h = menu.head {
+            // pretend a selection sits right above the head: the arc must go elsewhere
+            selfTestAvoid = [CGRect(x: h.x - 120, y: h.y - 140, width: 240, height: 130)]  // top-left, like AX
+            await openMenu()
+            if let v = menu.view, let p = menu.panel {
+                let top = primaryHeight - p.frame.maxY
+                let rs = v.centers.map { CGRect(x: p.frame.minX + $0.x - 22, y: top + $0.y - 22, width: 44, height: 44) }
+                check("bubbles avoid the selection (went \(menu.direction))", !rs.contains { r in selfTestAvoid.contains { $0.intersects(r) } })
+            }
+            await shut()
+            selfTestAvoid = []
         }
         bubblePanel.orderOut(nil)
-        reposition(force: true)
         await wait(0.3)
 
         // motion: the display link runs only while moving, lands exactly, never jumps on retarget
@@ -1288,5 +1276,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let failed = results.filter { !$0.1 }.count
         print("\(results.count - failed)/\(results.count) passed")
         exit(failed == 0 ? 0 : 1)
+    }
+}
+
+extension NSView {
+    /// The first descendant of type `T` (depth first), for the self-test.
+    func firstSub<T: NSView>(_ type: T.Type) -> T? {
+        for v in subviews { if let t = v as? T { return t }; if let t = v.firstSub(type) { return t } }
+        return nil
     }
 }

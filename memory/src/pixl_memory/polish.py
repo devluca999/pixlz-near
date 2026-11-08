@@ -73,3 +73,19 @@ def diff_stats(ops: list[dict[str, str]]) -> dict[str, int]:
         "inserted_words": sum(words(o["text"]) for o in ops if o["op"] == "insert"),
         "deleted_words": sum(words(o["text"]) for o in ops if o["op"] == "delete"),
     }
+
+
+ASK_SYSTEM = (
+    "You are {name}, {personality}. You live on the user's Mac as a small pixel pet and answer "
+    "questions briefly: at most a few sentences unless asked for more. If the user's saved "
+    "highlights below are relevant, use them and say so; otherwise ignore them. Never invent facts."
+)
+
+
+def ask_messages(question: str, name: str = "Frogg", personality: str = "a friendly pixel frog",
+                 highlights: list[str] | None = None) -> list[dict[str, str]]:
+    system = ASK_SYSTEM.format(name=name, personality=personality)
+    if highlights:
+        notes = "\n".join(f"- {h[:400]}" for h in highlights[:5])
+        system += f"\n\nThe user's recent highlights:\n{notes}"
+    return [{"role": "system", "content": system}, {"role": "user", "content": question}]

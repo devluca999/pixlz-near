@@ -144,3 +144,15 @@ public final class FroggArt {
         }
     }
 }
+
+/// Frogg's species data (assets/frogg/pixl.json, embedded by scripts/render-frogg.mjs),
+/// including the menu character (`ui`): accent, menu face, signature name, voice.
+public enum PixlData {
+    public static let manifest: PixlManifest = {
+        do { return try PixlManifest.decode(Data(froggManifestJSON.utf8)) } catch { fatalError("bad pixl.json: \(error)") }
+    }()
+    public static var ui: PixlUI {
+        manifest.ui ?? PixlUI(accent: "#7CD93A", menuFace: "emotion_curious", glassBody: false, signature: "Signature",
+                              askPlaceholder: "Ask anything…", personality: "a friendly pixel pet")
+    }
+}

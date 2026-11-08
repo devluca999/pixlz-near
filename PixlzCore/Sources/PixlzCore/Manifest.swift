@@ -72,6 +72,8 @@ public struct PixlManifest: Codable, Equatable, Sendable {
     public var physics: SpeciesPhysics
     public var slots: [Slot: SlotSpec]
     public var props: [String: [String]]?
+    /// How the Pixl's menus and bubbles look and talk (C8). Optional: older manifests lack it.
+    public var ui: PixlUI?
 
     public static func decode(_ data: Data) throws -> PixlManifest {
         try JSONDecoder().decode(PixlManifest.self, from: data)
@@ -79,5 +81,27 @@ public struct PixlManifest: Codable, Equatable, Sendable {
 
     public static func load(from url: URL) throws -> PixlManifest {
         try decode(Data(contentsOf: url))
+    }
+}
+
+/// Per-Pixl character for the bubble menus and cards (design C8). Data, not code: a new Pixl
+/// brings its own accent, menu face and voice in `pixl.json`.
+public struct PixlUI: Codable, Equatable, Sendable {
+    /// The Pixl's token accent (hex), used for focus rings and highlights.
+    public var accent: String
+    /// The emotion frame shown while the bubble menu is open.
+    public var menuFace: String
+    /// Liquid Glass body (the ghost). Frogg is pixels.
+    public var glassBody: Bool
+    /// Name of the signature move ("Do your thing").
+    public var signature: String
+    /// Placeholder in the Ask field.
+    public var askPlaceholder: String
+    /// One line of character for the Ask prompt.
+    public var personality: String
+
+    public init(accent: String, menuFace: String, glassBody: Bool, signature: String, askPlaceholder: String, personality: String) {
+        self.accent = accent; self.menuFace = menuFace; self.glassBody = glassBody
+        self.signature = signature; self.askPlaceholder = askPlaceholder; self.personality = personality
     }
 }

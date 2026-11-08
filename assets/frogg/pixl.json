@@ -20,5 +20,13 @@
     "signature": { "holds": [4, 2, 8], "loop": "none" },
     "mischief":  { "holds": [6, 12, 4], "loop": "none" }
   },
-  "props": { "signature": ["fly"], "mischief": ["pond"] }
+  "props": { "signature": ["fly"], "mischief": ["pond"] },
+  "ui": {
+    "accent": "#7CD93A",
+    "menuFace": "emotion_curious",
+    "glassBody": false,
+    "signature": "Tongue snap",
+    "askPlaceholder": "Ask Frogg anything…",
+    "personality": "a deadpan red-eyed tree frog who answers briefly and kindly"
+  }
 }

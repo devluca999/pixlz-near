@@ -130,3 +130,52 @@ public enum MemoryError: Error, Equatable, Sendable {
         }
     }
 }
+
+/// GET /wallet (memory/wallet.py `status`).
+public struct WalletInfo: Codable, Sendable, Equatable {
+    public struct Caps: Codable, Sendable, Equatable {
+        public let perRequestNear: String, perDayNear: String, reserveNear: String
+        enum CodingKeys: String, CodingKey { case perRequestNear = "per_request_near", perDayNear = "per_day_near", reserveNear = "reserve_near" }
+    }
+    public let account: String?
+    public let payee: String?
+    public let balanceNear: String?
+    public let spendableNear: String?
+    public let spentTodayNear: String?
+    public let caps: Caps?
+    public let ready: Bool?
+    public let setup: String?
+    public let explorer: String?
+    enum CodingKeys: String, CodingKey {
+        case account, payee, caps, ready, setup, explorer
+        case balanceNear = "balance_near", spendableNear = "spendable_near", spentTodayNear = "spent_today_near"
+    }
+    public init(account: String?, payee: String?, balanceNear: String?, spendableNear: String?, spentTodayNear: String?,
+                caps: Caps?, ready: Bool?, setup: String?, explorer: String?) {
+        self.account = account; self.payee = payee; self.balanceNear = balanceNear; self.spendableNear = spendableNear
+        self.spentTodayNear = spentTodayNear; self.caps = caps; self.ready = ready; self.setup = setup; self.explorer = explorer
+    }
+    /// The bubble label's sub-line, e.g. "0.95 Ⓝ".
+    public var short: String? { ready == true ? balanceNear.map { "\($0) Ⓝ" } : nil }
+}
+
+/// GET /highlights.
+public struct HighlightItem: Codable, Sendable, Equatable {
+    public let id: String
+    public let text: String
+    public let url: String?
+    public let title: String?
+    public let fragmentUrl: String?
+    enum CodingKeys: String, CodingKey { case id, text, url, title, fragmentUrl = "fragment_url" }
+    public init(id: String, text: String, url: String?, title: String?, fragmentUrl: String?) {
+        self.id = id; self.text = text; self.url = url; self.title = title; self.fragmentUrl = fragmentUrl
+    }
+    public var link: URL? { (fragmentUrl ?? url).flatMap(URL.init(string:)) }
+}
+
+/// POST /ask.
+public struct AskResult: Codable, Sendable, Equatable {
+    public let answer: String
+    public let verification: Verification
+    public let receipt: Receipt?
+}

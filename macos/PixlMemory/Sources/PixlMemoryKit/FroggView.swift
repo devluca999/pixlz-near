@@ -74,49 +74,75 @@ public final class FroggView: NSView {
     }
 }
 
-/// The speech bubble (SPEC §11.6): white box, 3 pt ink outline, tail toward the Pixl,
-/// bold monospace text.
+/// The speech bubble (SPEC §11.6) on the shared surface material: a rounded glass (or paper)
+/// box with a tail toward the Pixl, bold monospace text, legible over any backdrop.
 @MainActor
 public final class BubbleView: NSView {
-    public var text: String { didSet { needsDisplay = true } }
+    public let text: String
+    public let look: SurfaceView.Look
+    let surface: SurfaceView
     static let font = Theme.mono(12, .bold)
     static let pad: CGFloat = 10
-    static let tail: CGFloat = 10
+    static let tail: CGFloat = 9
 
-    public init(text: String) {
+    public init(text: String, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1)) {
         self.text = text
-        super.init(frame: NSRect(origin: .zero, size: Self.size(for: text)))
+        self.look = look
+        let size = Self.size(for: text)
+        let body = NSRect(x: 0, y: 0, width: size.width, height: size.height - Self.tail)
+        surface = SurfaceView(frame: body, shape: .rounded(10), look: look)
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = Self.font
+        label.textColor = look.textColor
+        label.frame = body.insetBy(dx: Self.pad, dy: Self.pad - 2).offsetBy(dx: 0, dy: 1)
+        surface.content.addSubview(label)
+        super.init(frame: NSRect(origin: .zero, size: size))
+        appearance = look.appearance
+        addSubview(surface)
+        addSubview(BubbleTail(look: look, frame: NSRect(x: size.width / 2 - 9, y: body.height - 3, width: 18, height: Self.tail + 3)))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(text)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    public static func size(for text: String, maxWidth: CGFloat = 300) -> NSSize {
-        let r = (text as NSString).boundingRect(with: NSSize(width: maxWidth, height: 400),
-                                                options: [.usesLineFragmentOrigin], attributes: [.font: font])
-        return NSSize(width: ceil(r.width) + pad * 2 + Theme.border * 2, height: ceil(r.height) + pad * 2 + tail + Theme.border * 2)
-    }
-
+    public override var isFlipped: Bool { true }
     public override var isOpaque: Bool { false }
+    public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    public override func draw(_ dirtyRect: NSRect) {
-        let box = NSRect(x: Theme.border / 2, y: Self.tail + Theme.border / 2,
-                         width: bounds.width - Theme.border, height: bounds.height - Self.tail - Theme.border)
-        let path = NSBezierPath(rect: box)
-        // tail toward the Pixl, below the box
-        let tx = bounds.midX
-        let tail = NSBezierPath()
-        tail.move(to: NSPoint(x: tx - 8, y: box.minY))
-        tail.line(to: NSPoint(x: tx, y: Theme.border / 2))
-        tail.line(to: NSPoint(x: tx + 8, y: box.minY))
-        NSColor.white.setFill()
-        path.fill(); tail.fill()
-        Theme.ink.setStroke()
-        path.lineWidth = Theme.border; path.stroke()
-        tail.lineWidth = Theme.border; tail.stroke()
-        NSColor.white.setFill()
-        NSRect(x: tx - 6.5, y: box.minY - 1, width: 13, height: Theme.border + 2).fill()  // open the box where the tail joins
-        let textRect = box.insetBy(dx: Self.pad + Theme.border / 2, dy: Self.pad + Theme.border / 2)
-        (text as NSString).draw(with: textRect, options: [.usesLineFragmentOrigin],
-                                attributes: [.font: Self.font, .foregroundColor: Theme.ink])
+    public static func size(for text: String, maxWidth: CGFloat = 300) -> NSSize {
+        let r = (text as NSString).boundingRect(with: NSSize(width: maxWidth, height: 400), options: [.usesLineFragmentOrigin],
+                                                attributes: [.font: font])
+        return NSSize(width: ceil(r.width) + pad * 2 + 6, height: ceil(r.height) + pad * 2 + 3 + tail)
+    }
+}
+
+/// The bubble's tail, in the same material colours as the surface.
+@MainActor
+final class BubbleTail: NSView {
+    let look: SurfaceView.Look
+    init(look: SurfaceView.Look, frame: NSRect) { self.look = look; super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 1, y: 3))
+        p.line(to: NSPoint(x: bounds.midX, y: bounds.maxY))
+        p.line(to: NSPoint(x: bounds.maxX - 1, y: 3))
+        if look.glass {
+            NSColor(rgb: Legibility.fill(look.variant)).withAlphaComponent(min(1, look.dim + 0.1)).setFill()
+            p.fill()
+        } else {
+            Theme.paper.setFill()
+            p.fill()
+            Theme.ink.setStroke()
+            let edge = NSBezierPath()
+            edge.move(to: NSPoint(x: 1, y: 3))
+            edge.line(to: NSPoint(x: bounds.midX, y: bounds.maxY))
+            edge.line(to: NSPoint(x: bounds.maxX - 1, y: 3))
+            edge.lineWidth = 2
+            edge.stroke()
+        }
     }
 }

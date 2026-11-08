@@ -118,3 +118,15 @@ private func tempDir() -> URL {
         }
     }
 }
+
+
+struct PixlUITests {
+    @Test func froggCarriesItsMenuCharacterInData() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appending(path: "../../../assets/frogg/pixl.json").standardized
+        let m = try PixlManifest.load(from: url)
+        let ui = try #require(m.ui)
+        #expect(ui.accent == "#7CD93A" && ui.menuFace == "emotion_curious" && !ui.glassBody)
+        #expect(!ui.signature.isEmpty && !ui.personality.isEmpty)
+    }
+}

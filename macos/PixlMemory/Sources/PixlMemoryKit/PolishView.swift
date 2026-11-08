@@ -21,10 +21,14 @@ public final class PolishView: NSView {
     private var details: NSView?
     private var detailsButton: PixelButton?
 
-    public init(_ content: Content, showDetails: Bool = false) {
+    /// On glass, the panel's SurfaceView draws the material; on paper this view draws its own card.
+    public let look: SurfaceView.Look
+
+    public init(_ content: Content, showDetails: Bool = false, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1)) {
         self.content = content
+        self.look = look
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 200))
-        appearance = NSAppearance(named: .aqua)  // paper-and-ink design: always light, even in dark mode
+        appearance = look.appearance  // light or dark text, per the legibility pick
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -47,6 +51,7 @@ public final class PolishView: NSView {
     public override var isOpaque: Bool { false }
 
     public override func draw(_ dirtyRect: NSRect) {
+        return  // the shared SurfaceView draws the material (glass or paper); see SurfaceView.card
         // AppKit-flipped view: the card's shadow goes down and right on screen.
         let card = NSRect(x: 0, y: 0, width: bounds.width - Theme.shadowOffset, height: bounds.height - Theme.shadowOffset)
         Theme.ink.setFill()
@@ -77,13 +82,13 @@ public final class PolishView: NSView {
             stack.addArrangedSubview(header(frame: v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed",
                                             title: title(for: instruction), subtitle: [app, v.model].compactMap { $0 }.joined(separator: " · ")))
             stack.addArrangedSubview(VerdictBadge(verification: v))
-            stack.addArrangedSubview(wrapping(v.summary, font: .systemFont(ofSize: 12), color: Theme.muted))
+            stack.addArrangedSubview(wrapping(v.summary, font: .systemFont(ofSize: 12), color: Theme.textMuted))
             if let rc = r.receipt {
                 let line = rc.status == "paid"
                     ? "🐸 Frogg paid \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?") from its own testnet wallet"
                         + (rc.balanceAfterNear.map { " · \($0) Ⓝ left" } ?? "")
                     : "🐸 " + rc.bubble
-                let f = wrapping(line, font: Theme.mono(11, .bold), color: rc.status == "paid" ? Theme.ink : Theme.partial)
+                let f = wrapping(line, font: Theme.mono(11, .bold), color: rc.status == "paid" ? Theme.text : Theme.partial)
                 if let link = rc.explorer, let url = URL(string: link) {
                     let a = NSMutableAttributedString(attributedString: f.attributedStringValue)
                     a.append(NSAttributedString(string: "  receipt ↗", attributes: [.link: url, .font: Theme.mono(11, .bold)]))
@@ -94,7 +99,7 @@ public final class PolishView: NSView {
             }
             let stats = DiffText.stats(r.diff)
             stack.addArrangedSubview(caption("CHANGES  +\(stats.added) −\(stats.removed) words"))
-            let diff = wrapping("", font: .systemFont(ofSize: 13), color: Theme.ink)
+            let diff = wrapping("", font: .systemFont(ofSize: 13), color: Theme.text)
             diff.attributedStringValue = DiffText.attributed(r.diff)
             stack.addArrangedSubview(diff)
             let card = SuggestionCard(text: r.suggestion, width: innerWidth)
@@ -112,7 +117,7 @@ public final class PolishView: NSView {
 
         case .error(let e, let app):
             stack.addArrangedSubview(header(frame: "emotion_annoyed", title: e.bubble, subtitle: app ?? "Pixl Memory"))
-            stack.addArrangedSubview(wrapping(e.detail, font: .systemFont(ofSize: 12), color: Theme.ink))
+            stack.addArrangedSubview(wrapping(e.detail, font: .systemFont(ofSize: 12), color: Theme.text))
             if case .attestationFailed(_, let v?) = e {
                 stack.addArrangedSubview(VerdictBadge(verification: v))
                 stack.addArrangedSubview(checksList(v.checks.filter { $0.status != "pass" }, deployment: nil))
@@ -141,10 +146,10 @@ public final class PolishView: NSView {
         img.imageScaling = .scaleNone
         let t = NSTextField(labelWithString: title)
         t.font = Theme.mono(15, .bold)
-        t.textColor = Theme.ink
+        t.textColor = Theme.text
         let s = NSTextField(labelWithString: subtitle)
         s.font = Theme.mono(11)
-        s.textColor = Theme.muted
+        s.textColor = Theme.textMuted
         s.lineBreakMode = .byTruncatingMiddle
         let texts = NSStackView(views: [t, s])
         texts.orientation = .vertical
@@ -160,7 +165,7 @@ public final class PolishView: NSView {
     private func caption(_ s: String) -> NSTextField {
         let c = NSTextField(labelWithString: s)
         c.font = Theme.mono(10, .bold)
-        c.textColor = Theme.muted
+        c.textColor = Theme.textMuted
         return c
     }
 
@@ -192,12 +197,12 @@ public final class PolishView: NSView {
             case "pass": (mark, color) = ("✔", Theme.verified)
             case "warn": (mark, color) = ("!", Theme.partial)
             case "fail": (mark, color) = ("✖", Theme.failed)
-            default: (mark, color) = ("–", Theme.muted)
+            default: (mark, color) = ("–", Theme.textMuted)
             }
             let s = NSMutableAttributedString(string: "\(mark) ", attributes: [.font: Theme.mono(11, .bold), .foregroundColor: color])
-            s.append(NSAttributedString(string: c.label, attributes: [.font: Theme.mono(11, .bold), .foregroundColor: Theme.ink]))
-            s.append(NSAttributedString(string: "  \(c.detail)", attributes: [.font: Theme.mono(10), .foregroundColor: Theme.muted]))
-            let f = wrapping("", font: Theme.mono(11), color: Theme.ink)
+            s.append(NSAttributedString(string: c.label, attributes: [.font: Theme.mono(11, .bold), .foregroundColor: Theme.text]))
+            s.append(NSAttributedString(string: "  \(c.detail)", attributes: [.font: Theme.mono(10), .foregroundColor: Theme.textMuted]))
+            let f = wrapping("", font: Theme.mono(11), color: Theme.text)
             f.attributedStringValue = s
             col.addArrangedSubview(f)
         }
@@ -271,6 +276,9 @@ final class SuggestionCard: NSView, NSDraggingSource {
             col.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12 - Theme.shadowOffset),
         ])
         toolTip = "Drag into the text field to insert it"
+        setAccessibilityElement(true)
+        setAccessibilityRole(.textField)
+        setAccessibilityLabel("Suggestion: \(text). Drag it into your text field.")
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -336,7 +344,12 @@ final class PixelButton: NSView {
         self.primary = primary
         self.action = action
         super.init(frame: .zero)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title == "✕" ? "Close" : title)
     }
+
+    override func accessibilityPerformPress() -> Bool { action(); return true }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 

@@ -14,16 +14,6 @@ public enum Placement {
         return CGRect(origin: o, size: r.size)
     }
 
-    /// Ring when there's room all round; a half-ring above Frogg near the bottom of the
-    /// screen (over the Dock), below him near the top (under the menu bar).
-    public static func radialLayout(center: CGPoint, visible: CGRect) -> RadialMenuView.Layout {
-        let need = RadialMenuView.radius + RadialMenuView.button / 2 + RadialMenuView.labelHeight + 8
-        let below = center.y - visible.minY, above = visible.maxY - center.y
-        if below < need && above >= need { return .above }
-        if above < need && below >= need { return .below }
-        return .ring
-    }
-
     /// A flipped view's sub-rect in screen coordinates, for a window whose content view it is.
     public static func screenRect(of r: NSRect, inFlippedViewOfHeight h: CGFloat, windowOrigin o: NSPoint) -> NSRect {
         NSRect(x: o.x + r.minX, y: o.y + (h - r.maxY), width: r.width, height: r.height)

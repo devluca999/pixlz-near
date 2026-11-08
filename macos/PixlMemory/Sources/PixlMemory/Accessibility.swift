@@ -47,6 +47,31 @@ enum AX {
         return v == true
     }
 
+    /// Screen rects (top-left global) of the selection and the caret in the frontmost app, so
+    /// bubbles never cover them. Empty if the app doesn't expose text ranges.
+    static func selectionBounds(pid: pid_t) -> [CGRect] {
+        guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute),
+              let rangeValue: AXValue = attr(focused, kAXSelectedTextRangeAttribute) else { return [] }
+        var range = CFRange()
+        AXValueGetValue(rangeValue, .cfRange, &range)
+        func bounds(_ r: CFRange) -> CGRect? {
+            var rr = r
+            guard let v = AXValueCreate(.cfRange, &rr) else { return nil }
+            var out: CFTypeRef?
+            guard AXUIElementCopyParameterizedAttributeValue(focused, kAXBoundsForRangeParameterizedAttribute as CFString, v, &out) == .success,
+                  let rectValue = out, CFGetTypeID(rectValue) == AXValueGetTypeID() else { return nil }
+            var rect = CGRect.zero
+            AXValueGetValue(rectValue as! AXValue, .cgRect, &rect)
+            return rect.width > 0 || rect.height > 0 ? rect : nil
+        }
+        var rects: [CGRect] = []
+        if range.length > 0, let sel = bounds(range) { rects.append(sel.insetBy(dx: -6, dy: -4)) }
+        if let caret = bounds(CFRange(location: range.location, length: 0)) ?? bounds(CFRange(location: range.location, length: 1)) {
+            rects.append(CGRect(x: caret.minX - 6, y: caret.minY - 4, width: max(caret.width, 2) + 12, height: caret.height + 8))
+        }
+        return rects
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

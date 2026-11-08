@@ -70,17 +70,6 @@ struct ThrowTests {
 
 @MainActor
 struct MenuTests {
-    @Test func radialButtonsGoClockwiseFromTheTop() {
-        let size = RadialMenuView.size
-        let c = RadialMenuView.centers(count: 6, in: size)
-        #expect(c[0].x == (size.width / 2).rounded() && c[0].y < size.height / 2)  // 12 o'clock (flipped view)
-        #expect(c[1].x > size.width / 2 && c[1].y < size.height / 2)               // then right
-        #expect(c[3].y > size.height / 2)                                          // 6 o'clock
-        let view = RadialMenuView(items: (0..<6).map { RadialMenuView.Item(id: "\($0)", title: "\($0)", glyph: "•") })
-        #expect(view.index(at: c[4]) == 4)
-        #expect(view.index(at: NSPoint(x: size.width / 2, y: size.height / 2)) == nil)  // Frogg's spot is click-through
-    }
-
     @Test func settingsRoundTripAndSanitise() throws {
         let d = try #require(UserDefaults(suiteName: "pixl-test-\(UUID())"))
         var s = PixlSettings()
