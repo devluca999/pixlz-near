@@ -141,6 +141,7 @@
     "game": {
       "name": "Yarn swat",
       "target": "yarn"
-    }
+    },
+    "busy": "plotting something"
   }
 }

@@ -169,7 +169,8 @@ let pixlManifestJSON: [String: String] = [
     "game": {
       "name": "Fly snap",
       "target": "fly"
-    }
+    },
+    "busy": "being a frog"
   }
 }
 """##,
@@ -317,7 +318,8 @@ let pixlManifestJSON: [String: String] = [
     "game": {
       "name": "Yarn swat",
       "target": "yarn"
-    }
+    },
+    "busy": "plotting something"
   }
 }
 """##,
@@ -465,7 +467,8 @@ let pixlManifestJSON: [String: String] = [
     "game": {
       "name": "Fetch!",
       "target": "ball"
-    }
+    },
+    "busy": "being a very good dog"
   }
 }
 """##,
@@ -619,7 +622,8 @@ let pixlManifestJSON: [String: String] = [
     "game": {
       "name": "Sock hunt",
       "target": "sock"
-    }
+    },
+    "busy": "being ghastly"
   }
 }
 """##,
@@ -776,7 +780,8 @@ let pixlManifestJSON: [String: String] = [
     "game": {
       "name": "Web catch",
       "target": "fly"
-    }
+    },
+    "busy": "spinning a web"
   }
 }
 """##,

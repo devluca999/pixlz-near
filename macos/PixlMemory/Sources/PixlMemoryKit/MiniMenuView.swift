@@ -97,12 +97,16 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         size.selectedSegment = max(0, settings.scale - 2)
         stack.addArrangedSubview(size)
 
-        stack.addArrangedSubview(section("BEHAVIOUR"))
+        stack.addArrangedSubview(section("BEHAVIOR"))
+        let behavior = NSSegmentedControl(labels: ["Calm", "Roam"], trackingMode: .selectOne, target: self, action: #selector(behaviorChanged(_:)))
+        behavior.selectedSegment = settings.roams ? 1 : 0
+        behavior.setToolTip("Stays with you and waits for you", forSegment: 0)
+        behavior.setToolTip("Explores on its own: folders, window tops, reading along. Never while you type.", forSegment: 1)
+        stack.addArrangedSubview(behavior)
+        stack.addArrangedSubview(label(settings.roams ? "Explores now and then. Poke it to make it sit still." : "Stays with you and waits.",
+                                       Theme.mono(10), Theme.textMuted))
         stack.addArrangedSubview(check("Perch on the window I'm using", settings.perchOnWindows, #selector(perchChanged(_:))))
         stack.addArrangedSubview(check("Hide when an app goes fullscreen", settings.hideInFullscreen, #selector(fullscreenChanged(_:))))
-        let soon = check("File ride · mischief (\(settings.mischief)) · coming soon", false, nil)
-        soon.isEnabled = false
-        stack.addArrangedSubview(soon)
 
         stack.addArrangedSubview(section("FOCUS · DISTRACTING APPS"))
         appsField = NSTextField(string: settings.distractingApps.joined(separator: ", "))
@@ -178,6 +182,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     }
 
     @objc private func sizeChanged(_ s: NSSegmentedControl) { settings.scale = s.selectedSegment + 2; changed() }
+    @objc private func behaviorChanged(_ c: NSSegmentedControl) { settings.roams = c.selectedSegment == 1; changed() }
     @objc private func perchChanged(_ b: NSButton) { settings.perchOnWindows = b.state == .on; changed() }
     @objc private func fullscreenChanged(_ b: NSButton) { settings.hideInFullscreen = b.state == .on; changed() }
 

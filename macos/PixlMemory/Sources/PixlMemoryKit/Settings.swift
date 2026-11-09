@@ -11,6 +11,12 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     /// Which Pixl (assets/<id>). Optional so settings saved before skins existed still load.
     public var skin: String?
     public var skinID: String { skin ?? "frogg" }
+    /// Behavior: "calm" (stays with you; the default) or "roam" (explores on its own).
+    public var behavior: String?
+    public var roams: Bool {
+        get { behavior == "roam" }
+        set { behavior = newValue ? "roam" : "calm" }
+    }
 
     public init() {}
 

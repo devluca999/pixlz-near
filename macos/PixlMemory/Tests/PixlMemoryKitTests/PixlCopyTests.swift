@@ -5,14 +5,21 @@ import Testing
 @MainActor
 @Suite struct PixlCopyTests {
     @Test func theGrumbleMatchesThePixl() {
-        #expect(PixlSkins.busyLine(name: "Nox", species: "Black cat") == "Hey! Nox is busy being a black cat.")
-        #expect(PixlSkins.busyLine(name: "Frogg", species: "Red-eyed tree frog") == "Hey! Frogg is busy being a red-eyed tree frog.")
-        #expect(PixlSkins.busyLine(name: "Boo", species: "Bedsheet ghost") == "Hey! Boo is busy being a bedsheet ghost.")
-        #expect(PixlSkins.busyLine(name: "Ink", species: "Inky octopus · deep sea").hasSuffix("being an inky octopus."))
+        #expect(PixlSkins.busyLine(name: "Nox", busy: nil, species: "Black cat") == "Hey! Nox is busy being a black cat.")
+        #expect(PixlSkins.busyLine(name: "Frogg", busy: nil, species: "Red-eyed tree frog") == "Hey! Frogg is busy being a red-eyed tree frog.")
+        #expect(PixlSkins.busyLine(name: "Boo", busy: nil, species: "Bedsheet ghost") == "Hey! Boo is busy being a bedsheet ghost.")
+        #expect(PixlSkins.busyLine(name: "Ink", busy: nil, species: "Inky octopus · deep sea").hasSuffix("being an inky octopus."))
         for skin in PixlSkins.all {   // no Pixl but Frogg calls itself a frog
-            let line = PixlSkins.busyLine(name: skin.manifest.name, species: skin.manifest.species)
+            let line = PixlSkins.busyLine(name: skin.manifest.name, busy: skin.manifest.ui?.busy, species: skin.manifest.species)
             #expect(skin.id == "frogg" || !line.lowercased().contains("frog"), "\(skin.id): \(line)")
         }
+    }
+
+    @Test func eachPixlHasItsOwnGrumble() {
+        let boo = PixlSkins.skin("ghost")!.manifest
+        #expect(PixlSkins.busyLine(name: boo.name, busy: boo.ui?.busy, species: boo.species) == "Hey! Boo is busy being ghastly.")
+        let lines = Set(PixlSkins.all.map { $0.manifest.ui?.busy ?? "" })
+        #expect(lines.count == PixlSkins.all.count && !lines.contains(""))
     }
 
     @Test func theNameFollowsTheCurrentPixl() {

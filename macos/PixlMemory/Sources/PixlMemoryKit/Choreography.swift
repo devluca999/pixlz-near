@@ -25,6 +25,10 @@ public struct Pose: Equatable, Sendable {
     public var squash = CGSize(width: 1, height: 1)
     public var mirrored = false        // face left
     public var alpha: CGFloat = 1
+    /// Which surface the feet are on (Silk on a wall or the ceiling): the art is turned to match.
+    public var surface: Surface = .floor
+    /// Silk's thread: where it's tied (top-left global coordinates), or nil.
+    public var thread: CGPoint? = nil
 }
 
 /// A timeline of motion beats: sample it at any time since it started.
@@ -43,11 +47,18 @@ public struct Choreography: Sendable {
         case pop(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
         /// Turning around: one narrow in-between frame, half facing the old way, half the new.
         case pivot(at: CGPoint, frame: String, toLeft: Bool, duration: TimeInterval)
+        /// Roam: a straight move along a surface, cycling `frames` (walk, trot, crawl, drift).
+        /// `bob` floats it up and down (Boo); `alpha` fades it while moving.
+        case travel(from: CGPoint, to: CGPoint, frames: [String], fps: Double, surface: Surface, mirrored: Bool,
+                    bob: CGFloat, alpha: CGFloat, duration: TimeInterval)
+        /// Silk on its thread, tied at `anchor`, going from one depth below it to another.
+        case dangle(anchor: CGPoint, from: CGFloat, to: CGFloat, duration: TimeInterval)
 
         var duration: TimeInterval {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
-                 .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d): d
+                 .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d),
+                 .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -220,6 +231,22 @@ public struct Choreography: Sendable {
         case .exit(let p, let rise, _):
             return Pose(foot: CGPoint(x: p.x, y: p.y - rise * CGFloat(f)), frame: MotionFrames.rise,
                         squash: SquashStretch.scale(.flight(f * 0.3), apex: 0.5), alpha: CGFloat(1 - f))
+        case .travel(let a, let b, let frames, let fps, let surface, let m, let bob, let alpha, _):
+            let e = CGFloat(f)
+            var p = CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e)
+            if bob != 0 { p.y -= bob * CGFloat(sin(t * 2 * .pi / 1.6)) }
+            let frame = frames.isEmpty ? MotionFrames.settle : frames[Int(t * fps) % frames.count]
+            // fade out over the first fifth and back in over the last fifth
+            let fade = min(1, min(e, 1 - e) * 5)
+            var pose = Pose(foot: p, frame: frame, mirrored: m, alpha: 1 - (1 - alpha) * fade)
+            pose.surface = surface
+            return pose
+        case .dangle(let anchor, let d0, let d1, _):
+            let e = CGFloat(f * f * (3 - 2 * f))   // smoothstep: eases off and onto the thread's end
+            var pose = Pose(foot: CGPoint(x: anchor.x, y: anchor.y + d0 + (d1 - d0) * e), frame: "idle_0")
+            pose.surface = .ceiling
+            pose.thread = anchor
+            return pose
         }
     }
 
@@ -250,6 +277,9 @@ public struct Choreography: Sendable {
             return Choreography.hop(route(b), notice: false)
         case .exit(let p, _, _), .whoa(let p, _, _), .pivot(let p, _, _, _):
             return Choreography.hop(route(p), notice: false)
+        case .travel, .dangle:
+            // off a wall, the ceiling or a thread: hop on from where it is, upright
+            return Choreography.hop(route(pose(at: t).pose.foot), notice: false)
         case .pop(let a, let b, _, _):
             return Choreography.hop(route(local < segments[i].duration / 2 ? a : b), notice: false)
         }

@@ -9,6 +9,8 @@ public final class FroggView: NSView {
     public var squash = CGSize(width: 1, height: 1) { didSet { if squash != oldValue { needsDisplay = true } } }
     public var mirrored = false { didSet { if mirrored != oldValue { needsDisplay = true } } }
     public var lean: CGFloat = 0 { didSet { if lean != oldValue { needsDisplay = true } } }
+    /// On a wall or the ceiling (Roam), the art is turned about the view's centre.
+    public var surface: Surface = .floor { didSet { if surface != oldValue { needsDisplay = true } } }
     public let scale: CGFloat
     /// Room around the canvas so a stretch or squash never clips (transparent, click-through).
     public static let headroom: CGFloat = 1.3
@@ -30,12 +32,26 @@ public final class FroggView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if surface != .floor, let img = art.image(frameName) {
+            let w = CGFloat(img.width) * scale, h = CGFloat(img.height) * scale
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.translateBy(x: bounds.midX.rounded(), y: bounds.midY.rounded())
+            ctx.rotate(by: surface.rotation)
+            if mirrored { ctx.scaleBy(x: -1, y: 1) }
+            ctx.draw(img, in: CGRect(x: (-w / 2).rounded(), y: (-h / 2).rounded(), width: w, height: h))
+            ctx.restoreGState()
+            return
+        }
         art.draw(frameName, in: bounds, scale: scale, context: ctx, squash: squash, mirrored: mirrored, lean: lean)
     }
 
     /// The art pixel under a point in view coordinates is opaque.
     public func hitsArt(at p: NSPoint) -> Bool {
         let s = art.size(frameName)
+        if surface != .floor {   // turned: anywhere on its body counts
+            return hypot(p.x - bounds.midX, p.y - bounds.midY) < min(s.width, s.height) * scale * 0.45
+        }
         let x0 = (bounds.midX - s.width * scale / 2).rounded(.down)
         let ax = Int(((p.x - x0) / scale).rounded(.down))
         let ay = Int(((s.height * scale - p.y) / scale).rounded(.down))  // art rows count from the top

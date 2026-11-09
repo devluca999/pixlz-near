@@ -141,6 +141,7 @@
     "game": {
       "name": "Fetch!",
       "target": "ball"
-    }
+    },
+    "busy": "being a very good dog"
   }
 }

@@ -101,6 +101,8 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var personality: String
     /// The design's note on the Pixl's menu detail (C10), e.g. "Lily-pad notch, top edge".
     public var detail: String?
+    /// What it says it's busy with when poked too often: "being ghastly" → "Hey! Boo is busy being ghastly."
+    public var busy: String?
     /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
     public var decal: PixlDecal?
     /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a

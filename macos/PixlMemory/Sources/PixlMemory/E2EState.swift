@@ -29,6 +29,9 @@ enum E2EState {
                     .map { l, i in l.onSelect?(l.rows[i]) }
                 case "ask": Debug.log("e2e: local answer: \(app.travel.localAnswer(info["q"] ?? "") ?? "(for the model)")")
                 case "callback": app.travel.callBack()
+                case "behavior": var s = app.settings; s.roams = info["value"] == "roam"; app.apply(s)
+                case "skin": var s = app.settings; s.skin = info["id"]; app.apply(s)
+                case "roam": app.roam.quietUntil = .distantPast; app.roam.go(debug: true)
                 default: break
                 }
             }
@@ -79,6 +82,9 @@ enum E2EState {
             "menuOpen": app.menu.isOpen,
             "skin": PixlSkins.currentID,
             "device": app.travel.me.deviceName,
+            "deviceId": app.travel.me.deviceId,
+            "surface": app.frogg.surface.rawValue,
+            "hanging": app.roamHanging != nil,
             "peers": app.travel.peers.map(\.deviceName),
             "awayOn": app.awayOn ?? NSNull(),
             "owns": app.travel.runner?.owned?.name ?? NSNull(),

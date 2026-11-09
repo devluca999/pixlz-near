@@ -150,6 +150,7 @@
     "game": {
       "name": "Web catch",
       "target": "fly"
-    }
+    },
+    "busy": "spinning a web"
   }
 }

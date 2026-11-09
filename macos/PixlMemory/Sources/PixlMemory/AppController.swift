@@ -48,11 +48,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
     lazy var presence = PresenceController(app: self)
+    lazy var roam = RoamController(app: self)
+    /// Silk hangs on a thread tied here (Roam); nil when on its feet.
+    var roamHanging: CGPoint?
+    var threadPanel: ThreadPanel?
     /// The Pixl is on another device (by name) and this one waits to call it back.
     var awayOn: String?
     /// Where the selection came from: Accessibility, or the browser extension (the bridge).
     var selectionFromWeb = false
-    let ui = PixlData.ui
+    var ui: PixlUI { PixlData.ui }   // follows the current Pixl
     var selfTestAvoid: [CGRect] = []
     var lastSignature = Date.distantPast
     var askedInSelfTest: String?
@@ -145,6 +149,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         reposition(force: true)
         updateCardLimit()
+        if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -384,8 +389,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var moving: Bool { motion != nil || flight != nil }
 
-    func run(_ c: Choreography, target: CGPoint?, then done: (@MainActor () -> Void)? = nil) {
+    func run(_ c: Choreography, target: CGPoint?, roam: Bool = false, then done: (@MainActor () -> Void)? = nil) {
         cancelAnimations()
+        if !roam { leaveSurface() }
         motion = c
         motionStart = now
         lastMotionT = -1
@@ -478,8 +484,32 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if frogg.frameName != pose.frame { frogg.frameName = pose.frame }
         frogg.squash = pose.squash
         frogg.mirrored = pose.mirrored
+        frogg.surface = pose.surface
         froggPanel.alphaValue = pose.alpha
         place(at: pose.foot)
+        showThread(pose.thread)
+    }
+
+    /// Silk's thread from where it's tied down to its feet.
+    func showThread(_ anchor: CGPoint?) {
+        guard let anchor, let foot else { threadPanel?.orderOut(nil); return }
+        let t = threadPanel ?? ThreadPanel()
+        threadPanel = t
+        t.show(from: anchor, to: foot, primaryHeight: primaryHeight)
+    }
+
+    /// Stays turned (on the ceiling, on its thread) after an outing ends there.
+    func holdSurface(_ pose: Pose) {
+        frogg.surface = pose.surface
+        place(at: pose.foot)
+        showThread(pose.thread)
+    }
+
+    /// Back on its feet: upright, no thread.
+    func leaveSurface() {
+        roamHanging = nil
+        if frogg?.surface != .floor { frogg.surface = .floor }
+        threadPanel?.orderOut(nil)
     }
 
     func finishMotion() {
@@ -493,6 +523,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func place(at p: CGPoint) {
         foot = p
         var f = Perch.panelFrame(foot: p, canvas: frogg.frame.size, primaryHeight: primaryHeight)
+        if frogg.surface != .floor {   // turned on a wall or the ceiling: centre the view on the body
+            let c = frogg.surface.bodyCenter(foot: p, height: spriteSize.height)
+            let size = frogg.frame.size
+            f = NSRect(x: c.x - size.width / 2, y: primaryHeight - c.y - size.height / 2, width: size.width, height: size.height)
+        }
         let s = froggPanel.backingScaleFactor
         f.origin = NSPoint(x: (f.origin.x * s).rounded() / s, y: (f.origin.y * s).rounded() / s)
         if froggPanel.frame != f { froggPanel.setFrame(f, display: true) }
@@ -724,9 +759,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// A single click: Frogg gets poked (and is annoyed by the third in 4 s). That's all (C8).
     func clicked(_ event: NSEvent) {
+        roam.poked()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
-            say(PixlSkins.busyLine(name: settings.name, species: PixlSkins.current.manifest.species), for: 2)
+            say(PixlSkins.busyLine(name: settings.name, busy: ui.busy, species: PixlSkins.current.manifest.species), for: 2)
         } else {
             play(.poke)
         }
@@ -747,6 +783,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cancelMotion()
         cancelAnimations()
         mode = .held
+        leaveSurface()
+        roam.dragged()
         bubblePanel.orderOut(nil)
         frogg.frameName = "grab_0"  // peel-stretch
         after(0.25) { [weak self] in if self?.mode == .held { self?.frogg.frameName = "grab_1" } }  // limp sway
@@ -1155,6 +1193,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if new.scale != old.scale { setSize(new.scale) }
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
         if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
+        if new.roams != old.roams { roam.refresh() }
     }
 
     /// Switches Pixl: a quick puff out, the new one pops in where the old one stood. Memory,
@@ -1189,6 +1228,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.puff(at: at)
                 }
                 self.say("Hi, I'm \(self.settings.name)!", for: 2.5)
+                self.roam.refresh()   // each Pixl roams its own way
                 if reopenSettings { self.toggleMiniMenu() }
             }
         })
@@ -1351,17 +1391,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         send.submenu = NSMenu()
         send.submenu?.addItem(withTitle: "No devices nearby", action: nil, keyEquivalent: "").isEnabled = false
 
-        let mischief = add("Mischief", nil)
-        mischief.submenu = NSMenu()
-        for level in ["chill", "normal", "chaos"] {
-            let i = NSMenuItem(title: level.capitalized, action: #selector(setMischief(_:)), keyEquivalent: "")
-            i.representedObject = level
+        let behavior = add("Behavior", nil)
+        behavior.submenu = NSMenu()
+        for (title, roams) in [("Calm: stays with you", false), ("Roam: explores on its own", true)] {
+            let i = NSMenuItem(title: title, action: #selector(setBehavior(_:)), keyEquivalent: "")
+            i.representedObject = roams
             i.target = self
-            i.state = settings.mischief == level ? .on : .off
-            mischief.submenu?.addItem(i)
+            i.state = settings.roams == roams ? .on : .off
+            behavior.submenu?.addItem(i)
         }
-        mischief.submenu?.addItem(.separator())
-        mischief.submenu?.addItem(withTitle: "Mischief acts come in a later version", action: nil, keyEquivalent: "").isEnabled = false
 
         let size = add("Size", nil)
         size.submenu = NSMenu()
@@ -1395,6 +1433,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                : "macOS wants you to allow it in System Settings ▸ General ▸ Login Items.", for: 3)
     }
     @objc func openMiniMenu() { toggleMiniMenu() }
+    @objc func setBehavior(_ sender: NSMenuItem) {
+        var s = settings
+        s.roams = sender.representedObject as? Bool ?? false
+        apply(s)
+        say(s.roams ? "Off to explore. Poke me if I'm in the way." : "I'll stay with you.", for: 2.5)
+    }
     @objc func setMischief(_ sender: NSMenuItem) {
         settings.mischief = sender.representedObject as? String ?? "normal"
         settings.save()
