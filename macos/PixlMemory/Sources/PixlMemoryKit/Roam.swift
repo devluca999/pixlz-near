@@ -90,6 +90,30 @@ public struct RoamWorld: Sendable {
     public var screen: CGRect {
         screens.first { $0.insetBy(dx: -4, dy: -4).contains(foot) } ?? screens.first ?? .zero
     }
+
+    /// Whole display frames (top-left), Dock and menu bar included: the screen's real sides.
+    /// Empty: the visible frames stand in.
+    public var displays: [CGRect] = []
+
+    /// The x of a real side of the Pixl's screen to climb: the display's own edge (not the Dock's
+    /// edge, which only runs part of the way up), and never the seam with a display beside it,
+    /// where there's nothing to climb. Nil when that side has no edge.
+    public func wallX(right: Bool) -> CGFloat? {
+        let sc = screen
+        let all = displays.isEmpty ? screens : displays
+        let full = all.first { $0.insetBy(dx: -4, dy: -4).intersects(sc) && $0.minX <= sc.midX && sc.midX <= $0.maxX } ?? sc
+        let x = right ? full.maxX : full.minX
+        let neighbour = all.contains { d in d != full && abs((right ? d.minX : d.maxX) - x) < 2 && d.minY < full.maxY && d.maxY > full.minY }
+        return neighbour ? nil : x
+    }
+
+    /// The side to climb: the nearer real edge (the path of least resistance), else the other.
+    public func nearerWall(to x: CGFloat? = nil) -> (right: Bool, x: CGFloat)? {
+        let sc = screen
+        let preferRight = (x ?? foot.x) > sc.midX
+        if let w = wallX(right: preferRight) { return (preferRight, w) }
+        return wallX(right: !preferRight).map { (!preferRight, $0) }
+    }
 }
 
 /// One outing.
@@ -98,6 +122,9 @@ public enum Outing: Equatable, Sendable {
     case walk(to: CGPoint)                                    // along the edge it stands on
     case drift(to: CGPoint)                                   // Boo
     case crawl(legs: [CrawlLeg], dangle: CGFloat?)            // Silky; then down a thread by this much
+    /// Slugg's lap: up a wall, across the top upside down, down the far wall. With `fallAt`, he
+    /// loses his grip at that x on the ceiling: drops, his shell lands on him, he crawls on to `end`.
+    case lap(legs: [CrawlLeg], fallAt: CGFloat?, end: CGPoint)
     case climbAndMove(to: CGPoint, dangle: CGFloat?)          // Silky, hanging: up the thread, along, down again
     case glance(at: CGPoint, lookLeft: Bool)                  // read along: above your caret
     case nap(TimeInterval)
@@ -110,6 +137,7 @@ public enum Outing: Equatable, Sendable {
         case .walk: "walk"
         case .drift: "drift"
         case .crawl(_, let d): d == nil ? "crawl" : "crawl and dangle"
+        case .lap(_, let f, _): f == nil ? "lap over the top" : "lap over the top (falls off)"
         case .climbAndMove: "climb and move"
         case .glance: "glance"
         case .nap: "nap"
@@ -136,7 +164,7 @@ public struct RoamPlanner: Sendable {
     public mutating func pause() -> TimeInterval { Double.random(in: 5...12, using: &rng) }
 
     enum Kind { case folderHop, windowHop, glance, nap, walk, trot, drift, folderDrift, crawlTour, moveHanging, pond, stalk, climbDown,
-                overWindow, offWindow, ceilingHome }
+                overWindow, offWindow, ceilingHome, lap }
 
     /// Picks the next outing, or nil when nothing fits right now.
     public mutating func next(_ w: RoamWorld) -> Outing? {
@@ -155,10 +183,11 @@ public struct RoamPlanner: Sendable {
             // Slugg crawls: along the floor, up a wall (inside corner), up a window's side and over its
             // top (outside corner), back down off it, and now and then across the top upside down
             let sc = w.screen
-            if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .climbDown), (1, .nap)] }
+            // high on a wall he keeps going: over the top and across, upside down
+            if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .lap), (1.5, .climbDown), (0.5, .nap)] }
             else if w.surface == .ceiling { options = [(3, .ceilingHome)] }
             else if w.foot.y < sc.maxY - 8 { options = [(2, .walk), (3, .offWindow), (0.5, .nap)] }   // on a window top
-            else { options = [(3, .walk), (2, .crawlTour), (2, .overWindow), (0.5, .nap)] }
+            else { options = [(3, .walk), (3, .lap), (2, .overWindow), (0.5, .nap)] }   // no more stopping high on a wall
         }
         // weighted draw; if the pick doesn't fit right now, try the others
         while !options.isEmpty {
@@ -174,11 +203,16 @@ public struct RoamPlanner: Sendable {
 
     /// A named outing, for the debug build's e2e commands ("crawlTour", "overWindow", …).
     public mutating func outing(named n: String, _ w: RoamWorld) -> Outing? {
+        // debug: a lap that's sure to fall off halfway
+        if n == "lapFall", case .lap(let legs, _, let end)? = lap(w), let c = legs.first(where: { $0.surface == .ceiling }) {
+            return .lap(legs: legs, fallAt: (c.from.x + c.to.x) / 2, end: end)
+        }
         let k: Kind? = switch n {
         case "crawlTour": .crawlTour
         case "overWindow": .overWindow
         case "offWindow": .offWindow
         case "ceilingHome": .ceilingHome
+        case "lap": .lap
         case "climbDown": .climbDown
         case "walk": .walk
         default: nil
@@ -206,6 +240,7 @@ public struct RoamPlanner: Sendable {
         case .overWindow: overWindow(w)
         case .offWindow: offWindow(w)
         case .ceilingHome: ceilingHome(w)
+        case .lap: lap(w)
         case .stalk: { () -> Outing? in if case .walk(let to)? = walkAlong(w) { return .stalk(to: to) }; return nil }()
         }
     }
@@ -368,7 +403,7 @@ public struct RoamPlanner: Sendable {
         let h = w.sprite.height, half = w.sprite.width / 2
         let right = w.surface == .rightWall
         let down = CrawlLeg(from: w.foot, to: CGPoint(x: w.foot.x, y: sc.maxY - h / 2), surface: w.surface)
-        let corner = CGPoint(x: right ? sc.maxX - h / 2 : sc.minX + h / 2, y: sc.maxY)
+        let corner = CGPoint(x: right ? w.foot.x - h / 2 : w.foot.x + h / 2, y: sc.maxY)   // at the foot of the wall it's on
         for _ in 0..<6 {
             let x = CGFloat.random(in: (sc.minX + half)...(sc.maxX - half), using: &rng)
             let end = CGPoint(x: x, y: sc.maxY)
@@ -417,12 +452,60 @@ public struct RoamPlanner: Sendable {
     /// Slugg upside down at the top: back along to the nearer side, down the wall, onto the floor.
     mutating func ceilingHome(_ w: RoamWorld) -> Outing? {
         let sc = w.screen, h = w.sprite.height
-        let right = w.foot.x > sc.midX
-        let wallX = right ? sc.maxX : sc.minX
-        let end = CGPoint(x: right ? sc.maxX - CGFloat.random(in: 140...320, using: &rng) : sc.minX + CGFloat.random(in: 140...320, using: &rng), y: sc.maxY)
+        guard let (right, wallX) = w.nearerWall() else { return nil }
+        let end = CGPoint(x: right ? wallX - CGFloat.random(in: 140...320, using: &rng) : wallX + CGFloat.random(in: 140...320, using: &rng), y: sc.maxY)
         return .crawl(legs: [CrawlLeg(from: w.foot, to: CGPoint(x: wallX, y: sc.minY), surface: .ceiling),
                              CrawlLeg(from: CGPoint(x: wallX, y: sc.minY + h / 2), to: CGPoint(x: wallX, y: sc.maxY - h / 2), surface: right ? .rightWall : .leftWall),
                              CrawlLeg(from: CGPoint(x: wallX, y: sc.maxY), to: end, surface: .floor)], dangle: nil)
+    }
+
+    /// Slugg's body without its shell (the shell falls on its own a moment later).
+    public static let bareBody = "crawl_0_body"
+    /// How long after he lands his shell lands on him.
+    public static let shellLag: TimeInterval = 0.4
+
+    /// Chance that Slugg loses his grip on a lap (he's no spider).
+    public static let lapFallChance = 0.35
+
+    /// Slugg: up the nearer wall (or on from the wall he's on), across the whole top upside down,
+    /// down the far wall and off along the floor. Sometimes he drops off on the way (`fallAt`).
+    mutating func lap(_ w: RoamWorld) -> Outing? {
+        let sc = w.screen, h = w.sprite.height, floorY = sc.maxY
+        guard sc.width > h * 6 else { return nil }
+        let onWall = w.surface == .rightWall || w.surface == .leftWall
+        // up the nearer real edge, down the far one: both must be there
+        guard let near = onWall ? (w.surface == .rightWall, w.foot.x) : w.nearerWall() else { return nil }
+        let startRight = near.0, wallX = near.1
+        guard let farX = w.wallX(right: !startRight) else { return nil }
+        let inward: CGFloat = startRight ? -1 : 1
+        var legs: [CrawlLeg] = []
+        if onWall {
+            legs.append(CrawlLeg(from: w.foot, to: CGPoint(x: wallX, y: sc.minY + h / 2), surface: w.surface))
+        } else {
+            // along the floor to half a body from the wall, then up it
+            legs.append(CrawlLeg(from: CGPoint(x: w.foot.x, y: floorY), to: CGPoint(x: wallX + inward * h / 2, y: floorY), surface: .floor))
+            legs.append(CrawlLeg(from: CGPoint(x: wallX, y: floorY - h / 2), to: CGPoint(x: wallX, y: sc.minY + h / 2), surface: startRight ? .rightWall : .leftWall))
+        }
+        let ceilingFrom = CGPoint(x: wallX + inward * h / 2, y: sc.minY)
+        let ceilingTo = CGPoint(x: farX - inward * h / 2, y: sc.minY)
+        legs.append(CrawlLeg(from: ceilingFrom, to: ceilingTo, surface: .ceiling))
+        legs.append(CrawlLeg(from: CGPoint(x: farX, y: sc.minY + h / 2), to: CGPoint(x: farX, y: floorY - h / 2), surface: startRight ? .leftWall : .rightWall))
+        // where he ends up on the far side: clear of your caret (never by the prompt you're typing in)
+        var endX: CGFloat?
+        for i in 0..<10 {
+            let inset = i < 5 ? CGFloat.random(in: 140...320, using: &rng) : CGFloat.random(in: 320...max(321, sc.width / 2), using: &rng)
+            let x = farX - inward * inset
+            if Self.fine(CGPoint(x: x, y: floorY), w) { endX = x; break }
+        }
+        guard let endX else { return nil }
+        legs.append(CrawlLeg(from: CGPoint(x: farX - inward * h / 2, y: floorY), to: CGPoint(x: endX, y: floorY), surface: .floor))
+        let end = CGPoint(x: endX, y: floorY)
+        var fallAt: CGFloat?
+        if Double.random(in: 0..<1, using: &rng) < Self.lapFallChance {
+            let t = CGFloat.random(in: 0.25...0.75, using: &rng)
+            fallAt = ceilingFrom.x + (ceilingTo.x - ceilingFrom.x) * t
+        }
+        return .lap(legs: legs, fallAt: fallAt, end: end)
     }
 
     /// From the floor: along to the nearer side, up the wall, along the ceiling to `x`.
@@ -430,12 +513,11 @@ public struct RoamPlanner: Sendable {
         let sc = w.screen
         let h = w.sprite.height
         let floorY = sc.maxY
-        let right = w.foot.x > sc.midX
-        let wallX = right ? sc.maxX : sc.minX
-        let corner = CGPoint(x: right ? sc.maxX - h / 2 : sc.minX + h / 2, y: floorY)
+        guard let (right, wallX) = w.nearerWall() else { return [] }
+        let corner = CGPoint(x: right ? wallX - h / 2 : wallX + h / 2, y: floorY)
         let wallBottom = CGPoint(x: wallX, y: floorY - h / 2)
         let wallTop = CGPoint(x: wallX, y: sc.minY + h / 2)
-        let ceilingStart = CGPoint(x: right ? sc.maxX - h / 2 : sc.minX + h / 2, y: sc.minY)
+        let ceilingStart = CGPoint(x: right ? wallX - h / 2 : wallX + h / 2, y: sc.minY)
         var legs: [CrawlLeg] = []
         // already on the floor? walk to the corner; on a window top, the app hops down first
         legs.append(CrawlLeg(from: CGPoint(x: w.foot.x, y: floorY), to: corner, surface: .floor))
@@ -577,6 +659,33 @@ extension RoamPlanner {
                 segs.append(.dangle(anchor: anchor, from: 0, to: d, duration: Double(d / 90)))
             }
             return Choreography(segs)
+        case .lap(let legs, let fallAt, let end):
+            guard let x = fallAt, let c = legs.firstIndex(where: { $0.surface == .ceiling }) else {
+                return choreography(.crawl(legs: legs, dangle: nil), from: foot, style: style, hanging: hanging, gait: gait,
+                                    surface: surface, wrap: wrap, hop: hop)
+            }
+            // up and partway across, upside down
+            var upTo = Array(legs[...c])
+            upTo[c].to.x = x
+            let first = choreography(.crawl(legs: upTo, dangle: nil), from: foot, style: style, hanging: hanging, gait: gait,
+                                     surface: surface, wrap: wrap, hop: hop)
+            let grip = first.pose(at: first.duration).pose.foot
+            let left = end.x < grip.x
+            let fallFrom = CGPoint(x: grip.x, y: grip.y + 8)
+            let landing = CGPoint(x: grip.x, y: end.y)
+            let fallTime = max(0.35, Double(((landing.y - fallFrom.y) / 1800).squareRoot() * 1.4))
+            return Choreography(first.segments + [
+                // a wobble upside down… and he lets go
+                .travel(from: grip, to: grip, frames: ["crawl_0", "crawl_4"], fps: 9, surface: .ceiling, mirrored: left, bob: 0, alpha: 1, duration: 0.45),
+                .drop(from: fallFrom, to: landing, frame: Self.bareBody, mirrored: left, duration: fallTime),
+                // flat on the floor without his shell, until it lands on him
+                .hold(at: landing, frame: Self.bareBody, mirrored: left, duration: Self.shellLag),
+                .land(at: landing, frame: "crawl_0", mirrored: left, duration: 0.3, dust: true),
+                .hold(at: landing, frame: "crawl_0", mirrored: left, duration: 0.6),
+                // and he keeps going
+                .travel(from: landing, to: end, frames: frames, fps: gait?.fps ?? 8, surface: .floor, mirrored: left, bob: 0, alpha: 1,
+                        duration: dur(landing, end)),
+            ])
         case .climbAndMove(let to, let dangle):
             guard let anchor = hanging else { return Choreography([]) }
             let depth = foot.y - anchor.y

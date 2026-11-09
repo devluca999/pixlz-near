@@ -40,7 +40,9 @@ enum E2EState {
                     app.roam.quietUntil = .distantPast
                     if let k = info["kind"], k != "pond" {
                         var p = app.roam.planner
-                        let o = p.outing(named: k, app.roam.world())
+                        var w = app.roam.world()
+                        if info["clear"] == "1" { w.avoid = [] }   // debug: ignore the caret for this one
+                        let o = p.outing(named: k, w)
                         Debug.log("e2e: roam \(k) → \(o.map { "\($0)" } ?? "doesn't fit now")")
                         if let o { app.roam.go(o, debug: true) }
                     } else { app.roam.go(info["kind"] == "pond" ? .pond(5) : nil, debug: true) }

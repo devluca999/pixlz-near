@@ -291,6 +291,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             run(Choreography.glide(from: m.pose(at: now - motionStart).pose.foot, to: spot.foot), target: spot.foot)
             return
         }
+        if motion != nil, crawls {
+            // Slugg finishes the crawl he's on (a retarget would be a hop), then sets off again
+            if let end = motionTarget, hypot(end.x - spot.foot.x, end.y - spot.foot.y) < 1 { return }
+            repositionAfterMotion = true
+            return
+        }
         if let m = motion {
             if let end = motionTarget, hypot(end.x - spot.foot.x, end.y - spot.foot.y) < 1 { return }
             let t = now - motionStart
@@ -303,7 +309,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let d = hypot(spot.foot.x - current.x, spot.foot.y - current.y)
         if d < 1 { return }
-        if !force && d < 60 { place(at: spot.foot); return }
+        if !force && d < 60 && !crawls { place(at: spot.foot); return }
         run(move(from: current, to: spot.foot), target: spot.foot)
     }
 
@@ -347,9 +353,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A ghost floats (Boo, pixl.json movement "float"): it hovers and glides, never hops.
     var floats: Bool { PixlSkins.current.manifest.movement.rawValue == "float" }
 
-    /// Getting from a to b in this Pixl's way: a hop, or a ghost's glide.
+    /// Slugg never hops: he crawls everywhere (C11).
+    var crawls: Bool { PixlSkins.currentID == "slugg" }
+
+    /// Getting from a to b in this Pixl's way: a hop, a ghost's glide, or Slugg's crawl (along,
+    /// down a window's side, up another's; never through the air but for a short drop).
     func move(from a: CGPoint, to b: CGPoint) -> Choreography {
-        floats ? Choreography.glide(from: a, to: b) : Choreography.hop(route(from: a, to: b))
+        if floats { return Choreography.glide(from: a, to: b) }
+        if crawls {
+            let screen = screensTopLeft.first { $0.insetBy(dx: -8, dy: -spriteSize.height).contains(a) } ?? screensTopLeft.first ?? .zero
+            let w = roam.world()
+            let windows = (w.active.map { [$0] } ?? []) + w.others
+            let path = SluggPath.plan(from: a, to: b, screen: screen, windows: windows, sprite: spriteSize, surface: frogg?.surface ?? .floor)
+            let art = FroggArt.shared, scale = scale
+            return SluggPath.choreography(path.steps, from: a, gait: gait, wrap: { x, y in SluggMotion.wrap(x, y, art: art, scale: scale) })
+        }
+        return Choreography.hop(route(from: a, to: b))
     }
 
     // MARK: hovering (Boo)
@@ -660,7 +679,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         threadPanel?.orderOut(nil)
     }
 
+    var repositionAfterMotion = false
+
     func finishMotion() {
+        if repositionAfterMotion {
+            repositionAfterMotion = false
+            later(0.3) { [weak self] in self?.reposition(force: true) }
+        }
         frogg.squash = CGSize(width: 1, height: 1)
         frogg.mirrored = false
         mode = .perched
@@ -1858,7 +1883,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         place(at: start)
         showFrogg()
         let hang = Choreography([.hold(at: start, frame: MotionFrames.hang, mirrored: false, duration: 0.14)])
-        run(Choreography(hang.segments + (floats ? Choreography.glide(from: start, to: spot.foot) : Choreography.hop(route(from: start, to: spot.foot), notice: false)).segments), target: spot.foot)
+        run(Choreography(hang.segments + (floats || crawls ? move(from: start, to: spot.foot) : Choreography.hop(route(from: start, to: spot.foot), notice: false)).segments), target: spot.foot)
         puff(at: start)
         speak(.greet)
     }

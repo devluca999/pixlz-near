@@ -135,6 +135,7 @@ final class RoamController {
         if planner.style == .crawler, case .crawl(let legs, _) = o, let wall = legs.first(where: { $0.surface == .rightWall || $0.surface == .leftWall }), wall.to.y < wall.from.y {
             webCorners = [wall.to]
         } else { webCorners = [] }
+        if case .lap(_, _?, _) = o { dropShell(along: c) }
         app.run(c, target: nil, roam: true) { [weak self] in
             guard let self else { return }
             self.outingSince = nil
@@ -148,6 +149,56 @@ final class RoamController {
             if let anchor = end.thread, Bool.random() { self.leaveWeb(at: anchor, small: true) }
             self.schedule()
         }
+    }
+
+    var shellPanel: PropPanel?
+
+    /// Slugg's fall: his body drops first; his shell lets go a beat later, tumbles down after him
+    /// and lands on his back just as he's flat on the floor. Drawn as its own panel over his.
+    func dropShell(along c: Choreography) {
+        var t0: TimeInterval = 0
+        var drop: (from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)?
+        for seg in c.segments {
+            if case .drop(let a, let b, _, let m, let d) = seg { drop = (a, b, m, d); break }
+            t0 += seg.duration
+        }
+        guard let d = drop, let img = FroggArt.shared.image("crawl_0_shell") else { return }
+        let scale = app.scale
+        let size = NSSize(width: CGFloat(img.width) * scale, height: CGFloat(img.height) * scale)
+        var angle: CGFloat = .pi
+        let panel = PropPanel(size: size) { r in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+            ctx.interpolationQuality = .none
+            ctx.translateBy(x: r.midX, y: r.midY)
+            ctx.rotate(by: angle)
+            if d.mirrored { ctx.scaleBy(x: -1, y: 1) }
+            ctx.draw(img, in: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+        }
+        shellPanel?.orderOut(nil)
+        shellPanel = panel
+        let lets = 0.15                                            // it hangs on a moment longer than he does
+        let fall = d.duration + RoamPlanner.shellLag - lets        // and lands on him as he lies there
+        let start = app.now + t0
+        func frame() {
+            guard let p = shellPanel, p === panel else { return }
+            let t = app.now - start
+            if t >= lets + fall { p.orderOut(nil); shellPanel = nil; return }   // on his back again: his own frame has it
+            guard let body = app.froggPanel?.frame else { return }
+            // where the shell sits on him once he's down, and how far above that it still is
+            let k = min(1, max(0, (t - lets) / fall))
+            let height = d.to.y - d.from.y
+            let bodyTop = d.from.y + height * CGFloat(min(1, max(0, t / d.duration)) * min(1, max(0, t / d.duration)))
+            let shellTop = d.from.y + height * CGFloat(k * k)
+            angle = .pi * CGFloat(1 - k)                           // tumbles the right way up
+            p.contentView?.needsDisplay = true
+            if t >= 0 {
+                p.setFrame(NSRect(x: body.midX - size.width / 2, y: body.midY + (bodyTop - shellTop), width: size.width, height: size.height), display: true)
+                if !p.isVisible { p.orderFrontRegardless() }
+            }
+            app.later(1.0 / 60) { frame() }
+        }
+        app.later(max(0, t0 - 0.02)) { frame() }
+        Debug.log("roam: Slugg loses his grip; the shell follows \(String(format: "%.2f", lets)) s later")
     }
 
     /// Between outings: now and then a little show in place (its signature, an idle quirk), or
@@ -290,9 +341,11 @@ final class RoamController {
         let folders = desktopFolders().filter { f in !windows.contains { $0.intersects(f) } }
         let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let avoid = AX.trusted && pid != nil ? AX.selectionBounds(pid: pid!) : []
-        return RoamWorld(screens: app.screensTopLeft, active: active, others: others, folders: folders, avoid: avoid,
-                         cursor: app.mouseTopLeft, foot: app.foot ?? .zero, sprite: app.spriteSize,
-                         codeContext: isCodeApp, hanging: app.roamHanging, surface: app.frogg.surface)
+        var w = RoamWorld(screens: app.screensTopLeft, active: active, others: others, folders: folders, avoid: avoid,
+                          cursor: app.mouseTopLeft, foot: app.foot ?? .zero, sprite: app.spriteSize,
+                          codeContext: isCodeApp, hanging: app.roamHanging, surface: app.frogg.surface)
+        w.displays = NSScreen.screens.map { app.topLeft($0.frame) }   // the real sides to climb
+        return w
     }
 
     /// Folders on the desktop, from Finder's Accessibility tree (positions only; names are

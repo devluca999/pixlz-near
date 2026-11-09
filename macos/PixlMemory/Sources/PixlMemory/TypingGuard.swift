@@ -52,6 +52,7 @@ final class TypingGuard {
               app.now - lastMove > 1.5, let foot = app.foot, let zone = typingZone() else { return }
         let pet = app.topLeft(app.petRect)
         guard pet.intersects(zone) else { return }
+        if app.crawls, app.frogg.surface == .floor { slugEscape(from: foot); return }
         guard let dest = clearSpot(from: foot, zone: zone) else { Debug.log("typing guard: no clear spot"); return }
         Debug.log("typing guard: moving off the \(reason == "click" ? "field you clicked" : "line you're typing") (\(Int(abs(dest.x - foot.x))) pt)")
         lastMove = app.now
@@ -59,7 +60,35 @@ final class TypingGuard {
         app.run(app.move(from: foot, to: dest), target: dest)
     }
 
-    /// Along the same perch (the window's top edge, or the screen's floor), the nearest spot whose
+    /// Slugg takes the path of least resistance: to the nearer side of the screen and up it, to
+    /// rest on the wall clear of the bottom of the screen.
+    func slugEscape(from foot: CGPoint) {
+        var w = app.roam.world()
+        w.displays = NSScreen.screens.map { app.topLeft($0.frame) }
+        guard let wall = w.nearerWall() else { Debug.log("typing guard: no wall to climb"); return }
+        let screen = w.screen
+        // a floor that isn't the screen's (a window top): crawl down to the floor first
+        var legs = SluggPath.escape(from: foot, wall: wall, screen: screen, sprite: app.spriteSize, height: max(260, app.spriteSize.height * 4))
+        var pre: Choreography?
+        if abs(foot.y - screen.maxY) > 6 {
+            pre = app.move(from: foot, to: CGPoint(x: foot.x, y: screen.maxY))
+            legs[0].from = pre!.pose(at: pre!.duration).pose.foot
+        }
+        let art = FroggArt.shared, scale = app.scale
+        let crawl = RoamPlanner.choreography(.crawl(legs: legs, dangle: nil), from: legs[0].from, style: .slider, hanging: nil, gait: app.gait,
+                                             wrap: { a, b in SluggMotion.wrap(a, b, art: art, scale: scale) }) { [unowned self] a, b in self.app.move(from: a, to: b) }
+        let c = Choreography((pre?.segments ?? []) + crawl.segments)
+        let end = c.pose(at: c.duration).pose
+        Debug.log("typing guard: Slugg heads for the \(wall.right ? "right" : "left") side and climbs")
+        lastMove = app.now
+        app.userPlaced = true
+        app.run(c, target: nil, roam: true) { [weak self] in
+            guard let self else { return }
+            self.app.holdSurface(end)   // rests on the wall
+        }
+    }
+
+        /// Along the same perch (the window's top edge, or the screen's floor), the nearest spot whose
     /// box clears the zone; failing that, the floor of the screen.
     func clearSpot(from foot: CGPoint, zone: CGRect) -> CGPoint? {
         let s = app.spriteSize
