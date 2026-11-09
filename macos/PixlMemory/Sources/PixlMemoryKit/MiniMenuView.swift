@@ -94,11 +94,12 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(picker)
 
         stack.addArrangedSubview(section("SIZE"))
+        // the main way: resize right on the screen by dragging a corner of the Pixl
+        let adjust = PixelButton(title: "⤡  Resize on screen…", primary: true) { [weak self] in self?.onAdjustSize?() }
+        stack.addArrangedSubview(adjust)
         let size = NSSegmentedControl(labels: PixlScale.presets.map(PixlScale.label), trackingMode: .selectOne, target: self, action: #selector(sizeChanged(_:)))
         size.selectedSegment = PixlScale.presets.firstIndex(of: settings.scale) ?? -1
-        stack.addArrangedSubview(size)
-        let adjust = PixelButton(title: "Adjust size…", primary: false) { [weak self] in self?.onAdjustSize?() }
-        let sizeRow = NSStackView(views: [adjust, label("Now \(PixlScale.label(settings.scale)). Drag a corner of \(settings.name).", Theme.mono(10), Theme.textMuted)])
+        let sizeRow = NSStackView(views: [size, label("now \(PixlScale.label(settings.scale))", Theme.mono(10), Theme.textMuted)])
         sizeRow.spacing = 8
         stack.addArrangedSubview(sizeRow)
 
