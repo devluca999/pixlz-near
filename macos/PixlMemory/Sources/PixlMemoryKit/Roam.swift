@@ -131,7 +131,7 @@ public struct RoamPlanner: Sendable {
     public init(style: RoamStyle, seed: UInt64) { self.style = style; rng = SeededRandom(seed: seed) }
 
     /// How long to wait before the next outing.
-    public mutating func pause() -> TimeInterval { Double.random(in: 12...30, using: &rng) }
+    public mutating func pause() -> TimeInterval { Double.random(in: 5...12, using: &rng) }
 
     enum Kind { case folderHop, windowHop, glance, nap, walk, trot, drift, folderDrift, crawlTour, moveHanging, pond, stalk, climbDown }
 
@@ -140,14 +140,14 @@ public struct RoamPlanner: Sendable {
         let g = w.codeContext ? 3.0 : 1.0   // in a code app it reads along more often
         var options: [(Double, Kind)]
         switch style {
-        case .hopper: options = [(3, .folderHop), (2, .windowHop), (2 * g, .glance), (1.5, .pond), (0.5, .nap)]
-        case .prowler: options = [(2, .walk), (2, .stalk), (2, .nap), (1.5, .windowHop), (1, .folderHop), (g, .glance)]
+        case .hopper: options = [(3, .folderHop), (3, .windowHop), (2 * g, .glance), (1.5, .pond), (0.2, .nap)]
+        case .prowler: options = [(3, .walk), (2, .stalk), (0.6, .nap), (1.5, .windowHop), (1, .folderHop), (g, .glance)]
         case .trotter: options = [(3, .trot), (2, .folderHop), (1.5, .walk), (g, .glance)]
         case .drifter: options = [(3, .drift), (2, .folderDrift), (1.5 * g, .glance)]
         case .crawler:
             if w.hanging != nil { options = [(3, .moveHanging), (1, .nap)] }
             else if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .climbDown), (1, .nap)] }
-            else { options = [(3, .crawlTour), (g, .glance), (0.7, .nap)] }
+            else { options = [(3, .crawlTour), (g, .glance), (0.3, .nap)] }
         }
         // weighted draw; if the pick doesn't fit right now, try the others
         while !options.isEmpty {
@@ -169,7 +169,7 @@ public struct RoamPlanner: Sendable {
         case .folderHop: folderHop(w)
         case .windowHop: windowHop(w)
         case .glance: glance(w)
-        case .nap: .nap(style == .prowler ? Double.random(in: 15...35, using: &rng) : Double.random(in: 8...18, using: &rng))
+        case .nap: .nap(style == .prowler ? Double.random(in: 8...16, using: &rng) : Double.random(in: 4...8, using: &rng))
         case .walk: walkAlong(w)
         case .trot: trotToCursor(w)
         case .drift: drift(w)

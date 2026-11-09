@@ -150,7 +150,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         reposition(force: true)
         updateCardLimit()
-        if !CommandLine.arguments.contains("--selftest") { roam.refresh(); resizer.start() }
+        if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -640,7 +640,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         blinkTimer?.invalidate()
         breathTimer?.invalidate()
         guard !paused else { return }
-        idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 6...14), repeats: false) { [weak self] _ in
+        // in Roam, idle life is livelier too
+        idleTimer = Timer.scheduledTimer(withTimeInterval: settings.roams ? Double.random(in: 3...7) : Double.random(in: 6...14), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.idleQuirk() }
         }
         idleTimer?.tolerance = 0.5
@@ -654,7 +655,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func idleQuirk() {
         guard restingIdle else { scheduleIdle(); return }
         // the signature as an idle quirk: rare, never twice within 5 min, never during Focus
-        if focusUntil == nil, Date().timeIntervalSince(lastSignature) > 300, Int.random(in: 0..<40) == 0 {
+        if focusUntil == nil, Date().timeIntervalSince(lastSignature) > (settings.roams ? 45 : 300), Int.random(in: 0..<(settings.roams ? 8 : 40)) == 0 {
             signature()
             return
         }
@@ -763,7 +764,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         roam.poked()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
-            say(PixlSkins.busyLine(name: settings.name, busy: ui.busy, species: PixlSkins.current.manifest.species), for: 2)
+            say(PixlVoice.busy(name: settings.name, ui: ui, species: PixlSkins.current.manifest.species), for: 2)
         } else {
             play(.poke)
         }
@@ -1076,7 +1077,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
               settings.distractingApps.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
         lastNudge = Date()
         play(.nudge)
-        say("\(name)? Back to focus soon 🐸", for: 3)
+        say("\(name)? Back to focus soon.", for: 3)
     }
 
     // MARK: bubble (SPEC §11.6)
@@ -1115,10 +1116,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bubblePanel.setFrameOrigin(Placement.fit(r, in: screen, margin: 4).origin)
     }
 
+    /// ⌃⌥Space: ask your Pixl something, wherever you are.
     func chatStub() {
         guard !userHidden else { return }
-        show("idle_0", for: 3)  // turns to face you
-        say("Chat is coming soon 🐸", for: 3)
+        menu.showAsk()
+    }
+
+    /// The Pixl's own chatter (greetings, grumbles, moods), in its voice: Boo only says "…".
+    func chatter(_ text: String, for seconds: TimeInterval = 2.5) {
+        say(PixlVoice.chatter(text, ui: ui), for: seconds)
     }
 
     // MARK: hide / show (⌃⌥H, the screen-share panic button)
@@ -1168,6 +1174,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.onClose = panel.onCancel
         view.onChange = { [weak self] s in self?.apply(s) }
         view.onOpenWallet = { [weak self] in self?.openWallet() }
+        view.onAdjustSize = { [weak self] in
+            self?.miniPanel?.orderOut(nil); self?.miniPanel = nil
+            self?.resizer.beginAdjust()
+        }
         placeBeside(panel, avoid: menu.avoidRects())
         panel.makeKeyAndOrderFront(nil)
         miniPanel = panel
@@ -1228,7 +1238,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.run(Choreography([.land(at: at, frame: MotionFrames.land, mirrored: false, duration: Choreography.landTime, dust: true)]), target: nil)
                     self.puff(at: at)
                 }
-                self.say("Hi, I'm \(self.settings.name)!", for: 2.5)
+                self.chatter("Hi, I'm \(self.settings.name)!")
                 self.roam.refresh()   // each Pixl roams its own way
                 if reopenSettings { self.toggleMiniMenu() }
             }
@@ -1371,7 +1381,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hang = Choreography([.hold(at: start, frame: MotionFrames.hang, mirrored: false, duration: 0.14)])
         run(Choreography(hang.segments + Choreography.hop(route(from: start, to: spot.foot), notice: false).segments), target: spot.foot)
         puff(at: start)
-        say("Hi! I'm here.", for: 1.8)
+        chatter("Hi! I'm here.", for: 1.8)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -1414,7 +1424,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             size.submenu?.addItem(i)
         }
         size.submenu?.addItem(.separator())
-        size.submenu?.addItem(withTitle: "Or hover \(settings.name) and drag a corner", action: nil, keyEquivalent: "").isEnabled = false
+        let adjust = NSMenuItem(title: "Adjust by dragging a corner…", action: #selector(adjustSize), keyEquivalent: "")
+        adjust.target = self
+        size.submenu?.addItem(adjust)
         _ = add(paused ? "Resume" : "Pause", #selector(togglePause))
         _ = add("Reset position", #selector(resetPosition))
         _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
@@ -1442,12 +1454,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var s = settings
         s.roams = sender.representedObject as? Bool ?? false
         apply(s)
-        say(s.roams ? "Off to explore. Poke me if I'm in the way." : "I'll stay with you.", for: 2.5)
+        chatter(s.roams ? "Off to explore. Poke me if I'm in the way." : "I'll stay with you.")
     }
     @objc func setMischief(_ sender: NSMenuItem) {
         settings.mischief = sender.representedObject as? String ?? "normal"
         settings.save()
     }
+    @objc func adjustSize() { resizer.beginAdjust() }
     @objc func sizeChosen(_ sender: NSMenuItem) { setSize(sender.representedObject as? Double ?? 2) }
 
     @objc func togglePause() {

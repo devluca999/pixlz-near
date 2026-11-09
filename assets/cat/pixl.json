@@ -142,6 +142,16 @@
       "name": "Laser chase",
       "target": "laser"
     },
-    "busy": "plotting something"
+    "busy": "plotting something",
+    "status": [
+      "plotting something",
+      "loafing",
+      "judging you softly",
+      "staring at nothing",
+      "being mysterious",
+      "knocking things off desks",
+      "chasing a dust mote",
+      "guarding the warm spot"
+    ]
   }
 }

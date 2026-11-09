@@ -151,6 +151,16 @@
       "name": "Web catch",
       "target": "fly"
     },
-    "busy": "spinning a web"
+    "busy": "spinning a web",
+    "status": [
+      "weaving",
+      "spinning a web",
+      "hanging around",
+      "tidying the silk",
+      "lurking politely",
+      "counting legs",
+      "knitting a hammock",
+      "checking the threads"
+    ]
   }
 }

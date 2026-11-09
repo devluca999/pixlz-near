@@ -103,6 +103,11 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var detail: String?
     /// What it says it's busy with when poked too often: "being ghastly" → "Hey! Boo is busy being ghastly."
     public var busy: String?
+    /// Little things it's up to, in its voice ("weaving", "loafing"): shown as "Weaving…" now and
+    /// then, and in the poke grumble. Like a loading word, but a mood.
+    public var status: [String]?
+    /// Shy Pixls (Boo) only ever say ellipses in chatter. Functional messages still read normally.
+    public var shy: Bool?
     /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
     public var decal: PixlDecal?
     /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a

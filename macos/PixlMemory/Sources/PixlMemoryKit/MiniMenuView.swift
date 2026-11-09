@@ -7,6 +7,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     public var onChange: ((PixlSettings) -> Void)?
     public var onClose: (() -> Void)?
     public var onOpenWallet: (() -> Void)?
+    public var onAdjustSize: (() -> Void)?
     public private(set) var settings: PixlSettings
     public static let width: CGFloat = 400
 
@@ -96,7 +97,10 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         let size = NSSegmentedControl(labels: PixlScale.presets.map(PixlScale.label), trackingMode: .selectOne, target: self, action: #selector(sizeChanged(_:)))
         size.selectedSegment = PixlScale.presets.firstIndex(of: settings.scale) ?? -1
         stack.addArrangedSubview(size)
-        stack.addArrangedSubview(label("Now \(PixlScale.label(settings.scale)). Or hover \(settings.name) and drag a corner.", Theme.mono(10), Theme.textMuted))
+        let adjust = PixelButton(title: "Adjust size…", primary: false) { [weak self] in self?.onAdjustSize?() }
+        let sizeRow = NSStackView(views: [adjust, label("Now \(PixlScale.label(settings.scale)). Drag a corner of \(settings.name).", Theme.mono(10), Theme.textMuted)])
+        sizeRow.spacing = 8
+        stack.addArrangedSubview(sizeRow)
 
         stack.addArrangedSubview(section("BEHAVIOR"))
         let behavior = NSSegmentedControl(labels: ["Calm", "Roam"], trackingMode: .selectOne, target: self, action: #selector(behaviorChanged(_:)))
@@ -118,7 +122,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(appsField)
 
         stack.addArrangedSubview(section("HOTKEYS"))
-        let chips = NSStackView(views: [chip("⌃⌥P  menu"), chip("⌃⌥Space  chat"), chip("⌃⌥H  hide")])
+        let chips = NSStackView(views: [chip("⌃⌥P  settings"), chip("⌃⌥Space  ask"), chip("⌃⌥H  hide")])
         chips.spacing = 8
         stack.addArrangedSubview(chips)
 
@@ -130,12 +134,6 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         walletButton = PixelButton(title: "Set up \(settings.name)'s wallet", primary: true) { [weak self] in self?.onOpenWallet?() }
         [serviceLabel, modelLabel, lastLabel, walletLabel, walletButton].forEach { stack.addArrangedSubview($0!) }
         update(status: status)
-
-        let talk = NSTextField(string: "")
-        talk.placeholderString = "Talk to \(settings.name) · coming soon"
-        talk.isEnabled = false
-        talk.widthAnchor.constraint(equalToConstant: inner).isActive = true
-        stack.addArrangedSubview(talk)
     }
 
     /// Fills in service and wallet status in place (the menu opens before it's known).

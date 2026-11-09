@@ -118,7 +118,7 @@ final class TravelController {
         app.settings.save()
         app.userHidden = true   // so summon() plays the entrance from the icon
         app.summon()
-        app.say("Hi! I came over from another device.", for: 2.5)
+        app.chatter("Hi! I came over from another device.")
     }
 
     func callBack() {

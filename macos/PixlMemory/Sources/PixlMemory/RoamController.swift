@@ -26,6 +26,7 @@ final class RoamController {
     var pond: PropPanel?
     var webs: [(panel: PropPanel, at: Date)] = []
     var wasOn = false
+    var lastChatter = Date.distantPast
 
     static let codeApps: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
@@ -123,8 +124,22 @@ final class RoamController {
             if end.surface != .floor { self.app.holdSurface(end) }   // on its thread or a wall: stays there
             self.hidePond()
             webCorners.forEach { self.leaveWeb(at: $0) }
+            self.flourish()
             if let anchor = end.thread, Bool.random() { self.leaveWeb(at: anchor, small: true) }
             self.schedule()
+        }
+    }
+
+    /// Between outings: now and then a little show in place (its signature, an idle quirk), or
+    /// what it's up to in its own words ("Weaving…"), at most every 90 s.
+    func flourish() {
+        guard app.roamHanging == nil, app.frogg.surface == .floor, !app.presence.typing else { return }
+        let roll = Int.random(in: 0..<10)
+        if roll < 3, Date().timeIntervalSince(lastChatter) > 90 {
+            lastChatter = Date()
+            app.say(PixlVoice.doing(ui: app.ui), for: 2.4)
+        } else if roll < 6 {
+            app.later(0.4) { [weak self] in self?.app.signature() }
         }
     }
 
@@ -222,7 +237,7 @@ final class RoamController {
     func poked() {
         guard on, outing || Date().timeIntervalSince(lastOutingEnd) < 10 else { return }
         quietUntil = Date().addingTimeInterval(180)
-        app.say("Okay, okay. I'll sit still for a bit.", for: 2.5)
+        app.chatter("Okay, okay. I'll sit still for a bit.")
         Debug.log("roam: poked after an outing, quiet for 3 min")
     }
 

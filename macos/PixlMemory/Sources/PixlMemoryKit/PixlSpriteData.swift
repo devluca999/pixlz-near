@@ -170,7 +170,17 @@ let pixlManifestJSON: [String: String] = [
       "name": "Fly snap",
       "target": "fly"
     },
-    "busy": "being a frog"
+    "busy": "being a frog",
+    "status": [
+      "catching flies",
+      "being a frog",
+      "practicing his croak",
+      "sitting very still",
+      "dreaming of lily pads",
+      "counting flies",
+      "pondering the pond",
+      "ribbiting quietly"
+    ]
   }
 }
 """##,
@@ -319,7 +329,17 @@ let pixlManifestJSON: [String: String] = [
       "name": "Laser chase",
       "target": "laser"
     },
-    "busy": "plotting something"
+    "busy": "plotting something",
+    "status": [
+      "plotting something",
+      "loafing",
+      "judging you softly",
+      "staring at nothing",
+      "being mysterious",
+      "knocking things off desks",
+      "chasing a dust mote",
+      "guarding the warm spot"
+    ]
   }
 }
 """##,
@@ -468,7 +488,17 @@ let pixlManifestJSON: [String: String] = [
       "name": "Fetch!",
       "target": "ball"
     },
-    "busy": "being a very good dog"
+    "busy": "being a very good dog",
+    "status": [
+      "being a very good dog",
+      "wagging",
+      "sniffing everything",
+      "guarding the desktop",
+      "waiting for treats",
+      "doing zoomies",
+      "fetching nothing in particular",
+      "making a new friend"
+    ]
   }
 }
 """##,
@@ -623,7 +653,17 @@ let pixlManifestJSON: [String: String] = [
       "name": "Sock hunt",
       "target": "sock"
     },
-    "busy": "being ghastly"
+    "busy": "being ghastly",
+    "status": [
+      "being ghastly",
+      "haunting quietly",
+      "hovering",
+      "fading in and out",
+      "rattling a tiny chain",
+      "hiding behind the window",
+      "whispering to the folders"
+    ],
+    "shy": true
   }
 }
 """##,
@@ -781,7 +821,17 @@ let pixlManifestJSON: [String: String] = [
       "name": "Web catch",
       "target": "fly"
     },
-    "busy": "spinning a web"
+    "busy": "spinning a web",
+    "status": [
+      "weaving",
+      "spinning a web",
+      "hanging around",
+      "tidying the silk",
+      "lurking politely",
+      "counting legs",
+      "knitting a hammock",
+      "checking the threads"
+    ]
   }
 }
 """##,

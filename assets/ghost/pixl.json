@@ -148,6 +148,16 @@
       "name": "Sock hunt",
       "target": "sock"
     },
-    "busy": "being ghastly"
+    "busy": "being ghastly",
+    "status": [
+      "being ghastly",
+      "haunting quietly",
+      "hovering",
+      "fading in and out",
+      "rattling a tiny chain",
+      "hiding behind the window",
+      "whispering to the folders"
+    ],
+    "shy": true
   }
 }

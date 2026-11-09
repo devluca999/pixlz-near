@@ -170,7 +170,9 @@ public enum PixlSkins {
     public static var name: String { displayName.flatMap { $0.isEmpty ? nil : $0 } ?? current.manifest.name }
 
     /// The third-poke grumble, true to whichever Pixl you have: "Nox is busy being a black cat."
-    public static func busyLine(name: String, busy: String?, species: String) -> String {
+    public static func busyLine(name: String, busy: String?, species: String) -> String { busyLineSync(name: name, busy: busy, species: species) }
+
+    nonisolated public static func busyLineSync(name: String, busy: String?, species: String) -> String {
         if let busy, !busy.isEmpty { return "Hey! \(name) is busy \(busy)." }
         var kind = species.components(separatedBy: " · ")[0].trimmingCharacters(in: .whitespaces)
         if let f = kind.first { kind = f.lowercased() + kind.dropFirst() }

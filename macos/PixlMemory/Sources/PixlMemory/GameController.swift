@@ -115,7 +115,7 @@ final class GameController {
         let wasLaser = laser != nil
         stop()
         if wasLaser { app.later(0.3) { [weak self] in self?.app.userPlaced = false; self?.app.reposition(force: true) } }
-        app.say("Okay, later.", for: 1.5)
+        app.chatter("Okay, later.", for: 1.5)
         app.backToIdle()
     }
 

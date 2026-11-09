@@ -146,6 +146,16 @@
       "name": "Fly snap",
       "target": "fly"
     },
-    "busy": "being a frog"
+    "busy": "being a frog",
+    "status": [
+      "catching flies",
+      "being a frog",
+      "practicing his croak",
+      "sitting very still",
+      "dreaming of lily pads",
+      "counting flies",
+      "pondering the pond",
+      "ribbiting quietly"
+    ]
   }
 }
