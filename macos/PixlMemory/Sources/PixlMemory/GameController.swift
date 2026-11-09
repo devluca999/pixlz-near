@@ -13,7 +13,10 @@ final class GameController {
     var targetPanel: OverlayPanel?
     var targetID: Int?
     var keyMonitor: Any?
-    var isOn: Bool { game != nil }
+    var laser: LaserChase?
+    var dotPanel: OverlayPanel?
+    var lastStep: TimeInterval = 0
+    var isOn: Bool { game != nil || laser != nil }
 
     init(app: AppController) { self.app = app }
 
@@ -22,6 +25,7 @@ final class GameController {
 
     func start() {
         guard !isOn, let foot = app.foot else { return }
+        if info.target == "laser" { startLaser(foot); return }
         let screen = app.screensTopLeft.first { $0.minX <= foot.x && foot.x <= $0.maxX } ?? app.screensTopLeft.first ?? .zero
         var g = CatchGame(seed: UInt64(Date().timeIntervalSince1970 * 1000))
         g.start(at: app.now, around: foot, bounds: screen)
@@ -108,13 +112,88 @@ final class GameController {
     func end(early: Bool) {
         guard isOn else { return }
         Debug.log("game ended early")
+        let wasLaser = laser != nil
         stop()
+        if wasLaser { app.later(0.3) { [weak self] in self?.app.userPlaced = false; self?.app.reposition(force: true) } }
         app.say("Okay, later.", for: 1.5)
         app.backToIdle()
     }
 
+    // MARK: Laser chase (Nox)
+
+    func startLaser(_ foot: CGPoint) {
+        let h = app.spriteSize.height
+        let screen = app.screensTopLeft.first { $0.insetBy(dx: -4, dy: -4).contains(foot) } ?? app.screensTopLeft.first ?? .zero
+        laser = LaserChase(cat: CGPoint(x: foot.x, y: foot.y - h / 2), at: app.now,
+                           bounds: screen.insetBy(dx: app.spriteSize.width / 2, dy: h / 2))
+        app.busy = true
+        app.cancelAnimations()
+        app.leaveSurface()
+        app.say("\(info.name)! Keep the dot away from \(app.settings.name).", for: 2.2)
+        Debug.log("game start \(info.name)")
+        let size = NSSize(width: 22, height: 22)
+        let p = OverlayPanel(size: size)
+        p.contentView = LaserDotView(frame: NSRect(origin: .zero, size: size))
+        p.ignoresMouseEvents = true
+        p.orderFrontRegardless()
+        dotPanel = p
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            if e.keyCode == 53 { MainActor.assumeIsolated { self?.end(early: true) }; return nil }
+            return e
+        }
+        lastStep = app.now
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stepLaser() }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    func stepLaser() {
+        guard var g = laser else { return }
+        let t = app.now
+        let dot = app.mouseTopLeft
+        dotPanel?.setFrameOrigin(NSPoint(x: NSEvent.mouseLocation.x - 11, y: NSEvent.mouseLocation.y - 11))
+        let event = g.step(dt: min(t - lastStep, 0.05), at: t, dot: dot)
+        lastStep = t
+        laser = g
+        let h = app.spriteSize.height
+        // frames: running, creeping low, the leap, and a proud arch after a catch
+        let frame: String
+        switch g.phase {
+        case .run: frame = Int(t * 10) % 2 == 0 ? "move_0" : "move_2"
+        case .stalk: frame = Int(t * 3) % 2 == 0 ? "mischief_0" : "mischief_1"
+        case .pounce: frame = "move_1"
+        case .caught: frame = "mischief_2"
+        }
+        if app.frogg.frameName != frame { app.frogg.frameName = frame }
+        if g.phase != .caught { app.frogg.mirrored = g.facingLeft }
+        app.place(at: CGPoint(x: g.cat.x, y: g.cat.y + h / 2))
+        switch event {
+        case .caught(let n)?:
+            Debug.log("laser caught \(n)")
+            app.puff(at: dot)
+            dotPanel?.alphaValue = 0.25
+            app.later(LaserChase.rest) { [weak self] in self?.dotPanel?.alphaValue = 1 }
+        case .over(let n)?: finishLaser(n)
+        default: break
+        }
+    }
+
+    func finishLaser(_ catches: Int) {
+        let best = UserDefaults.standard.integer(forKey: bestKey)
+        if catches > best { UserDefaults.standard.set(catches, forKey: bestKey) }
+        Debug.log("laser over catches=\(catches) best=\(max(catches, best))")
+        stop()
+        let name = app.settings.name
+        app.say(catches == 0 ? "You're too quick for \(name)!" : "\(name) caught it \(catches) time\(catches == 1 ? "" : "s")!" + (catches > best ? " A record." : ""), for: 3.5)
+        app.show(catches > best ? "emotion_happy" : "emotion_proud", for: 2.5)
+        app.later(2.6) { [weak self] in self?.app.userPlaced = false; self?.app.reposition(force: true) }
+    }
+
     private func stop() {
         timer?.invalidate(); timer = nil
+        laser = nil
+        dotPanel?.orderOut(nil); dotPanel = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m) }; keyMonitor = nil
         hideTarget(caught: false)
         game = nil
@@ -143,4 +222,16 @@ final class TargetView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { action() }
     override func accessibilityPerformPress() -> Bool { action(); return true }
+}
+
+/// The laser pointer's dot: red, with a soft glow.
+final class LaserDotView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(srgbRed: 1, green: 0.15, blue: 0.2, alpha: 0.28).setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill()
+        NSColor(srgbRed: 1, green: 0.1, blue: 0.15, alpha: 1).setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: 7, dy: 7)).fill()
+        NSColor(white: 1, alpha: 0.85).setFill()
+        NSBezierPath(ovalIn: NSRect(x: bounds.midX - 1.5, y: bounds.midY, width: 3, height: 3)).fill()
+    }
 }

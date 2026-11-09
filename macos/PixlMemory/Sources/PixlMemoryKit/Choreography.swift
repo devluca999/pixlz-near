@@ -243,8 +243,9 @@ public struct Choreography: Sendable {
             return pose
         case .dangle(let anchor, let d0, let d1, _):
             let e = CGFloat(f * f * (3 - 2 * f))   // smoothstep: eases off and onto the thread's end
-            var pose = Pose(foot: CGPoint(x: anchor.x, y: anchor.y + d0 + (d1 - d0) * e), frame: "idle_0")
-            pose.surface = .ceiling
+            // its own hanging art, swaying between two frames
+            var pose = Pose(foot: CGPoint(x: anchor.x, y: anchor.y + d0 + (d1 - d0) * e), frame: Int(t * 2.5) % 2 == 0 ? "mischief_0" : "mischief_1")
+            pose.surface = .hanging
             pose.thread = anchor
             return pose
         }

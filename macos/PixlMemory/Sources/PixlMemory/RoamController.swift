@@ -23,6 +23,9 @@ final class RoamController {
     var typedFor: TimeInterval = 0
     var thread: ThreadPanel?
     var foldersCache: (at: Date, rects: [CGRect])?
+    var pond: PropPanel?
+    var webs: [(panel: PropPanel, at: Date)] = []
+    var wasOn = false
 
     static let codeApps: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
@@ -42,14 +45,24 @@ final class RoamController {
     var on: Bool { app.settings.roams }
 
     /// Settings or the skin changed.
+    /// `kick`: you just switched it on, so the first outing starts right away.
     func refresh() {
         if planner.style != Self.style { planner = RoamPlanner(style: Self.style, seed: UInt64(Date().timeIntervalSince1970)) }
         timer?.invalidate(); watch?.invalidate()
+        defer { wasOn = on }
         guard on else {
+            clearWebs()
             if app.roamHanging != nil { app.roamHanging = nil; app.userPlaced = false; app.reposition(force: true) }
             return
         }
-        schedule(in: 6)   // a first outing soon after you switch it on
+        if !wasOn {
+            // just switched on (or launched with it on): off on an outing almost at once
+            timer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.go(debug: true) }
+            }
+        } else {
+            schedule()
+        }
         watch = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.watchTyping() } }
         watch?.tolerance = 0.3
     }
@@ -83,6 +96,8 @@ final class RoamController {
     func go(_ forced: Outing? = nil, debug: Bool = false) {
         if let why = blocker(ignoringPresence: debug) { Debug.log("roam: not now (\(why))"); schedule(in: 8); return }
         let w = world()
+        func r(_ x: CGRect) -> String { "\(Int(x.minX)),\(Int(x.minY)) \(Int(x.width))×\(Int(x.height))" }
+        Debug.log("roam world: screen \(r(w.screen)) active \(w.active.map(r) ?? "none") others \(w.others.count) folders \(w.folders.count) avoid [\(w.avoid.map(r).joined(separator: "; "))] sprite \(Int(w.sprite.width))×\(Int(w.sprite.height)) foot \(Int(w.foot.x)),\(Int(w.foot.y))")
         var p = planner
         guard let o = forced ?? p.next(w) else { planner = p; schedule(); return }
         planner = p
@@ -93,13 +108,22 @@ final class RoamController {
         guard c.duration > 0 else { schedule(); return }
         outingSince = Date()
         let end = c.pose(at: c.duration).pose
+        if case .pond = o { showPond(at: w.foot) }
+        let webCorners: [CGPoint]
+        // a cobweb in the top corner of any wall it climbs
+        if case .crawl(let legs, _) = o, let wall = legs.first(where: { $0.surface == .rightWall || $0.surface == .leftWall }), wall.to.y < wall.from.y {
+            webCorners = [wall.to]
+        } else { webCorners = [] }
         app.run(c, target: nil, roam: true) { [weak self] in
             guard let self else { return }
             self.outingSince = nil
             self.lastOutingEnd = Date()
             self.app.roamHanging = end.thread
             self.app.userPlaced = true   // stay here until you switch windows
-            if end.thread != nil { self.app.holdSurface(end) }
+            if end.surface != .floor { self.app.holdSurface(end) }   // on its thread or a wall: stays there
+            self.hidePond()
+            webCorners.forEach { self.leaveWeb(at: $0) }
+            if let anchor = end.thread, Bool.random() { self.leaveWeb(at: anchor, small: true) }
             self.schedule()
         }
     }
@@ -108,6 +132,11 @@ final class RoamController {
 
     /// After a long stretch of typing in a code app, the Pixl comes to read along.
     func watchTyping() {
+        if pond != nil, !outing { hidePond() }   // an outing cut short leaves no pond behind
+        webs.removeAll { w in
+            guard Date().timeIntervalSince(w.at) > 600 else { return false }   // webs fade after 10 min
+            w.panel.orderOut(nil); return true
+        }
         let typing = app.presence.typing
         if typing {
             if typingSince == nil { typingSince = Date() }
@@ -126,6 +155,66 @@ final class RoamController {
     }
 
     var isCodeApp: Bool { NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(Self.codeApps.contains) ?? false }
+
+    // MARK: props
+
+    /// Frogg's pond: a little drawn pool at its feet while it's under.
+    func showPond(at foot: CGPoint) {
+        let w = app.spriteSize.width * 1.15, h: CGFloat = 26
+        let panel = PropPanel(size: NSSize(width: w, height: h)) { r in
+            let scale: CGFloat = 2
+            for y in stride(from: 0, to: r.height, by: scale) {
+                for x in stride(from: 0, to: r.width, by: scale) {
+                    let nx = (x + scale / 2 - r.midX) / (r.width / 2), ny = (y + scale / 2 - r.midY) / (r.height / 2)
+                    let d = nx * nx + ny * ny
+                    guard d <= 1 else { continue }
+                    let rim = d > 0.72
+                    let ripple = !rim && Int(x / scale + y / scale) % 9 == 0 && ny > -0.2
+                    (rim ? NSColor(srgbRed: 0.25, green: 0.45, blue: 0.72, alpha: 1)
+                         : ripple ? NSColor(srgbRed: 0.72, green: 0.86, blue: 1, alpha: 1) : NSColor(srgbRed: 0.35, green: 0.62, blue: 0.92, alpha: 1)).setFill()
+                    NSRect(x: x, y: y, width: scale, height: scale).fill()
+                }
+            }
+        }
+        panel.place(center: CGPoint(x: foot.x, y: foot.y - 8), primaryHeight: app.primaryHeight)
+        pond = panel
+    }
+
+    func hidePond() { pond?.orderOut(nil); pond = nil }
+
+    /// Silk's cobweb: in a corner it climbed past, or where it hung. At most four; each fades after 10 min.
+    func leaveWeb(at p: CGPoint, small: Bool = false) {
+        let size: CGFloat = small ? 46 : 92
+        let sc = app.screensTopLeft.first { $0.insetBy(dx: -8, dy: -8).contains(p) } ?? app.screensTopLeft.first ?? .zero
+        let right = p.x > sc.midX
+        // tucked into the corner: its radial lines start from the corner point
+        let origin = small ? CGPoint(x: p.x - size / 2, y: p.y) : CGPoint(x: right ? sc.maxX - size : sc.minX, y: sc.minY)
+        let panel = PropPanel(size: NSSize(width: size, height: size)) { r in
+            NSColor(srgbRed: 0.86, green: 0.88, blue: 0.93, alpha: 0.85).setStroke()
+            // corner at the top (AppKit y-up: maxY); radials fan out down and inward
+            let c = small ? CGPoint(x: r.midX, y: r.maxY) : CGPoint(x: right ? r.maxX : r.minX, y: r.maxY)
+            let dir: CGFloat = right ? -1 : 1
+            let angles: [CGFloat] = small ? [-150, -120, -90, -60, -30].map { $0 * .pi / 180 } : [0, 22, 45, 68, 90].map { $0 * .pi / 180 }
+            func point(_ a: CGFloat, _ rad: CGFloat) -> CGPoint {
+                small ? CGPoint(x: c.x + cos(a) * rad, y: c.y + sin(a) * rad) : CGPoint(x: c.x + dir * cos(a) * rad, y: c.y - sin(a) * rad)
+            }
+            let reach = small ? size / 2 : size
+            let path = NSBezierPath(); path.lineWidth = 1
+            for a in angles { path.move(to: c); path.line(to: point(a, reach)) }
+            for k in stride(from: 0.3, through: 0.9, by: 0.3) {
+                let rad = reach * k
+                path.move(to: point(angles[0], rad))
+                for a in angles.dropFirst() { path.line(to: point(a, rad)) }
+            }
+            path.stroke()
+        }
+        panel.place(center: CGPoint(x: origin.x + size / 2, y: origin.y + size / 2), primaryHeight: app.primaryHeight)
+        webs.append((panel, Date()))
+        if webs.count > 4 { webs.removeFirst().panel.orderOut(nil) }
+        Debug.log("roam: a web at (\(Int(p.x)),\(Int(p.y)))")
+    }
+
+    func clearWebs() { webs.forEach { $0.panel.orderOut(nil) }; webs = [] }
 
     // MARK: backing off
 
@@ -168,7 +257,7 @@ final class RoamController {
         let avoid = AX.trusted && pid != nil ? AX.selectionBounds(pid: pid!) : []
         return RoamWorld(screens: app.screensTopLeft, active: active, others: others, folders: folders, avoid: avoid,
                          cursor: app.mouseTopLeft, foot: app.foot ?? .zero, sprite: app.spriteSize,
-                         codeContext: isCodeApp, hanging: app.roamHanging)
+                         codeContext: isCodeApp, hanging: app.roamHanging, surface: app.frogg.surface)
     }
 
     /// Folders on the desktop, from Finder's Accessibility tree (positions only; names are
@@ -225,4 +314,32 @@ final class ThreadView: NSView {
         NSColor(white: 0, alpha: 0.18).setFill(); NSRect(x: 1.5, y: 0, width: 1, height: bounds.height).fill()
         NSColor(srgbRed: 0.86, green: 0.88, blue: 0.93, alpha: 0.95).setFill(); NSRect(x: 0.5, y: 0, width: 1, height: bounds.height).fill()
     }
+}
+
+/// A drawn prop (a pond, a cobweb): click-through, above other windows, on every Space.
+@MainActor
+final class PropPanel: NSPanel {
+    init(size: NSSize, draw: @escaping (NSRect) -> Void) {
+        super.init(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        contentView = PropView(draw: draw)
+    }
+
+    /// Centre at `center` (top-left global coordinates).
+    func place(center: CGPoint, primaryHeight: CGFloat) {
+        setFrameOrigin(NSPoint(x: center.x - frame.width / 2, y: primaryHeight - center.y - frame.height / 2))
+        orderFrontRegardless()
+    }
+}
+
+final class PropView: NSView {
+    let drawing: (NSRect) -> Void
+    init(draw: @escaping (NSRect) -> Void) { drawing = draw; super.init(frame: .zero) }
+    required init?(coder: NSCoder) { fatalError() }
+    override func draw(_ dirtyRect: NSRect) { drawing(bounds) }
 }

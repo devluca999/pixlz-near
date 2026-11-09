@@ -625,7 +625,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func backToIdle() {
         guard mode == .perched, !moving else { return }
-        frogg.frameName = "idle_0"
+        frogg.frameName = roamHanging != nil ? "mischief_0" : "idle_0"   // on its thread: the hanging pose
         scheduleIdle()
     }
 
@@ -1816,6 +1816,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pill = NSApp.windows.first { $0.isVisible && $0.contentView is CoinPill }
         check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
 
+        // Nox: Laser chase. The dot follows the mouse and Nox runs after it.
+        if game.info.target == "laser" {
+            let before = foot
+            game.start()
+            await wait(0.8)
+            check("laser: the dot shows and \(settings.name) chases it", game.dotPanel?.isVisible == true && foot != before)
+            game.end(early: true)
+            await wait(0.4)
+            check("laser: Esc / end stops it and frees the Pixl", !game.isOn && !busy && game.dotPanel == nil)
+            let failed = results.filter { !$0.1 }.count
+            print("\(results.count - failed)/\(results.count) passed")
+            exit(failed == 0 ? 0 : 1)
+        }
         // Mischief ▸ Catch: a target pops up near the Pixl, a click on it scores, Esc ends the game
         game.start()
         let tg = now

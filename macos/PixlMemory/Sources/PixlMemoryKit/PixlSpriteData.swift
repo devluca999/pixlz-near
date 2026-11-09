@@ -316,8 +316,8 @@ let pixlManifestJSON: [String: String] = [
       }
     },
     "game": {
-      "name": "Yarn swat",
-      "target": "yarn"
+      "name": "Laser chase",
+      "target": "laser"
     },
     "busy": "plotting something"
   }

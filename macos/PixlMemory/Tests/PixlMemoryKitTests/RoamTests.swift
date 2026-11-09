@@ -49,7 +49,7 @@ import PixlzCore
         #expect((dangle ?? 0) > 0)
         let c = RoamPlanner.choreography(o!, from: w.foot, style: .crawler, hanging: nil, hop: hop)
         let end = c.pose(at: c.duration).pose
-        #expect(end.surface == .ceiling && end.thread?.y == screen.minY)
+        #expect(end.surface == .hanging && end.thread?.y == screen.minY)
         #expect(end.foot.y + sprite.height <= editor.minY)                        // hangs above your window
         // mid-climb the art is turned to the wall
         #expect((0..<Int(c.duration * 10)).contains { c.pose(at: Double($0) / 10).pose.surface == .rightWall })
@@ -80,9 +80,26 @@ import PixlzCore
             guard let o = p.crawlTour(w) else { continue }
             let c = RoamPlanner.choreography(o, from: w.foot, style: .crawler, hanging: nil, hop: hop)
             let end = c.pose(at: c.duration).pose
-            let body = RoamPlanner.body(foot: end.foot, sprite: sprite, surface: .ceiling).insetBy(dx: 6, dy: 6)
+            let body = RoamPlanner.body(foot: end.foot, sprite: sprite, surface: .hanging).insetBy(dx: 6, dy: 6)
             #expect(!tall.insetBy(dx: 0, dy: 4).intersects(body), "seed \(seed) hangs over the terminal at \(end.foot)")
         }
+    }
+
+    @Test func withNoRoomToHangSilkRestsHighOnTheWallThenClimbsDown() {
+        var w = world(foot: CGPoint(x: 1300, y: screen.maxY))
+        w.active = screen.insetBy(dx: 0, dy: 0); w.avoid = [CGRect(x: 200, y: 880, width: 2, height: 18)]
+        var p = RoamPlanner(style: .crawler, seed: 2)
+        guard case .crawl(let legs, nil)? = p.crawlTour(w) else { Issue.record("no wall climb"); return }
+        #expect(legs.last?.surface == .rightWall && legs.last!.to.y < screen.minY + 300)
+        let c = RoamPlanner.choreography(.crawl(legs: legs, dangle: nil), from: w.foot, style: .crawler, hanging: nil, hop: hop)
+        let end = c.pose(at: c.duration).pose
+        #expect(end.surface == .rightWall)
+        // next time: down the wall and off along the floor
+        w.foot = end.foot; w.surface = .rightWall
+        var outing: Outing?
+        for _ in 0..<10 { outing = p.next(w); if case .crawl? = outing { break } }
+        guard case .crawl(let down, _)? = outing else { Issue.record("didn't climb down"); return }
+        #expect(down.first?.surface == .rightWall && down.last?.surface == .floor)
     }
 
     @Test func hangingSilkClimbsUpMovesAndDropsAgain() {
