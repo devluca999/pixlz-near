@@ -229,7 +229,7 @@ enum AX {
         let inline: Set<String> = ["AXStaticText", "AXLink", "AXImage"]
         let skip: Set<String> = ["AXButton", "AXTextField", "AXTextArea", "AXPopUpButton", "AXMenuButton", "AXCheckBox", "AXRadioButton"]
         let deadline = Date().addingTimeInterval(seconds)
-        var runs: [(block: Int, text: String)] = []
+        var runs: [TextRun] = []
         var nodes = 0, nextBlock = 0
         func walk(_ el: AXUIElement, block: Int) {
             guard nodes < maxNodes, Date() < deadline else { return }
@@ -237,7 +237,9 @@ enum AX {
             let role: String = attr(el, kAXRoleAttribute) ?? ""
             if skip.contains(role) { return }
             if role == "AXStaticText" {
-                if let v: String = attr(el, kAXValueAttribute), !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { runs.append((block, v)) }
+                if let v: String = attr(el, kAXValueAttribute), !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    runs.append(TextRun(block: block, text: v, frame: frame(el)))
+                }
                 return
             }
             var b = block
@@ -245,27 +247,15 @@ enum AX {
             for k in (attr(el, kAXChildrenAttribute) as [AXUIElement]?) ?? [] { walk(k, block: b) }
         }
         walk(area, block: 0)
-        return (url, title, Self.joinRuns(runs))
+        return (url, title, TextRun.join(runs))
     }
 
-    /// Text runs → blocks: runs in the same block join; a run that carries on a sentence (starts in
-    /// lower case or with punctuation, after an inline <em> or <code>) joins the one before it.
-    nonisolated static func joinRuns(_ runs: [(block: Int, text: String)]) -> [String] {
-        var blocks: [String] = []
-        var last = -1
-        for r in runs {
-            let t = r.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            let continues = t.first.map { $0.isLowercase || ",.;:)!?’'".contains($0) } ?? false
-            if !blocks.isEmpty, r.block == last || (continues && !(blocks.last!.hasSuffix(".") || blocks.last!.hasSuffix("?"))) {
-                let prev = blocks.removeLast()
-                let glue = prev.hasSuffix(" ") || t.hasPrefix(" ") || (t.first.map { ",.;:)!?".contains($0) } ?? false) ? "" : " "
-                blocks.append(prev + glue + t)
-            } else {
-                blocks.append(t)
-            }
-            last = r.block
-        }
-        return blocks.map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.count > 1 }
+    /// Where an element is on screen (top-left points), if it says.
+    static func frame(_ el: AXUIElement) -> CGRect? {
+        var p = CGPoint.zero, sz = CGSize.zero
+        guard let pv: AXValue = attr(el, kAXPositionAttribute), let sv: AXValue = attr(el, kAXSizeAttribute),
+              AXValueGetValue(pv, .cgPoint, &p), AXValueGetValue(sv, .cgSize, &sz), sz.height > 0 else { return nil }
+        return CGRect(origin: p, size: sz)
     }
 
     /// The selected text in the frontmost app, if it exposes one.

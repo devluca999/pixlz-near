@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Words that say nothing about a topic ("the part about *how* *the* frog …").
@@ -45,7 +46,7 @@ public enum PassageFinder {
         let terms = topicTerms(topic)
         guard !terms.isEmpty else { return nil }
         let phrase = topic.lowercased().trimmingCharacters(in: .whitespaces)
-        let blocks = raw.map { $0.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces) }
+        let blocks = mergeFragments(raw.map { $0.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces) })
         var bestScore = 0.0, bestIndex = -1
         for (i, b) in blocks.enumerated() where b.count >= 2 {
             var s = coverage(b, terms: terms, phrase: phrase)
@@ -69,6 +70,29 @@ public enum PassageFinder {
             if !body.isEmpty { passage = body.joined(separator: " ") }
         }
         return trim(passage, terms: terms, maxChars: maxChars)
+    }
+
+    /// Pieces of one sentence split apart (Accessibility splits a paragraph at its links): a block
+    /// that carries on a sentence (lower case, or punctuation first) joins the one before it,
+    /// unless that one already ended its sentence.
+    public static func mergeFragments(_ blocks: [String]) -> [String] {
+        var out: [String] = []
+        for b in blocks where !b.isEmpty {
+            if let prev = out.last, let first = b.first, let end = prev.last,
+               !".!?".contains(end), first.isLowercase || ",.;:)]}(".contains(first) {
+                out[out.count - 1] = glue(prev, b)
+            } else {
+                out.append(b)
+            }
+        }
+        return out
+    }
+
+    /// Joins two runs of text the way they render: no space before closing punctuation or after an opening bracket.
+    public static func glue(_ a: String, _ b: String) -> String {
+        guard let end = a.last, let first = b.first else { return a + b }
+        if end == " " || first == " " || "([“\"‘".contains(end) || ",.;:)]}!?’”".contains(first) { return a + b }
+        return a + " " + b
     }
 
     /// Short and without closing punctuation: a heading, not prose.
@@ -150,5 +174,46 @@ public enum Recall {
             return s >= needed ? (h, s, i) : nil
         }
         return scored.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }.prefix(limit).map(\.0)
+    }
+}
+
+/// A run of text read from a page through Accessibility: which block (paragraph, heading…) holds
+/// it, and where it is on screen (top-left points), when known.
+public struct TextRun: Sendable {
+    public var block: Int
+    public var text: String
+    public var frame: CGRect?
+    public init(block: Int, text: String, frame: CGRect? = nil) { self.block = block; self.text = text; self.frame = frame }
+
+    /// Runs → blocks in reading order. Runs join when they're in the same block, or when the run
+    /// carries on the sentence before it: Chrome splits a paragraph at its links and bold words, so
+    /// a run that starts on the same line, right after the last one (and that one hadn't ended
+    /// its sentence), or that starts in lower case or with punctuation, is the same paragraph.
+    public static func join(_ runs: [TextRun]) -> [String] {
+        var blocks: [String] = []
+        var last: TextRun?
+        for r in runs {
+            let t = r.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            var same = false
+            if let prev = last, let open = blocks.last {
+                let ended = open.trimmingCharacters(in: .whitespaces).last.map { ".!?:".contains($0) } ?? true
+                if r.block == prev.block { same = true }
+                else if !ended, t.trimmingCharacters(in: .whitespaces).first.map({ $0.isLowercase || ",.;:)]!?’'(".contains($0) }) == true { same = true }
+                else if !ended, let a = prev.frame, let b = r.frame, sameLine(after: a, b) { same = true }
+            }
+            if same { blocks.append(PassageFinder.glue(blocks.removeLast(), t)) } else { blocks.append(t) }
+            last = r
+        }
+        return blocks.map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.count > 1 }
+    }
+
+    /// `b` starts on the last line of `a`, to its right: the same line of text carried on.
+    static func sameLine(after a: CGRect, _ b: CGRect) -> Bool {
+        let line = min(a.height, b.height, 40)
+        let lastLineTop = a.maxY - line
+        // a run that wraps has its box from the left margin: only its top tells where it starts
+        let wraps = b.height > line * 1.5
+        return b.minY >= lastLineTop - line * 0.4 && b.minY <= lastLineTop + line * 0.4
+            && (wraps || (b.minX >= a.minX - 1 && (b.minX >= a.maxX - line * 2 || a.height > line * 1.5)))
     }
 }

@@ -82,6 +82,29 @@ import Testing
         #expect(p.hasSuffix("."))
     }
 
+    @Test func sentencesSplitAtLinksAreRejoined() {
+        let split = ["Glass frog", "Glass frogs are frogs of the family Centrolenidae", "(order Anura), native to the Central American rainforests.",
+                     "The abdominal skin of some members is", "transparent", ", giving the glass frog its common name."]
+        #expect(PassageFinder.mergeFragments(split) == ["Glass frog", "Glass frogs are frogs of the family Centrolenidae (order Anura), native to the Central American rainforests.",
+                                                        "The abdominal skin of some members is transparent, giving the glass frog its common name."])
+        #expect(PassageFinder.best(blocks: split, about: "transparent skin")?.hasPrefix("The abdominal skin") == true)
+    }
+
+    @Test func runsOnOneLineAreOneParagraph() {
+        // "<b>Glass frogs</b> are frogs of the family <a>Centrolenidae</a> (order …" split into blocks by Chrome
+        let runs = [
+            TextRun(block: 1, text: "Glass frog", frame: CGRect(x: 20, y: 10, width: 200, height: 40)),
+            TextRun(block: 2, text: "Glass frogs", frame: CGRect(x: 20, y: 80, width: 90, height: 20)),
+            TextRun(block: 3, text: " are frogs of the family ", frame: CGRect(x: 110, y: 80, width: 180, height: 20)),
+            TextRun(block: 4, text: "Centrolenidae", frame: CGRect(x: 290, y: 80, width: 100, height: 20)),
+            TextRun(block: 3, text: " (order Anura), native to Central America.", frame: CGRect(x: 20, y: 80, width: 600, height: 42)),
+            TextRun(block: 5, text: "Description", frame: CGRect(x: 20, y: 150, width: 120, height: 30)),
+            TextRun(block: 6, text: "Their skin is translucent.", frame: CGRect(x: 20, y: 190, width: 300, height: 20)),
+        ]
+        #expect(TextRun.join(runs) == ["Glass frog", "Glass frogs are frogs of the family Centrolenidae (order Anura), native to Central America.",
+                                       "Description", "Their skin is translucent."])
+    }
+
     @Test func linksToTheExactPassage() {
         let page = URL(string: "https://en.wikipedia.org/wiki/Glass_frog#Description")!
         #expect(TextFragment.link(page: page, passage: "Males guard the eggs.")?.absoluteString
