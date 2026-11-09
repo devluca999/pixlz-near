@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import PixlMemoryKit
 
 /// Global hotkeys via Carbon RegisterEventHotKey: no permission needed (SPEC D14, §11.4).
 /// ⌃⌥ avoids the ⌥⌘ system shortcuts.
@@ -25,9 +26,10 @@ final class HotKeys {
         let status = RegisterEventHotKey(key.rawValue, UInt32(controlKey | optionKey), hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
         if status == noErr, let ref { refs.append(ref) }
+        Debug.log("hotkey ⌃⌥\(key) " + (status == noErr ? "registered" : "FAILED (status \(status): taken by another app or macOS)"))
     }
 
-    fileprivate func fire(_ id: UInt32) { handlers[id]?() }
+    fileprivate func fire(_ id: UInt32) { Debug.log("hotkey \(id) pressed"); handlers[id]?() }
 
     private func installIfNeeded() {
         guard !installed else { return }
