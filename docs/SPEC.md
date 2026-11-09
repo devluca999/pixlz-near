@@ -505,7 +505,7 @@ enum StoredPet {
 **Built (Mac, 2026-11-08):** `PixlTravel` (macos/PixlMemory).
 - **Bonjour.** `_pixlz._tcp`, advertised with a TXT record of device id and name. Every device browses, so nearby devices show up like AirDrop targets. The app declares `NSBonjourServices` and asks for Local Network once; until that's allowed, More ▸ Send to device says "allow Local Network".
 - **Trips.** PixlzCore's `TravelNode` runs over TCP with length-prefixed envelopes. `TripRunner` persists every `.saved` before any later `.send`, so at least one complete copy of the Pixl always exists.
-- **Consent.** The first offer from an unknown device asks the user ("Catch Nox from Laptop?"). After a yes, that device is trusted.
+- **Consent.** The first offer from an unknown device asks the user ("Catch Katt from Laptop?"). After a yes, that device is trusted.
 - **What travels.** Only PetState: name, species, needs, stats. Never memory, highlights or wallet keys.
 - **UI:**
   - a "Send to <device>" bubble when one is nearby;
@@ -591,7 +591,7 @@ protocol PetTransport {
 | **Poke** | Click (press + release < 250 ms, < 6 pt movement). A single click only pokes | Tap |
 | **Option bubbles** (§11.2) | Double-click, right-click, or press and hold 450 ms. The poke from the first click is cut short | Double-tap or long-press |
 | **Grab / throw** | Drag (after 6 pt movement), release to throw. Starting a drag pops any open bubbles | Drag, release to toss; bounces off screen edges |
-| **Signature** | An idle quirk (now and then while perched), or More ▸ "Do your thing" | Same |
+| **Signature** | An idle quirk (now and then while perched), or More ▸ "Do a trick" | Same |
 
 - Poke reaction: `poke` slot, fun +3, affection +4. 3 pokes in 4 s → `annoyed`. A poke while asleep → `startled`, then `annoyed`.
 - Mouse hits only on opaque pixels of the current frame (R2).
@@ -607,7 +607,7 @@ protocol PetTransport {
 | 2 | **Memory** | Recent highlights with backlinks, searchable |
 | 3 | **Wallet** (sub-label: balance) | Balance, cap and recent receipts; "Set up" if the sub-account doesn't exist |
 | 4 | **Send to <device>** | Only while a paired peer is reachable (none in the hackathon build) |
-| last | **More** | The mini list: Ask ⌘K · Memory · Wallet · Send to device · Focus · Do your thing · Pixl settings ⌃⌥P · Hide for now ⌃⌥H |
+| last | **More** | The mini list: Ask ⌘K · Memory · Wallet · Send to device · Focus · Do a trick · Pixl settings ⌃⌥P · Hide for now ⌃⌥H |
 
 - **Close:** Esc, a click anywhere else, or a click on the Pixl → reverse stagger (30 ms, 170 ms). Starting a drag → all bubbles pop at once (130 ms, with a 220 ms dither ring).
 - **States:** hover lifts 3 pt and grows ×1.1 over 120 ms; press shrinks ×0.9 (glass) or ×0.96 and sinks 2 pt (paper); keyboard focus draws a 2 pt accent ring and shows the label pill.
@@ -644,12 +644,12 @@ A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift
 
 1. **Voice.** Speech bubbles hold only the species' own sounds.
    - The sounds are defined per Pixl in `pixl.json` `ui.sounds`, by event: greet, happy, curious, annoyed, startled, sleepy, sad, idle.
-   - Examples: Frogg says "ribbit", "rrbt?", "RIBBIT!". Nox says "meow", "mrrp?", "hss". Mochi says "wan!", "awoo". Silk says "tk tk". Boo says "…" or "boo".
+   - Examples: Frogg says "ribbit", "rrbt?", "RIBBIT!". Katt says "meow", "mrrp?", "hss". Mochi says "wan!", "awoo". Silky says "tk tk". Boo says "…" or "boo".
    - Lines are picked so the same one is never said twice in a row (`VoicePicker`).
    - The bubble sits on the shared surface (§11.2), with its tail toward the head, in bold monospace.
    - Boo is shy (`ui.shy`): its sounds float by its head without a bubble.
    - The app's only speech bubble is `speak(_ event)`. A test checks that no other code builds one.
-2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing his croak.", "Nox is judging you.", "Silk is climbing the walls.".
+2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing his croak.", "Katt is judging you.", "Silky is climbing the walls.".
    - It comes from the current activity: its own `ui.status` lines when idle; otherwise asleep, a Roam outing, a game, thinking, visiting another device, Focus, or resizing.
    - The pronoun is set per Pixl in Settings (he, she, they, it, or the name). The default is `ui.pronoun`.
    - It shows in the Settings header, in a tooltip after the mouse rests on the Pixl for ~1 s, and in the menu bar (the first row and the icon's tooltip).

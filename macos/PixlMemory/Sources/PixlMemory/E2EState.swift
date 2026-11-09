@@ -70,7 +70,7 @@ enum E2EState {
                 // editable text fields report their role through the cell
                 let role = (v as? NSTextField).map { $0.isEditable ? NSAccessibility.Role.textField : $0.accessibilityRole() } ?? v.accessibilityRole()
                 if !v.isHiddenOrHasHiddenAncestor, v.alphaValue > 0.05,
-                   [.button, .menuItem, .link, .textField].contains(role),
+                   [.button, .menuItem, .link, .textField, .radioButton, .checkBox, .disclosureTriangle].contains(role),
                    let label = v.accessibilityLabel() ?? (v as? NSTextField)?.placeholderString {
                     let r = panel.convertToScreen(v.convert(v.bounds, to: nil))
                     out.append(["label": label, "role": role?.rawValue ?? "", "enabled": v.isAccessibilityEnabled(), "frame": tl(r)])

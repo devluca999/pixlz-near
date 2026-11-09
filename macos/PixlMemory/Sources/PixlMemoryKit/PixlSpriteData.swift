@@ -147,7 +147,7 @@ let pixlManifestJSON: [String: String] = [
     "signature": "Tongue snap",
     "askPlaceholder": "Ask Frogg anything…",
     "personality": "a deadpan red-eyed tree frog who answers briefly and kindly",
-    "detail": "Lily-pad notch, top edge",
+    "detail": "A lily pad on the bottom edge",
     "decal": {
       "grid": [
         "....kkk..kkk....",
@@ -352,7 +352,7 @@ let pixlManifestJSON: [String: String] = [
     "signature": "Slow blink",
     "askPlaceholder": "Ask Katt anything…",
     "personality": "an aloof black cat who judges first, then helps anyway, in very few words",
-    "detail": "Tail curl off the right edge",
+    "detail": "A tuna on the bottom edge",
     "decal": {
       "grid": [
         "....kkkkkk......",
@@ -554,7 +554,7 @@ let pixlManifestJSON: [String: String] = [
     "signature": "Zoomies",
     "askPlaceholder": "Ask Mochi anything…",
     "personality": "an excitable Shiba puppy who is warm, quick and a little dramatic",
-    "detail": "Teal bandana tab, bottom edge",
+    "detail": "A bone on the bottom edge",
     "decal": {
       "grid": [
         ".kk..........kk.",
@@ -757,7 +757,7 @@ let pixlManifestJSON: [String: String] = [
     "signature": "Phase",
     "askPlaceholder": "Ask Boo anything…",
     "personality": "a shy, cozy bedsheet ghost who whispers short, kind answers",
-    "detail": "Rippled sheet hem, bottom edge",
+    "detail": "A tiny ghost and ectoplasm",
     "decal": {
       "grid": [
         "..oooo..............",

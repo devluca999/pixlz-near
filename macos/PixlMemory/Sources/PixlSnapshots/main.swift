@@ -239,14 +239,14 @@ func run() throws {
             v.open(at: 0); v.advance(to: 2); v.setFocus(0)
             for k in 1...60 { v.advance(to: 2 + Double(k) / 60) }
             scene.addSubview(v)
-            let say = BubbleView(text: "Hi, I'm \(skin.manifest.name)!", look: look)
+            let say = BubbleView(text: VoicePicker.sounds(.greet, ui: skin.ui).first ?? "…", look: look)
             let holder = NSView(frame: NSRect(x: 14, y: 168, width: say.frame.width, height: say.frame.height)); holder.addSubview(say)
             scene.addSubview(holder)
-            let cap = NSTextField(labelWithString: "\(skin.manifest.name) · \(skin.manifest.species) · \(skin.ui.signature)")
+            let cap = NSTextField(labelWithString: "\(skin.manifest.name) · \(skin.ui.description ?? skin.manifest.species)")
             cap.font = Theme.mono(11, .bold); cap.textColor = Theme.ink
             cap.frame = NSRect(x: 18, y: 262, width: w - 48, height: 16)
             scene.addSubview(cap)
-            let detail = NSTextField(labelWithString: skin.ui.detail ?? "")
+            let detail = NSTextField(labelWithString: "Trick: \(skin.ui.signature) · " + (skin.ui.detail ?? ""))
             detail.font = Theme.mono(9); detail.textColor = Theme.muted
             detail.frame = NSRect(x: 18, y: 282, width: w - 48, height: 14)
             scene.addSubview(detail)

@@ -12,8 +12,8 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 
 ## Screenshots
 
-![Frogg, Nox, Mochi, Boo and Silk, each with its menu open](docs/screenshots/pixlz-lineup.png)
-Five Pixls, each with its own accent, menu detail, signature move and voice (switch under More ▸ Change Pixl or in settings; memory, wallet and position carry over). Rendered from the Claude Design pixel engine.
+![Frogg, Katt, Mochi, Boo, Silky and Slugg, each with its menu open](docs/screenshots/pixlz-lineup.png)
+Six Pixls: Frogg (tree frog, the red-eyed kind), Katt (friendly feline), Mochi (Shiba Inu, professional zoomer), Boo (sheety ghost), Silky (black widow, mostly harmless) and Slugg (definitely a slug). Each has its own accent, menu detail, trick, sounds and walk. Switch in Settings or under More ▸ Change Pixl; memory, wallet and position carry over. Slugg also has alternate skins. Rendered from the Claude Design pixel engine (C7–C14).
 
 ![Ask, Memory, Wallet and Change Pixl cards, light](docs/screenshots/cards-light.png)
 ![The same cards, dark](docs/screenshots/cards-dark.png)
@@ -29,9 +29,9 @@ The cards on the C10 Solid material (Liquid Glass is the ghost's alone): header 
 | Chrome extension: a saved passage, reopened from its link, scrolled and highlighted. | The link picks the right "the frog" out of 35 on the page. |
 | ![Double-click or right-click: the option bubbles](docs/screenshots/bubbles-white-doc.png) | ![More: the mini list](docs/screenshots/more-list.png) |
 | ![Bubbles over a dark editor](docs/screenshots/bubbles-dark-editor.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
-| Double-click or right-click the Pixl: Polish (with a selection) or Ask, Memory, Wallet, More. | More: Ask, Memory, Wallet, Focus, Do your thing, Change Pixl, settings, Hide. ⌃⌥P: the settings card. |
-| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) (and [`cat`](docs/screenshots/cat-frames.png), [`shiba`](docs/screenshots/shiba-frames.png), [`ghost`](docs/screenshots/ghost-frames.png), [`widow`](docs/screenshots/widow-frames.png)) |
-| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's 25 frames (idle, hop, poke, grab, signature, nap, emotions), exported from the Claude Design C7 engine. |
+| Double-click or right-click the Pixl: Polish (with a selection) or Ask, Memory, Wallet, More. | More: Ask, Memory, Wallet, Focus, Do a trick, Change Pixl, Settings, Hide. ⌃⌥P: Settings (C12): pet, alternate skins, size S–XL, Calm / Roam / Chaos, and collapsible Focus, Shortcuts, Privacy & Memory and Wallet. |
+| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) (and [`cat`](docs/screenshots/cat-frames.png), [`shiba`](docs/screenshots/shiba-frames.png), [`ghost`](docs/screenshots/ghost-frames.png), [`widow`](docs/screenshots/widow-frames.png), [`slugg`](docs/screenshots/slugg-frames.png)) |
+| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's frames (behavior slots, emotions, blink and his 12-step pond sleep), exported from the Claude Design engine (C7–C14) by `scripts/render-pixls.mjs`; Katt adds walk 8 / trot 6 / climb 6, Mochi trot 6, Slugg crawl 8 and ceiling 6 with a separate shell layer. |
 
 App screenshots are rendered offscreen from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
 
@@ -91,9 +91,9 @@ Full details: [`memory/README.md`](memory/README.md).
 
 | Part | Status |
 |---|---|
-| `memory/`: local service, verification, encrypted store, CLI | **working**, 85 tests |
+| `memory/`: local service, verification, encrypted store, CLI | **working**, 97 tests |
 | Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
-| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Behavior: Calm, or Roam (each Pixl explores in its own style: Silk climbs walls and hangs on silk; never while you type, never over your caret). Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 95 unit/UI tests plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
+| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Behavior: Calm, Roam or Chaos (each Pixl explores in its own style with real walk/trot/crawl loops: Katt walks, Mochi trots, Slugg crawls and climbs with a lagging shell, Silky climbs walls and hangs on silk, Boo hovers and glides; never while you type, never over your caret). Sleeps when you're away (Frogg in his pond), wakes by the rules in SPEC §6.2. Text in three channels: sounds in bubbles, status narration, plain-English notices. Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 119 unit/UI tests (+116 in PixlzCore) plus an in-app click self-test (47 checks) (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
 | `extension/`: Chrome highlight → save → text-fragment backlink; bridge to the Mac app (native messaging): highlights recalled in Ask with backlinks, Polish → Replace inside web pages and rich editors | built, 12 tests + 11 bridge protocol tests (one runs the real host binary); run in Chrome (see the backlink screenshots above) |
 
 Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
