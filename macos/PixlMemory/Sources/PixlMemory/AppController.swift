@@ -52,6 +52,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var resizer = ResizeController(app: self)
     lazy var sleep = SleepController(app: self)
     lazy var pond = PondController(app: self)
+    lazy var trail = TrailController(app: self)
     /// Silky hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
@@ -614,6 +615,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if abs(frogg.lean - lean) < 0.002 { frogg.lean = lean }
         if let dust, !dust.pool.isEmpty { dust.step(to: Date(), dt: dt) }
         stepShell(dt: dt)
+        if PixlSkins.currentID == "slugg" { trail.step() }
         menu.step(t0)
         stopClockIfIdle()
     }
@@ -849,12 +851,39 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func backToIdle() {
         guard mode == .perched, !moving else { return }
+        if let k = shellPose, FroggArt.shared.frames["\(k)_2"] != nil { frogg.frameName = "\(k)_2"; return }   // still in its shell
         if sleep.dozing {   // still asleep (say, after being carried): back to its sleep pose
             if sleep.stage.sleeping { startSleep(deep: sleep.stage == .deep) } else { frogg.frameName = "emotion_sleepy" }
             return
         }
         frogg.frameName = roamHanging != nil ? "mischief_0" : "idle_0"   // on its thread: the hanging pose
         scheduleIdle()
+    }
+
+    // MARK: Slugg's shell (C11): the Memory vault, and sealed for Focus and hidden
+
+    /// "vault" or "seal" while Slugg is in its shell, else nil.
+    var shellPose: String?
+
+    /// Into its shell: the three steps in, then it holds the last. Pixls without the frames skip it.
+    func shellIn(_ kind: String, then done: (() -> Void)? = nil) {
+        let art = FroggArt.shared
+        guard shellPose != kind, art.frames["\(kind)_2"] != nil else { done?(); return }
+        if moving { cancelMotion() }
+        shellPose = kind
+        Debug.log("shell: \(kind) in")
+        for i in 0..<3 { later(Double(i) * 0.16) { [weak self] in if self?.shellPose == kind { self?.frogg.frameName = "\(kind)_\(i)" } } }
+        later(0.5) { done?() }
+    }
+
+    /// Out of its shell: the steps back, then idle as usual.
+    func shellOut(_ kind: String) {
+        guard shellPose == kind else { return }
+        shellPose = nil
+        Debug.log("shell: \(kind) out")
+        frogg.frameName = "\(kind)_1"
+        later(0.16) { [weak self] in if self?.shellPose == nil { self?.frogg.frameName = "\(kind)_0" } }
+        later(0.34) { [weak self] in if self?.shellPose == nil { self?.backToIdle() } }
     }
 
     /// Idle life, after the research notes (docs/PRODUCT-NOTES.md §3): three independent rhythms
@@ -1296,12 +1325,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         userPlaced = false
         reposition(force: true)  // to the ground: no hopping between windows during a session
+        // Slugg tucks in and seals once it's there
+        later(2.2) { [weak self] in if self?.focusUntil != nil, self?.moving == false { self?.shellIn("seal") } }
     }
 
     func endFocus(completed: Bool) {
         sleep.handle(.focusEnded)
         focusTimer?.invalidate()
         focusUntil = nil
+        shellOut("seal")
         if completed {
             show("emotion_proud", for: 4)
             notify(.focusDone, voice: .happy)
@@ -1389,6 +1421,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Voice: one of the Pixl's own sounds for `event` ("ribbit", "mrrp?", "tk tk"), never the
     /// same line twice in a row. A shy Pixl (Boo) says it without a bubble.
     func speak(_ event: SoundEvent, for seconds: TimeInterval = 1.8) {
+        if shellPose == "seal" { Debug.log("voice \(event.rawValue): sealed, says nothing"); return }   // C11: no bubbles while sealed
         let line = voicePicker.pick(event, ui: ui)
         Debug.log("voice \(event.rawValue): \"\(line)\"")
         if ui.shy == true { murmur(line) } else { voiceBubble(line, for: seconds) }
@@ -1543,8 +1576,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         closeMenus()
         if userHidden {
             cancelMotion()
-            hideOverlays(fade: 0.15)
+            // Slugg seals first, then goes (anyone else at once)
+            shellIn("seal") { [weak self] in if self?.userHidden == true { self?.hideOverlays(fade: 0.15) } }
         } else if !fullscreenHidden, let spot = target() {
+            shellPose = nil
             userPlaced = false
             dropIn(to: spot.foot)
         }

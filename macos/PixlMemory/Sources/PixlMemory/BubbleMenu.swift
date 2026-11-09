@@ -298,6 +298,7 @@ final class BubbleMenu {
     }
 
     func closeCard() {
+        app.shellOut("vault")
         cardGen += 1
         cardPanel?.orderOut(nil)
         cardPanel = nil
@@ -413,6 +414,7 @@ final class BubbleMenu {
                 }
             }
             showCard(card, name: "memory (\(items.count))")
+            app.shellIn("vault")   // Slugg: the shell swings open like a little vault
         }
     }
 

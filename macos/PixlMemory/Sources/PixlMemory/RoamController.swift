@@ -94,6 +94,7 @@ final class RoamController {
         if app.foot == nil { return "not placed" }
         if !ignoringPresence, app.presence.typing { return "you're typing" }
         if app.sleep.dozing { return "asleep" }
+        if app.shellPose != nil { return "in its shell" }
         return nil
     }
 
