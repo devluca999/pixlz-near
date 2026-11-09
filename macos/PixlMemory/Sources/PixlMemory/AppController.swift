@@ -54,6 +54,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var sleep = SleepController(app: self)
     lazy var pond = PondController(app: self)
     lazy var trail = TrailController(app: self)
+    lazy var typingGuard = TypingGuard(app: self)
     /// Silky hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
@@ -148,7 +149,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         E2EState.install(self)
         travel.start()
-        if !CommandLine.arguments.contains("--selftest") { presence.start() }  // the self-test posts its own events: it would look idle
+        if !CommandLine.arguments.contains("--selftest") { presence.start() }
+        if !CommandLine.arguments.contains("--selftest") { typingGuard.start() }   // off the field you're typing in  // the self-test posts its own events: it would look idle
         // a second copy of the app (PIXL_DEVICE_ID, for trying trips on one Mac) shares the
         // bridge and the service with the first: it doesn't start its own
         let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil

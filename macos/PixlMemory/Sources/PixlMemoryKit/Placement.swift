@@ -38,3 +38,26 @@ public enum Placement {
         NSRect(x: o.x + r.minX, y: o.y + (h - r.maxY), width: r.width, height: r.height)
     }
 }
+
+/// Where typing is about to happen, and where the Pixl can sit clear of it (top-left global).
+public enum TypingZone {
+    /// A small field (a search box, a chat input): the whole field and a margin. A big editor:
+    /// the caret's line, mostly ahead of it and a little below, where the next words appear.
+    public static func zone(field: CGRect?, caret: CGRect?) -> CGRect? {
+        if let f = field, f.height <= 140, f.width > 0 { return f.insetBy(dx: -16, dy: -12) }
+        if let c = caret { return CGRect(x: c.minX - 80, y: c.minY - 30, width: 480, height: c.height + 90) }
+        return field.map { $0.insetBy(dx: -16, dy: -12) }
+    }
+
+    /// The nearest x in `span` (in half-sprite steps) where the Pixl standing at `footY` clears `zone`.
+    public static func nearestClearX(from x: CGFloat, span: ClosedRange<CGFloat>, footY: CGFloat, sprite: CGSize, zone: CGRect) -> CGFloat? {
+        func clear(_ x: CGFloat) -> Bool { !CGRect(x: x - sprite.width / 2, y: footY - sprite.height, width: sprite.width, height: sprite.height).intersects(zone) }
+        let step = max(sprite.width / 2, 8)
+        var k: CGFloat = 1
+        while k * step <= span.upperBound - span.lowerBound + step {
+            for c in [x + k * step, x - k * step] where span.contains(c) && clear(c) { return c }
+            k += 1
+        }
+        return nil
+    }
+}
