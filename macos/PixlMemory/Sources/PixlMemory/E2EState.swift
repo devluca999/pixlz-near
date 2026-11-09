@@ -44,7 +44,13 @@ enum E2EState {
                         Debug.log("e2e: roam \(k) → \(o.map { "\($0)" } ?? "doesn't fit now")")
                         if let o { app.roam.go(o, debug: true) }
                     } else { app.roam.go(info["kind"] == "pond" ? .pond(5) : nil, debug: true) }
-                case "game": app.game.start()
+                case "game":
+                    if let k = info["kind"].flatMap(GameController.Kind.init(rawValue:)) { app.game.start(k, invite: info["invite"] == "1") } else { app.game.start() }
+                case "bonk": _ = app.game.clickedPet()
+                case "skins": app.menu.showSkins()
+                case "pickskin":
+                    if let c = app.menu.skinCard, let i = c.picker.index(of: info["id"] ?? "") { c.picker.pick(i) } else { Debug.log("e2e: no skin card") }
+                case "interrupt": app.game.interrupt("e2e")
                 case "adjust": app.resizer.beginAdjust()
                 case "voice": app.speak(SoundEvent(rawValue: info["event"] ?? "greet") ?? .greet)
                 case "notice": app.notify(.copied, voice: .happy)
@@ -115,12 +121,15 @@ enum E2EState {
             "owns": app.travel.runner?.owned?.name ?? NSNull(),
             "name": app.settings.name,
             "selection": app.pendingSelection?.text ?? NSNull(),
+            "game": app.game.kind?.rawValue ?? NSNull(),
+            "gameDetail": app.game.chase.map { "\($0.phase) bonks \($0.bonks) head \(Int($0.head.x)),\(Int($0.head.y))" } ?? app.game.snap.map { "\($0.phase.label) dodges \($0.dodges)" } ?? NSNull(),
             "speech": (app.bubblePanel.isVisible ? (app.bubblePanel.contentView as? BubbleView)?.text : nil) ?? NSNull(),
             "screens": app.screensTopLeft.map { ["x": $0.minX, "y": $0.minY, "w": $0.width, "h": $0.height] },
         ]
         s["bubbles"] = panel(app.menu.panel)
         s["list"] = panel(app.menu.listPanel)
         s["card"] = panel(app.menu.cardPanel)
+        s["skinCardOpen"] = app.menu.skinCard != nil && app.menu.cardPanel?.isVisible == true
         s["result"] = panel(app.resultPanel)
         s["mini"] = panel(app.miniPanel)
         if let data = try? JSONSerialization.data(withJSONObject: s, options: [.prettyPrinted, .sortedKeys]) {

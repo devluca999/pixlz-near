@@ -33,6 +33,7 @@ public enum BubbleMenuModel {
                  Slot(id: "memory", label: "Memory"),
                  Slot(id: "wallet", label: "Wallet", sub: walletSub)]
         if let peer { s.append(Slot(id: "send", label: "Send to \(peer)")) }
+        s.append(Slot(id: "play", label: "Play"))
         s.append(Slot(id: "more", label: "More"))
         return s
     }

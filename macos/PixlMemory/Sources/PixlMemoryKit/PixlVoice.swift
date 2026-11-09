@@ -184,6 +184,8 @@ public extension Notice {
         Notice(.done, newBest ? "\(score) \(thing). A new best." : "\(score) \(thing). Best: \(best).", seconds: 3.5)
     }
     static let gameEnded = Notice(.info, "Game over.", seconds: 1.5)
+    /// The end of a C16 game: "Survived 1:12 · 3 bonks · best 1:30".
+    static func gameResult(_ line: String) -> Notice { Notice(.info, line, seconds: 3.5) }
     static func laserStart(_ game: String, name: String) -> Notice { Notice(.info, "\(game): keep the dot away from \(name).", seconds: 2.2) }
     static func laserScore(_ catches: Int, name: String, record: Bool) -> Notice {
         Notice(.done, catches == 0 ? "\(name) never caught the dot." : "\(name) caught the dot \(catches) time\(catches == 1 ? "" : "s").\(record ? " A record." : "")", seconds: 3.5)

@@ -34,7 +34,7 @@ import PixlzCore
         #expect(!source.contains("func say("), "say(...) is gone: use speak (voice), notify (notices) or statusLine")
         #expect(source.components(separatedBy: "BubbleView(").count - 1 == 1, "only voiceBubble builds a speech bubble")
         let calls = source.components(separatedBy: "voiceBubble(").count - 1
-        #expect(calls == 3, "voiceBubble: its definition, speak, and the self-test (\(calls))")
+        #expect(calls == 4, "voiceBubble: its definition, speak, exclaim (game voice lines) and the self-test (\(calls))")
     }
 
     @Test func everyNoticeIsPlainEnglish() {

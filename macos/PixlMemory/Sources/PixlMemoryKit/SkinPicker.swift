@@ -44,7 +44,7 @@ public final class SkinPickerView: NSView {
     public func center(of i: Int) -> NSPoint? { tiles.indices.contains(i) ? NSPoint(x: tiles[i].frame.midX, y: tiles[i].frame.midY) : nil }
     public func index(of id: String) -> Int? { tiles.firstIndex { $0.skin.id == id } }
 
-    func pick(_ i: Int) {
+    public func pick(_ i: Int) {
         guard tiles.indices.contains(i) else { return }
         selected = tiles[i].skin.id
         tiles.forEach { $0.isCurrent = $0.skin.id == selected }

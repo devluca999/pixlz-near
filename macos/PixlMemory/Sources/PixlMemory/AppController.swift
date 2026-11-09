@@ -979,6 +979,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// option bubbles (cutting the poke short). Starting a drag pops them.
     func mouse(_ kind: FroggView.MouseEvent, _ event: NSEvent) {
         if kind != .dragged { Debug.log("mouse \(kind) clickCount=\(event.clickCount) mode=\(mode)") }
+        // in a game, a click on the Pixl is a move in the game (a bonk, accepting an invite), never a grab
+        if game.isOn, game.kind != .laser {
+            if kind == .down { _ = game.clickedPet() }
+            return
+        }
         switch kind {
         case .down:
             longPressTimer?.invalidate()
@@ -1374,7 +1379,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if userHidden { return .hidden }
         if let d = awayOn { return .visiting(d) }
         if resizer.adjusting { return .resizing }
-        if game.isOn { return .playing(game.info.name) }
+        if let k = game.kind { return .playing(GameController.title(k)) }
         switch sleep.stage {
         case .drowsy: return .drowsy
         case .asleep: return .asleep
@@ -1437,6 +1442,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let line = voice.map { voicePicker.pick($0, ui: ui) }
         Debug.log("notice \(n.kind.rawValue): \"\(n.text.prefix(60))\"")
         present(NoticeView(n, voice: line, look: menu.cardLook), seconds: n.seconds)
+    }
+
+    /// A game exclamation in the Pixl's voice ("squelch!", "*gulp*", "…another time"), C16.
+    func exclaim(_ line: String, for seconds: TimeInterval = 1.8) {
+        Debug.log("game voice: \"\(line)\"")
+        voiceBubble(line, for: seconds)
     }
 
     /// The speech bubble, for the voice channel only (`speak`).
@@ -1854,6 +1865,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let status = add(statusLine, nil)   // what it's up to, narrated
         status.isEnabled = false
+        if let best = game.statusLine { add(best, nil).isEnabled = false }   // best game scores, per pet
         menu.addItem(.separator())
         _ = add(userHidden ? "Call \(settings.name)" : "Open \(settings.name)'s menu", #selector(summonFromMenu))
         let login = add("Open at login", #selector(toggleLogin))
@@ -2295,7 +2307,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
 
         // Kiti: Laser chase. The dot follows the mouse and Kiti runs after it.
-        if game.info.target == "laser" {
+        if game.ownGame == .laser {
             let before = foot
             game.start()
             await wait(0.8)
@@ -2307,17 +2319,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             print("\(results.count - failed)/\(results.count) passed")
             exit(failed == 0 ? 0 : 1)
         }
-        // Mischief ▸ Catch: a target pops up near the Pixl, a click on it scores, Esc ends the game
-        game.start()
-        let tg = now
-        while game.targetPanel == nil && now - tg < 3 { await wait(0.02) }
-        check("game: a target pops up near the Pixl", game.targetPanel?.isVisible == true)
-        if let tv = game.targetPanel?.contentView { click(tv, at: NSPoint(x: tv.bounds.midX, y: tv.bounds.midY)) }
-        await wait(0.2)
-        check("game: clicking it scores (\(game.game?.score ?? -1))", game.game?.score == 1)
-        game.end(early: true)
-        await wait(0.3)
-        check("game: Esc / end stops it and frees the Pixl", !game.isOn && !busy && game.targetPanel == nil)
+        // the pet's game (C16): the overlay and the fly or the chase start, work ends it at once
+        if let k = game.ownGame, k != .laser {
+            game.start(k)
+            await wait(0.6)
+            check("game: \(GameController.title(k)) starts with its overlay", game.isOn && game.overlay?.panel.isVisible == true && busy)
+            if k == .snap { check("game: the fly rides the cursor", game.overlay?.fly != nil) }
+            game.interrupt("self-test")
+            await wait(0.3)
+            check("game: work ends it at once and frees the Pixl", !game.isOn && game.overlay == nil && !busy)
+        }
 
         let failed = results.filter { !$0.1 }.count
         print("\(results.count - failed)/\(results.count) passed")

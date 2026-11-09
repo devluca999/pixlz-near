@@ -41,8 +41,8 @@ struct LegibilityTests {
 
 struct BubbleModelTests {
     @Test func slotsFollowTheDesign() {
-        #expect(BubbleMenuModel.slots(selection: false, peer: nil, walletSub: "0.95 Ⓝ").map(\.id) == ["ask", "memory", "wallet", "more"])
-        #expect(BubbleMenuModel.slots(selection: true, peer: "iPhone", walletSub: nil).map(\.id) == ["polish", "memory", "wallet", "send", "more"])
+        #expect(BubbleMenuModel.slots(selection: false, peer: nil, walletSub: "0.95 Ⓝ").map(\.id) == ["ask", "memory", "wallet", "play", "more"])
+        #expect(BubbleMenuModel.slots(selection: true, peer: "iPhone", walletSub: nil).map(\.id) == ["polish", "memory", "wallet", "send", "play", "more"])
         #expect(BubbleMenuModel.slots(selection: false, peer: nil, walletSub: "4.20 NEAR")[2].accessibilityLabel == "Wallet, 4.20 NEAR")
     }
 

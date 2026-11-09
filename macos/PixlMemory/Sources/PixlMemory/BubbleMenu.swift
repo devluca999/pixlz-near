@@ -190,6 +190,7 @@ final class BubbleMenu {
         case "memory": close(reason: "memory"); showMemory()
         case "wallet": close(reason: "wallet"); showWallet()
         case "more": showMore()
+        case "play": showPlay(near: "play")
         case "send": close(reason: "send"); showSend()
         default: close(reason: slot.id)
         }
@@ -216,7 +217,7 @@ final class BubbleMenu {
                                      enabled: app.travel.localNetworkBlocked || !app.travel.peers.isEmpty),
                     ListMenuView.Row(id: "focus", title: app.focusUntil == nil ? "Focus for 25 min" : "Stop focus", icon: nil),
                     ListMenuView.Row(id: "signature", title: "Do a trick", icon: nil, trailing: ui.signature),
-                    ListMenuView.Row(id: "game", title: "Mischief: \(ui.game?.name ?? "Catch")", icon: nil, trailing: "20 s"),
+                    ListMenuView.Row(id: "play", title: "Play", icon: "play", trailing: app.game.ownGame.map(GameController.title)),
                     ListMenuView.Row(id: "skin", title: "Change Pixl", icon: nil, trailing: app.settings.name),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
                     ListMenuView.Row(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")]
@@ -237,14 +238,32 @@ final class BubbleMenu {
         case "signature": app.signature()
         case "skin": showSkins()
         case "send": showSend()
-        case "game": app.game.start()
+        case "play": showPlay(near: nil)
         case "settings": app.toggleMiniMenu()
         case "hide": app.toggleHidden()
         default: break
         }
     }
 
-    func showPolishListFromMore() {
+    /// Play: this Pixl's own game first, then the others, dimmed with a hint to switch Pixl.
+    func showPlay(near slot: String?) {
+        let own = app.game.ownGame
+        let all: [GameController.Kind] = [.inevitable, .snap, .laser]
+        let ordered = own.map { o in [o] + all.filter { $0 != o } } ?? all
+        let rows = ordered.map { k in
+            ListMenuView.Row(id: "play.\(k.rawValue)", title: GameController.title(k), icon: k == own ? "play" : nil,
+                             trailing: k == own ? GameController.blurb(k) : "\(GameController.owner(k)) only · switch Pixl", enabled: k == own)
+        }
+        if slot != nil { view?.close(at: app.now) }
+        showList(rows, near: slot) { [weak self] row in
+            guard let self, let k = GameController.Kind(rawValue: String(row.id.dropFirst("play.".count))) else { return }
+            self.closeList()
+            self.close(reason: "play")
+            self.app.game.start(k)
+        }
+    }
+
+        func showPolishListFromMore() {
         let rows = app.instructions.enumerated().map { i, ins in ListMenuView.Row(id: "polish.\(i)", title: ins.title, icon: i == 0 ? "polish" : nil) }
         showList(rows, near: nil) { [weak self] row in
             guard let self, let i = Int(row.id.dropFirst("polish.".count)) else { return }
@@ -309,7 +328,12 @@ final class BubbleMenu {
         Debug.log("card open \(name) look=\(cardLook.glass ? "glass" : "paper")/\(cardLook.variant) dim=\(cardLook.dim)")
     }
 
+    weak var skinCard: SkinCard?
+    /// Closes a card that closes on a click outside it (Change Pixl).
+    var cardOutsideMonitor: Any?
+
     func closeCard() {
+        if let m = cardOutsideMonitor { NSEvent.removeMonitor(m); cardOutsideMonitor = nil }
         app.shellOut("vault")
         cardGen += 1
         cardPanel?.orderOut(nil)
@@ -411,15 +435,20 @@ final class BubbleMenu {
 
     func showSkins() {
         let card = SkinCard(selected: PixlSkins.currentID, look: cardLook)
+        skinCard = card
         card.fit()
         card.onClose = { [weak self] in self?.closeCard() }
         card.picker.onCancel = { [weak self] in self?.closeCard() }
+        // the card stays open while you try Pixls on; a click outside it (or Esc, or ×) closes it
         card.picker.onPick = { [weak self] id in
-            self?.closeCard()
             self?.app.setSkin(id)
+            self?.cardPanel?.orderFrontRegardless()
         }
         showCard(card, name: "skins")
         cardPanel?.makeFirstResponder(card.picker)
+        cardOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeCard() }
+        }
     }
 
     /// Hand-off: pick an open app; the Pixl takes the text there (SPEC §6.7, docs/PRODUCT-NOTES.md).

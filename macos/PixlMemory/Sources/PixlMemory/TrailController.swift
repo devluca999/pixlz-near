@@ -14,14 +14,16 @@ final class TrailController {
     var stoppedAt: TimeInterval?
     var fadeTimer: Timer?
     var lastAge = -1
+    /// How many body lengths show (1; 4 while Slugg chases you in Inevitable).
+    var lengthBodies: CGFloat = 1
 
     init(app: AppController) { self.app = app }
 
     /// Each frame of motion: lay trail while crawling; start fading when it stops.
-    func step() {
+    func step(force: Bool = false) {
         let d = app.frogg.drawn
-        let crawling = app.moving && app.shellPose == nil && d.anchored
-            && ["crawl_", "climb_", "under_"].contains(where: { d.name.hasPrefix($0) })
+        let crawling = force || (app.moving && app.shellPose == nil && d.anchored
+            && ["crawl_", "climb_", "under_"].contains(where: { d.name.hasPrefix($0) }))
         guard crawling, let foot = app.foot else { if !path.isEmpty, stoppedAt == nil { stop() }; return }
         let n: (Int, Int) = switch app.frogg.surface {
         case .floor, .hanging: (0, -1)
@@ -52,7 +54,7 @@ final class TrailController {
         var dist: CGFloat = 0, keep = path.count
         for i in stride(from: path.count - 1, to: 0, by: -1) {
             dist += hypot(path[i].p.x - path[i - 1].p.x, path[i].p.y - path[i - 1].p.y)
-            if dist > tailBehind + body + 2 { keep = path.count - i + 1; break }
+            if dist > tailBehind + body * lengthBodies + 2 { keep = path.count - i + 1; break }
         }
         if keep < path.count { path.removeFirst(path.count - keep) }
     }
@@ -62,7 +64,7 @@ final class TrailController {
         var out: [CGPoint] = [], dist: CGFloat = 0
         for i in stride(from: path.count - 1, through: 0, by: -1) {
             if i < path.count - 1 { dist += hypot(path[i + 1].p.x - path[i].p.x, path[i + 1].p.y - path[i].p.y) }
-            if dist >= tailBehind, dist <= tailBehind + body { out.append(path[i].p) }
+            if dist >= tailBehind, dist <= tailBehind + body * lengthBodies { out.append(path[i].p) }
         }
         return out
     }

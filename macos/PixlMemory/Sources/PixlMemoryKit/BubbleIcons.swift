@@ -29,7 +29,9 @@ public enum BubbleIcons {
                  ".kaaawwaaak.", ".kaaaaaaaak.", "kaaaawwaaaak", "kaaaaaaaaaak", "kkkkkkkkkkkk"],
         "energy": ["......kkkk..", ".....kaaak..", "....kaaak...", "...kaaak....", "..kaaakkkk..", ".kaaaaaaak..", ".kkkkaaak...",
                    "....kaaak...", "...kaaak....", "...kaak.....", "..kak.......", "..kk........"],
-        "hide": ["............", "............", "..kkkkkkkk..", ".kwwwwwwwwk.", "kwwkkwwkkwwk", "kwwkkwwkkwwk", "kwwwwwwwwwwk",
+        "play": ["............", "..kk........", "..kak.......", "..kaak......", "..kaaak.....", "..kaaaak....", "..kaaaak....",
+                 "..kaaak.....", "..kaak......", "..kak.......", "..kk........", "............"],
+                "hide": ["............", "............", "..kkkkkkkk..", ".kwwwwwwwwk.", "kwwkkwwkkwwk", "kwwkkwwkkwwk", "kwwwwwwwwwwk",
                  ".kwwwwwwwwk.", "..kkkkkkkk..", "...k....k...", "..k......k..", "............"],
     ]
     /// Token accents (tokens/colors.css): frogg for Ask, flame-2 for Polish and Wallet, dew for Memory, dragon for Send.
@@ -37,7 +39,7 @@ public enum BubbleIcons {
         "ask": ["#7CD93A"], "polish": ["#FFD23F"], "memory": ["#2F6FE0"], "wallet": ["#FFD23F", "#FF8A1F"],
         "send": ["#2FB3A6"], "more": [], "settings": ["#9AA295"], "hide": [], "search": ["#86C5F0"],
         "info": ["#2F6FE0"], "check": ["#7CD93A"], "warn": ["#FF8A1F"],
-        "energy": ["#7CD93A"],
+        "energy": ["#7CD93A"], "play": ["#FF8A1F"],
     ]
 
     public static var names: [String] { grids.keys.sorted() }
