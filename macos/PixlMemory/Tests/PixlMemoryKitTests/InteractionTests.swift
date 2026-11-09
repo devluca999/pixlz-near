@@ -161,15 +161,15 @@ struct AppearanceTests {
         #expect(text.contains("12, kept encrypted on this Mac"))
     }
 
-    @Test func slugsAlternateSkinsShowSelectedAndLocked() {
+    @Test func slugsAlternateSkinsShowSelected() {
         let before = PixlSkins.currentID
         defer { PixlSkins.currentID = before }
         PixlSkins.currentID = "slugg"
-        var s = PixlSettings(); s.skin = "slugg"; s.looks = ["slugg": "neon"]
+        var s = PixlSettings(); s.skin = "slugg"; s.looks = ["slugg": "racer"]
         let v = view(s)
         let sw = v.descendants(of: SwatchCard.self)
-        #expect(sw.map(\.option.id) == ["default", "leopard", "neon", "dapper", "humbug"])
-        #expect(sw.first { $0.selected }?.option.id == "neon")
+        #expect(sw.map(\.option.id) == ["default", "dapper", "racer"])
+        #expect(sw.first { $0.selected }?.option.id == "racer")
         #expect(sw.filter { $0.option.locked == true }.allSatisfy { !$0.isAccessibilityEnabled() })
     }
 }

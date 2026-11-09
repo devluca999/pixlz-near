@@ -1,10 +1,12 @@
 // Renders every Pixl's frames from the Claude Design pixel engine (design/explorations/c3,
-// synced with the design project on 2026-11-08: C8–C14) into indexed-colour JSON.
+// synced with the design project on 2026-11-09: C8–C15) into indexed-colour JSON.
 // No PNGs: the repo keeps PNGs in Git LFS. A tiny pixel-buffer canvas stands in for the DOM
 // canvas the pond board draws on.
 //
 //   node scripts/render-pixls.mjs              writes assets/<pet>/sprites.json for every pet
-//                                              (and assets/frogg/pond.json, the pond layers)
+//                                              (and assets/frogg/pond.json, the pond layers), each
+//                                              pet's alternate skins (C15) into its pixl.json
+//                                              (a palette, or sprites_<skin>.json when the shape changes)
 //   node scripts/render-pixls.mjs --swift      also writes the Swift embedding for the Mac app
 //   node scripts/render-pixls.mjs --review DIR contact sheets (PPM) of the frames to review
 //
@@ -16,6 +18,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { deflateRawSync } from "node:zlib";
 
 const repo = fileURLToPath(new URL("../", import.meta.url));
 const root = repo + "design/explorations/c3/";
@@ -78,7 +81,7 @@ ctx.requestAnimationFrame = () => 0; ctx.setTimeout = () => 0; ctx.setInterval =
 vm.createContext(ctx);
 // the boards' load order: pets-l (Nox rebuild, gait engine) before pets-j; Slugg's pets-k then pets-m
 for (const f of ["engine.js", "pets-a.js", "pets-b.js", "pets-d.js", "pets-f.js", "pets-g.js", "behavior.js", "pets-h.js", "pets-i.js",
-                 "pets-l.js", "pets-j.js", "glass.js", "ui-kit.js", "pets-k.js", "pets-m.js", "pond.js"]) {
+                 "pets-l.js", "pets-j.js", "glass.js", "ui-kit.js", "pets-k.js", "pets-m.js", "slugg-flex.js", "skins.js", "pond.js"]) {
   vm.runInContext(readFileSync(root + f, "utf8"), ctx, { filename: f });
 }
 const X = ctx.PX3;
@@ -221,7 +224,12 @@ function renderPet(pet, variant) {
     }
     frames[name] = f;
   }
-  if (pet === "frogg" && !variant) Object.assign(frames, pondFrames(palette, index));
+  if (pet === "frogg") {
+    // the pond draws whichever Frogg is worn: his above-water frames here, his under-water body in its layers
+    const base = X.pets.frogg;
+    X.pets.frogg = p;
+    try { const pd = pondFrames(palette, index); Object.assign(frames, pd.sprites); ponds[variant || "frogg"] = pd.data; } finally { X.pets.frogg = base; }
+  }
   return { source: `design/explorations/c3 (Claude Design C7–C14), rendered by scripts/render-pixls.mjs`,
            pet, name: p.name, species: p.species, transparent: ".", chars: CHARS.slice(0, palette.length), palette, frames };
 }
@@ -237,10 +245,10 @@ const POND = vm.runInContext(`(() => { const P = PX3.pond, AX = P.AX, AY = P.AY,
 // how long each step shows (ms) and which steps loop while asleep (C14: 4 frames at 2 fps)
 const POND_MS = [320, 220, 320, 420, 500, 500, 500, 500, 240, 220, 320, 480];
 const POND_LOOP = [4, 7];
-const pondData = { frames: [] };
+const ponds = {};   // "frogg" or the skin key → pond layers
 
 function pondFrames(palette, index) {
-  const P = X.pond, out = {};
+  const P = X.pond, out = {}, pondData = { frames: [] };
   const col = (d, k) => "#" + [d[k], d[k + 1], d[k + 2]].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
   const pal = [], pidx = new Map();
   const layer = (canvas) => {
@@ -292,7 +300,7 @@ function pondFrames(palette, index) {
   });
   Object.assign(pondData, { source: "design/explorations/c3/pond.js (C14), rendered by scripts/render-pixls.mjs",
     w: P.PW, h: P.PH, anchor: [P.AX, P.AY], loop: POND_LOOP, transparent: ".", chars: CHARS.slice(0, pal.length), palette: pal });
-  return out;
+  return { sprites: out, data: pondData };
 }
 
 /// Pond layers are mostly empty: runs of 4+ of one char become "~<char><count>|" (the pond
@@ -303,14 +311,34 @@ function rlePond(d) {
     { behind: f.behind.map(rle), over: f.over.map(rle), mask: f.mask.map(rle) })) });
 }
 
-/// Alternate skins (C11: Slugg's Leopard grey, Neon, Dapper, Humbug). A skin that only recolours
-/// becomes a palette (same frames, same chars); one that changes shape (Dapper's hat) gets its
-/// own frames file.
-const SKINS = { slugg: X.sluggSkins || {} };
+/// Alternate skins (C15): Default plus two per Pixl. Each is the base Pixl's builder with its own
+/// palette, part tweaks and pixel pass (design/explorations/c3/skins.js). A skin that only
+/// recolours becomes a palette (same frames, same chars); one that changes shape gets its own
+/// frames file. Boo's two are combinations of the design's explorations, as chosen:
+/// Veil = the lace veil pattern + the lantern and its glow; Glitch = the Starry night body + the glitch pass.
+const byKey = (pet, key) => (X.skins[pet] || []).find((k) => k.key === key) || (() => { throw new Error(`no skin ${key}`); })();
+function compose(pet, key, o) {
+  const b = X.pets[pet];
+  X.pets[key] = Object.assign({}, b, { name: b.name + " · " + o.name, pal: Object.assign({}, b.pal, o.pal || {}), rim: o.rim || b.rim,
+    build: (q) => { const sp = b.build(q); if (!sp || !sp.parts) return sp; if (o.mod) o.mod(sp, q); if (o.post) sp.post = o.post; return sp; } });
+  return Object.assign({ key }, o);
+}
+{
+  const lace = byKey("ghost", "ghost_lace"), lantern = byKey("ghost", "ghost_lantern"), stars = byKey("ghost", "ghost_stars"), glitch = byKey("ghost", "ghost_glitch");
+  X.skins.ghost.push(compose("ghost", "ghost_veil", { name: "Veil", acc: lantern.acc, rim: lace.rim, pal: Object.assign({}, lace.pal, lantern.pal), mod: lantern.mod, post: lace.post }));
+  X.skins.ghost.push(compose("ghost", "ghost_glitchstars", { name: "Glitch", acc: glitch.acc, rim: glitch.rim, pal: Object.assign({}, stars.pal),
+    post: (r, pal) => { stars.post(r, pal); glitch.post(r, pal); } }));
+}
+export const FINAL_SKINS = {
+  frogg: ["frogg_toad", "frogg_dart"], cat: ["cat_tabby", "cat_siamese"], shiba: ["shiba_wolf", "shiba_bt"],
+  ghost: ["ghost_veil", "ghost_glitchstars"], widow: ["widow_tarantula", "widow_jumper"], slugg: ["slugg_dapper", "slugg_racer"],
+};
+const skinID = (pet, key) => ({ ghost_glitchstars: "glitch" }[key] || key.slice(pet.length + 1));
 function renderSkins(pet, base) {
   const out = [];
-  for (const [key, sk] of Object.entries(SKINS[pet] || {})) {
-    const v = renderPet(pet, `${pet}_${key}`);
+  for (const key of FINAL_SKINS[pet]) {
+    const sk = byKey(pet, key), id = skinID(pet, key);
+    const v = renderPet(pet, key);
     // same shapes, recoloured: every base colour maps to exactly one skin colour
     const map = new Map();
     const same = Object.keys(base.frames).every((n) => {
@@ -325,12 +353,20 @@ function renderSkins(pet, base) {
       }
       return true;
     });
-    const entry = { id: key, name: sk.name || key, accent: sk.rim || null };
+    const entry = { id, name: sk.name.replace(/ · rare$/, ""), accent: sk.acc };
     if (same) entry.palette = [...base.chars].map((c, i) => (map.has(c) ? v.palette[v.chars.indexOf(map.get(c))] : base.palette[i]));
-    else { entry.frames = `sprites_${key}.json`; writeFileSync(`${repo}assets/${pet}/sprites_${key}.json`, JSON.stringify(v, null, 1) + "\n"); }
+    else { entry.frames = `sprites_${id}.json`; writeFileSync(`${repo}assets/${pet}/sprites_${id}.json`, JSON.stringify(v, null, 1) + "\n"); }
+    if (pet === "frogg") writeFileSync(`${repo}assets/frogg/pond_${id}.json`, JSON.stringify(rlePond(ponds[key])) + "\n");
     out.push(entry);
   }
   return out;
+}
+
+/// Writes the skins into the pet's pixl.json (ui.skins): Default first, then the alternates.
+function writeSkins(pet, skins) {
+  const f = `${repo}assets/${pet}/pixl.json`, m = JSON.parse(readFileSync(f, "utf8"));
+  m.ui.skins = [{ id: "default", name: "Default", accent: m.ui.accent }, ...skins];
+  writeFileSync(f, JSON.stringify(m, null, 2) + "\n");
 }
 
 const all = {};
@@ -339,12 +375,10 @@ for (const pet of PETS) {
   all[pet] = data;
   mkdirSync(`${repo}assets/${pet}`, { recursive: true });
   writeFileSync(`${repo}assets/${pet}/sprites.json`, JSON.stringify(data, null, 1) + "\n");
-  if (pet === "frogg") writeFileSync(`${repo}assets/frogg/pond.json`, JSON.stringify(rlePond(pondData)) + "\n");
-  if (SKINS[pet]) {
-    const skins = renderSkins(pet, data);
-    writeFileSync(`${repo}assets/${pet}/skins.json`, JSON.stringify(skins, null, 1) + "\n");
-    console.error(`${pet} skins: ` + skins.map((k) => `${k.id} (${k.palette ? "palette" : "frames"})`).join(", "));
-  }
+  if (pet === "frogg") writeFileSync(`${repo}assets/frogg/pond.json`, JSON.stringify(rlePond(ponds.frogg)) + "\n");
+  const skins = renderSkins(pet, data);
+  writeSkins(pet, skins);
+  console.error(`${pet} skins: ` + skins.map((k) => `${k.id} (${k.palette ? "palette" : "frames"})`).join(", "));
   const ws = Object.values(data.frames).map((f) => f.w), hs = Object.values(data.frames).map((f) => f.h);
   console.error(`${pet}: ${Object.keys(data.frames).length} frames, ${data.palette.length} colours, max ${Math.max(...ws)}×${Math.max(...hs)}`);
 }
@@ -353,28 +387,29 @@ if (process.argv.includes("--swift")) {
   let swift = "// Generated by scripts/render-pixls.mjs from the Claude Design pixel engine. Do not edit.\n" +
     "// Indexed-colour frames as JSON text (no PNGs: the repo keeps PNGs in Git LFS), and each\n" +
     "// Pixl's assets/<pet>/pixl.json.\n\n";
-  swift += "let pixlSpriteJSON: [String: String] = [\n";
-  for (const pet of PETS) {
-    const json = JSON.stringify(all[pet]);
-    if (json.includes('"##')) throw new Error("JSON would end the Swift raw string");
-    swift += `    "${pet}": ##"""\n${json}\n"""##,\n`;
-  }
+  // frames are raw-deflated and base64'd (2.3 MB of JSON → ~0.4 MB); PixlSprites.inflate reads them
+  const packed = (json) => deflateRawSync(json, { level: 9 }).toString("base64");
+  swift += "/// Each Pixl's frames: sprites.json, raw-deflated, base64.\nlet pixlSpriteJSON: [String: String] = [\n";
+  for (const pet of PETS) swift += `    "${pet}": "${packed(JSON.stringify(all[pet]))}",\n`;
   swift += "]\n\nlet pixlManifestJSON: [String: String] = [\n";
   for (const pet of PETS) {
     const m = readFileSync(`${repo}assets/${pet}/pixl.json`, "utf8").trim();
     if (m.includes('"##')) throw new Error("pixl.json would end the Swift raw string");
     swift += `    "${pet}": ##"""\n${m}\n"""##,\n`;
   }
-  swift += "]\n\n/// Alternate skins with their own frames, by \"<pet>_<skin>\".\nlet pixlSkinSpriteJSON: [String: String] = [\n";
+  swift += "]\n\n/// Alternate skins' frames (sprites_<skin>.json) by \"<pet>_<skin>\", raw-deflated, base64.\nlet pixlSkinSpriteJSON: [String: String] = [\n";
   for (const pet of PETS) {
-    for (const k of Object.keys(SKINS[pet] || {})) {
-      const f = `${repo}assets/${pet}/sprites_${k}.json`;
-      let json; try { json = JSON.stringify(JSON.parse(readFileSync(f, "utf8"))); } catch { continue; }
-      swift += `    "${pet}_${k}": ##"""\n${json}\n"""##,\n`;
+    for (const key of FINAL_SKINS[pet]) {
+      const k = skinID(pet, key), f = `${repo}assets/${pet}/sprites_${k}.json`;
+      let json; try { json = JSON.stringify(JSON.parse(readFileSync(f, "utf8"))); } catch { continue; }   // a palette skin has no file
+      swift += `    "${pet}_${k}": "${packed(json)}",\n`;
     }
   }
-  swift += "]\n\n/// Frogg's pond (C14): layers, masks and timing, run-length encoded.\nlet pixlPondJSON = ##\"\"\"\n" +
-    readFileSync(`${repo}assets/frogg/pond.json`, "utf8").trim() + "\n\"\"\"##\n";
+  swift += "]\n\n/// Frogg's pond (C14) for each of his skins (\"default\", \"toad\", …): layers, masks and timing,\n" +
+    "/// run-length encoded, raw-deflated, base64.\nlet pixlPondJSON: [String: String] = [\n";
+  swift += `    "default": "${packed(readFileSync(`${repo}assets/frogg/pond.json`, "utf8").trim())}",\n`;
+  for (const key of FINAL_SKINS.frogg) { const k = skinID("frogg", key); swift += `    "${k}": "${packed(readFileSync(`${repo}assets/frogg/pond_${k}.json`, "utf8").trim())}",\n`; }
+  swift += "]\n";
   swift += "\n/// The order the skin picker shows them in.\nlet pixlOrder = " + JSON.stringify(PETS) + "\n";
   writeFileSync(`${repo}macos/PixlMemory/Sources/PixlMemoryKit/PixlSpriteData.swift`, swift);
   console.error("wrote PixlSpriteData.swift");

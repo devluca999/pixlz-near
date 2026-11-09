@@ -198,6 +198,18 @@
         "id": "default",
         "name": "Default",
         "accent": "#7CD93A"
+      },
+      {
+        "id": "toad",
+        "name": "Toad",
+        "accent": "#B8963A",
+        "frames": "sprites_toad.json"
+      },
+      {
+        "id": "dart",
+        "name": "Poison Dart",
+        "accent": "#2E7BFF",
+        "frames": "sprites_dart.json"
       }
     ]
   }

@@ -198,6 +198,18 @@
         "id": "default",
         "name": "Default",
         "accent": "#D0202A"
+      },
+      {
+        "id": "tarantula",
+        "name": "Tarantula",
+        "accent": "#C8782A",
+        "frames": "sprites_tarantula.json"
+      },
+      {
+        "id": "jumper",
+        "name": "Jumper",
+        "accent": "#2FC4A8",
+        "frames": "sprites_jumper.json"
       }
     ]
   }

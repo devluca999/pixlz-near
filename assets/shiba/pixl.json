@@ -194,6 +194,18 @@
         "id": "default",
         "name": "Default",
         "accent": "#EC9A44"
+      },
+      {
+        "id": "wolf",
+        "name": "Wolf",
+        "accent": "#6FB8D8",
+        "frames": "sprites_wolf.json"
+      },
+      {
+        "id": "bt",
+        "name": "Black & Tan",
+        "accent": "#C27A3E",
+        "frames": "sprites_bt.json"
       }
     ]
   }

@@ -69,6 +69,51 @@ func run() throws {
     }
     PixlSkins.currentID = "frogg"
 
+    // 1b. Skins grid (C15): every Pixl × Default and its two alternates, idle and move at 3×, accents.
+    do {
+        let cellW: CGFloat = 330, cellH: CGFloat = 250, pets = PixlSkins.all
+        let grid = Canvas(NSSize(width: 150 + cellW * 3 + 24, height: 64 + cellH * CGFloat(pets.count) + 16), fill: NSColor(srgbRed: 0.043, green: 0.043, blue: 0.055, alpha: 1)) { _ in
+            label("Alternate skins · Default + two per Pixl · idle and move", Theme.mono(18, .bold), .white, at: NSPoint(x: 24, y: 20))
+        }
+        for (r, pet) in pets.enumerated() {
+            let y = 60 + CGFloat(r) * cellH
+            let name = NSTextField(labelWithString: pet.manifest.name)
+            name.font = Theme.mono(16, .bold); name.textColor = .white
+            name.frame = NSRect(x: 24, y: y + cellH / 2 - 10, width: 120, height: 22); grid.addSubview(name)
+            for (c, option) in (pet.manifest.ui?.skins ?? []).enumerated() {
+                PixlSkins.currentID = pet.id
+                PixlSkins.looks[pet.id] = option.id
+                let x = 150 + CGFloat(c) * cellW
+                let rgb = RGB(hex: option.accent ?? "#888888"); let accent = NSColor(srgbRed: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1)
+                let card = Canvas(NSSize(width: cellW - 12, height: cellH - 12), fill: NSColor(srgbRed: 0.063, green: 0.067, blue: 0.078, alpha: 1)) { _ in
+                    accent.setFill(); NSRect(x: 0, y: 0, width: cellW - 12, height: 4).fill()
+                }
+                card.frame.origin = NSPoint(x: x, y: y)
+                grid.addSubview(card)
+                let art = FroggArt.shared
+                let shown = ["idle_0", art.frames["move_1"] != nil ? "move_1" : "idle_1"]
+                for (k, f) in shown.enumerated() {
+                    // a whole-number scale, as large as fits half the card (at most 4×)
+                    guard let cg = art.image(f) else { continue }
+                    let sc = max(1, min(4, min((cellW / 2 - 12) / CGFloat(cg.width), (cellH - 64) / CGFloat(cg.height)).rounded(.down)))
+                    guard let img = art.nsImage(f, scale: sc) else { continue }
+                    let v = NSImageView(image: img)
+                    v.frame = NSRect(x: (k == 0 ? 0.27 : 0.73) * (cellW - 12) - img.size.width / 2, y: cellH - 52 - img.size.height,
+                                     width: img.size.width, height: img.size.height)
+                    card.addSubview(v)
+                }
+                let l = NSTextField(labelWithString: "\(option.name)   \(option.accent ?? "")")
+                l.font = Theme.mono(12, .bold); l.textColor = .white
+                l.frame = NSRect(x: 12, y: cellH - 40, width: cellW - 36, height: 18); card.addSubview(l)
+                let sw = NSView(frame: NSRect(x: cellW - 40, y: cellH - 40, width: 14, height: 14)); sw.wantsLayer = true
+                sw.layer?.backgroundColor = accent.cgColor; sw.layer?.borderColor = NSColor.black.cgColor; sw.layer?.borderWidth = 2; card.addSubview(sw)
+            }
+            PixlSkins.looks[pet.id] = "default"
+        }
+        try png(grid, "\(out)/skins-grid.png", scale: 1)
+    }
+    PixlSkins.currentID = "frogg"
+
     // 2. Frogg perched on a (drawn) window's title bar, with its thought bubble.
     let scene = NSSize(width: 980, height: 560)
     let win = NSRect(x: 120, y: 190, width: 740, height: 330)

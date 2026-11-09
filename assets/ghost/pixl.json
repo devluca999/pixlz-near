@@ -199,6 +199,18 @@
         "id": "default",
         "name": "Default",
         "accent": "#A8C8F0"
+      },
+      {
+        "id": "veil",
+        "name": "Veil",
+        "accent": "#F0A030",
+        "frames": "sprites_veil.json"
+      },
+      {
+        "id": "glitch",
+        "name": "Glitch",
+        "accent": "#3CE8C8",
+        "frames": "sprites_glitch.json"
       }
     ]
   }

@@ -25,10 +25,18 @@ public final class PondArt {
     let colors: [Character: (UInt8, UInt8, UInt8)]
     var cache: [String: CGImage] = [:]
 
-    public static let shared: PondArt? = PondArt(json: pixlPondJSON)
+    /// The pond for the skin Frogg is wearing now (its layers hold his under-water body).
+    public static var shared: PondArt? { pond(for: PixlSkins.skin("frogg")?.option?.id ?? "default") }
+    static var ponds: [String: PondArt] = [:]
+    public static func pond(for skin: String) -> PondArt? {
+        if let p = ponds[skin] { return p }
+        guard let packed = pixlPondJSON[skin] ?? pixlPondJSON["default"], let json = PixlSkins.inflate(packed), let p = PondArt(json: json) else { return nil }
+        ponds[skin] = p
+        return p
+    }
 
-    init?(json: String) {
-        guard let d = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+    init?(json: Data) {
+        guard let d = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
               let w = d["w"] as? Int, let h = d["h"] as? Int, let a = d["anchor"] as? [Double], let l = d["loop"] as? [Int],
               let chars = d["chars"] as? String, let pal = d["palette"] as? [String], let fs = d["frames"] as? [[String: Any]] else { return nil }
         width = w; height = h; anchor = CGPoint(x: a[0], y: a[1]); loop = l[0]...l[1]

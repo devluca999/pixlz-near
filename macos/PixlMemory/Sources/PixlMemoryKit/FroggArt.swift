@@ -166,13 +166,26 @@ public enum PixlSkins {
         }
         /// The frames on screen: the picked skin's own frames when it has them.
         public var activeArt: FroggArt {
-            guard let o = option, o.frames != nil else { return art }
+            guard let o = option, o.frames != nil || o.palette != nil else { return art }
             let key = "\(id)_\(o.id)"
             if let a = PixlSkins.variantArt[key] { return a }
-            guard let json = pixlSkinSpriteJSON[key], let a = try? FroggArt(json: Data(json.utf8)) else { return art }
+            let json: Data?
+            if let p = o.palette {   // a recolour: the base frames with the skin's palette
+                json = PixlSkins.inflate(pixlSpriteJSON[id]!).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                    .flatMap { d in var d = d; d["palette"] = p; return try? JSONSerialization.data(withJSONObject: d) }
+            } else {
+                json = pixlSkinSpriteJSON[key].flatMap(PixlSkins.inflate)
+            }
+            guard let json, let a = try? FroggArt(json: json) else { return art }
             PixlSkins.variantArt[key] = a
             return a
         }
+    }
+
+    /// Embedded frames (scripts/render-pixls.mjs): base64 of raw DEFLATE, back to JSON.
+    nonisolated public static func inflate(_ base64: String) -> Data? {
+        guard let d = Data(base64Encoded: base64) else { return nil }
+        return try? (d as NSData).decompressed(using: .zlib) as Data
     }
 
     /// Which look each Pixl wears (pet id → skin id), set by the app from Settings.
@@ -182,7 +195,7 @@ public enum PixlSkins {
     public static let all: [Skin] = pixlOrder.map { id in
         do {
             return Skin(id: id, manifest: try PixlManifest.decode(Data(pixlManifestJSON[id]!.utf8)),
-                        art: try FroggArt(json: Data(pixlSpriteJSON[id]!.utf8)))
+                        art: try FroggArt(json: PixlSkins.inflate(pixlSpriteJSON[id]!) ?? Data()))
         } catch { fatalError("bad Pixl data for \(id): \(error)") }
     }
 

@@ -193,6 +193,18 @@
         "id": "default",
         "name": "Default",
         "accent": "#AE90EC"
+      },
+      {
+        "id": "tabby",
+        "name": "Orange Tabby",
+        "accent": "#E07A30",
+        "frames": "sprites_tabby.json"
+      },
+      {
+        "id": "siamese",
+        "name": "Siamese",
+        "accent": "#5B8FD8",
+        "frames": "sprites_siamese.json"
       }
     ]
   }

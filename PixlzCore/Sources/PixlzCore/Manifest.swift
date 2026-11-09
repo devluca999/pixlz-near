@@ -147,10 +147,13 @@ public struct PixlSkinOption: Codable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var accent: String?
+    /// Its own frames file (the shape changes), or …
     public var frames: String?
+    /// … a palette for the base frames (a recolour only), one colour per base palette entry.
+    public var palette: [String]?
     public var locked: Bool?
-    public init(id: String, name: String, accent: String? = nil, frames: String? = nil, locked: Bool? = nil) {
-        self.id = id; self.name = name; self.accent = accent; self.frames = frames; self.locked = locked
+    public init(id: String, name: String, accent: String? = nil, frames: String? = nil, palette: [String]? = nil, locked: Bool? = nil) {
+        self.id = id; self.name = name; self.accent = accent; self.frames = frames; self.palette = palette; self.locked = locked
     }
 }
 

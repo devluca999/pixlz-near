@@ -191,32 +191,16 @@
         "accent": "#C9A93A"
       },
       {
-        "id": "leopard",
-        "name": "Leopard grey",
-        "accent": "#A9B8C2",
-        "frames": "sprites_leopard.json",
-        "locked": false
-      },
-      {
-        "id": "neon",
-        "name": "Neon nudibranch",
-        "accent": "#9AF4FF",
-        "frames": "sprites_neon.json",
-        "locked": false
-      },
-      {
         "id": "dapper",
         "name": "Dapper",
-        "accent": "#E6D488",
-        "frames": "sprites_dapper.json",
-        "locked": true
+        "accent": "#4E4E66",
+        "frames": "sprites_dapper.json"
       },
       {
-        "id": "humbug",
-        "name": "Humbug",
-        "accent": "#F4D8EC",
-        "frames": "sprites_humbug.json",
-        "locked": true
+        "id": "racer",
+        "name": "Racer",
+        "accent": "#C8F02A",
+        "frames": "sprites_racer.json"
       }
     ]
   }
