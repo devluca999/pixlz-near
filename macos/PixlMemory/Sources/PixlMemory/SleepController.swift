@@ -19,6 +19,7 @@ final class SleepController {
     var lastZ: TimeInterval = 0
     /// PIXL_DEBUG: pretend you've been away this much longer than you have.
     var debugAway: TimeInterval = 0
+    var debugAwaySetAt: TimeInterval = 0
 
     var stage: SleepCycle.Stage { cycle.stage }
     var dozing: Bool { cycle.stage.dozing }
@@ -48,7 +49,8 @@ final class SleepController {
         let t = app.now
         let anyInput = CGEventType(rawValue: UInt32.max)!   // kCGAnyInputEventType
         let realAway = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
-        if realAway < 1 { debugAway = 0 }   // you touched something: back to real time
+        // you touched something after the debug key (not the key press itself): back to real time
+        if debugAway > 0, realAway < max(0, t - debugAwaySetAt - 0.8) { debugAway = 0 }
         let sinceInput = realAway + debugAway
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
         // the energy need: resting while asleep, spent faster while moving
@@ -56,7 +58,9 @@ final class SleepController {
         let a: NeedActivity = cycle.stage.sleeping ? .resting : app.moving ? .moving : .idle
         if a != activity { activity = a; needs.apply(NeedConditions(activity: a), at: now) }
         let energy = needs.energy.value(at: now)
-        apply(cycle.tick(at: t, sinceInput: sinceInput, typing: sinceKey < Presence.typingWindow, energy: energy))
+        // the debug key press itself isn't typing
+        let typing = sinceKey < Presence.typingWindow && (debugAway == 0 || sinceKey < t - debugAwaySetAt - 0.8)
+        apply(cycle.tick(at: t, sinceInput: sinceInput, typing: typing, energy: energy))
         if cycle.stage.sleeping { watchCursor(t) }
         watchHover(t)
         if cycle.stage.sleeping, t - lastZ > (cycle.stage == .deep ? 3.6 : 2.2) { lastZ = t; app.puffZ() }
@@ -185,6 +189,7 @@ final class SleepController {
 
     func debugSleepNow() {
         debugAway = cycle.sleepiness.awayThreshold + 1
+        debugAwaySetAt = app.now
         Debug.log("sleep debug: pretending you've been away \(Int(debugAway)) s")
         tick()
         cycle.debugFastForward(by: SleepCycle.drowsyTime)
