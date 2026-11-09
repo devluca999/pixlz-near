@@ -24,9 +24,13 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     /// "Let me wake them by hovering" (off by default).
     public var hoverWakes: Bool?
     public var roams: Bool {
-        get { behavior == "roam" }
+        get { behavior == "roam" || behavior == "chaos" }
         set { behavior = newValue ? "roam" : "calm" }
     }
+    /// Chaos: Roam plus mischief (more often, more pranks).
+    public var chaos: Bool { behavior == "chaos" }
+    /// The alternate skin each Pixl wears (pet id → skin id). Unset: Default.
+    public var looks: [String: String]?
 
     public init() {}
 
@@ -70,8 +74,14 @@ public struct ServiceStatus: Sendable, Equatable {
     public var wallet: String?
     public var walletReady: Bool
     public var lastVerdict: String?
+    /// Saved highlights on this Mac, and the wallet's balance and this week's spend (Settings).
+    public var highlights: Int?
+    public var balance: String?
+    public var spentWeek: String?
 
-    public init(service: String, model: String? = nil, wallet: String? = nil, walletReady: Bool = false, lastVerdict: String? = nil) {
+    public init(service: String, model: String? = nil, wallet: String? = nil, walletReady: Bool = false, lastVerdict: String? = nil,
+                highlights: Int? = nil, balance: String? = nil, spentWeek: String? = nil) {
         self.service = service; self.model = model; self.wallet = wallet; self.walletReady = walletReady; self.lastVerdict = lastVerdict
+        self.highlights = highlights; self.balance = balance; self.spentWeek = spentWeek
     }
 }

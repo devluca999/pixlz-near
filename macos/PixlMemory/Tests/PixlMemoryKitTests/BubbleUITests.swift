@@ -110,7 +110,7 @@ struct BubbleUITests {
         let rows = [ListMenuView.Row(id: "ask", title: "Ask", icon: "ask", trailing: "⌘K"),
                     ListMenuView.Row(id: "send", title: "Send to device", icon: "send", enabled: false),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings"),
-                    ListMenuView.Row(id: "signature", title: "Do your thing", icon: nil)]
+                    ListMenuView.Row(id: "signature", title: "Do a trick", icon: nil)]
         for glass in [false, true] {
             let v = ListMenuView(rows: rows, look: .text(designFill: 0.24, prefersDark: glass, glass: glass))
             let w = Click.host(v)

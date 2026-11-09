@@ -54,7 +54,7 @@ struct ClickTests {
         Click.click(copy, at: NSPoint(x: copy.bounds.midX, y: copy.bounds.midY))
         #expect(closed == 1 && copied == [r.suggestion])
 
-        let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running"))
+        let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running"), open: .wallet)   // as from the Wallet card
         mini.fit()
         let w2 = Click.host(mini)
         defer { w2.close() }

@@ -23,7 +23,7 @@ public final class FroggArt {
     }
 
     /// The current Pixl's art (the name stays: Frogg was first).
-    public static var shared: FroggArt { PixlSkins.current.art }
+    public static var shared: FroggArt { PixlSkins.current.activeArt }
 
     public let frames: [String: Frame]
     private let colors: [Character: (UInt8, UInt8, UInt8)]
@@ -148,12 +148,36 @@ public final class FroggArt {
 /// Every Pixl the app ships (scripts/render-pixls.mjs): its frames and its pixl.json.
 @MainActor
 public enum PixlSkins {
+    @MainActor
     public struct Skin {
         public let id: String
         public let manifest: PixlManifest
         public let art: FroggArt
-        public var ui: PixlUI { manifest.ui ?? PixlData.fallbackUI }
+        /// Its look: the base skin's UI, with the accent of the alternate skin you picked.
+        public var ui: PixlUI {
+            var u = manifest.ui ?? PixlData.fallbackUI
+            if let o = option, let a = o.accent { u.accent = a }
+            return u
+        }
+        /// The alternate skin picked for this Pixl (nil: the default).
+        public var option: PixlSkinOption? {
+            guard let k = PixlSkins.looks[id], k != "default" else { return nil }
+            return manifest.ui?.skins?.first { $0.id == k }
+        }
+        /// The frames on screen: the picked skin's own frames when it has them.
+        public var activeArt: FroggArt {
+            guard let o = option, o.frames != nil else { return art }
+            let key = "\(id)_\(o.id)"
+            if let a = PixlSkins.variantArt[key] { return a }
+            guard let json = pixlSkinSpriteJSON[key], let a = try? FroggArt(json: Data(json.utf8)) else { return art }
+            PixlSkins.variantArt[key] = a
+            return a
+        }
     }
+
+    /// Which look each Pixl wears (pet id → skin id), set by the app from Settings.
+    public static var looks: [String: String] = [:]
+    static var variantArt: [String: FroggArt] = [:]
 
     public static let all: [Skin] = pixlOrder.map { id in
         do {

@@ -122,6 +122,15 @@ public class PixlCard: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
     public override var isFlipped: Bool { true }
 
+    /// A "Settings" button at the end of the footer (opens Settings at this card's section).
+    public func addSettingsButton(_ action: @escaping () -> Void) {
+        let b = PixelButton(title: "Settings", primary: false, action: action)
+        b.setAccessibilityLabel("Open Settings")
+        footer.addArrangedSubview(b)
+        footerPlate.isHidden = false
+        fit()
+    }
+
     /// Buttons and a hint in the footer plate.
     func setFooter(_ buttons: [NSView], hint text: String? = nil) {
         footer.arrangedSubviews.forEach { $0.removeFromSuperview() }

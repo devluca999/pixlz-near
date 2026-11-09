@@ -160,7 +160,7 @@ func run() throws {
         .init(id: "ask", title: "Ask", icon: "ask", trailing: "⌘K"), .init(id: "memory", title: "Memory", icon: "memory"),
         .init(id: "wallet", title: "Wallet", icon: "wallet", trailing: "0.48 Ⓝ"),
         .init(id: "send", title: "Send to device", icon: "send", enabled: false),
-        .init(id: "signature", title: "Do your thing", icon: nil, trailing: "Tongue snap"),
+        .init(id: "signature", title: "Do a trick", icon: nil, trailing: "Tongue snap"),
         .init(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
         .init(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")], look: paper)
     more.setFocus(2)

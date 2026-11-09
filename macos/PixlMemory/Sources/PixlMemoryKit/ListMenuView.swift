@@ -1,7 +1,7 @@
 import AppKit
 
 /// C8 "More" mini menu: a rounded surface with icon rows (Ask ⌘K, Memory, Wallet, Send to
-/// device, Pixl settings, Do your thing, Hide for now). Hover and keyboard focus highlight a
+/// device, Pixl settings, Do a trick, Hide for now). Hover and keyboard focus highlight a
 /// row; ↑/↓ move, Return chooses, Esc closes. Disabled rows are dimmed and skipped.
 @MainActor
 public final class ListMenuView: NSView {

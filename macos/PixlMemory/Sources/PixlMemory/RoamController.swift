@@ -72,7 +72,9 @@ final class RoamController {
     func schedule(in seconds: TimeInterval? = nil) {
         timer?.invalidate()
         guard on else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: seconds ?? planner.pause(), repeats: false) { [weak self] _ in
+        // Chaos: Roam plus mischief, so more often
+        let wait = (seconds ?? planner.pause()) * (app.settings.chaos ? 0.45 : 1)
+        timer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.go() }
         }
         timer?.tolerance = 1

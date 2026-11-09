@@ -203,7 +203,7 @@ final class BubbleMenu {
                                      trailing: app.travel.localNetworkBlocked ? "allow Local Network" : app.travel.peers.isEmpty ? "none nearby" : nil,
                                      enabled: app.travel.localNetworkBlocked || !app.travel.peers.isEmpty),
                     ListMenuView.Row(id: "focus", title: app.focusUntil == nil ? "Focus for 25 min" : "Stop focus", icon: nil),
-                    ListMenuView.Row(id: "signature", title: "Do your thing", icon: nil, trailing: ui.signature),
+                    ListMenuView.Row(id: "signature", title: "Do a trick", icon: nil, trailing: ui.signature),
                     ListMenuView.Row(id: "game", title: "Mischief: \(ui.game?.name ?? "Catch")", icon: nil, trailing: "20 s"),
                     ListMenuView.Row(id: "skin", title: "Change Pixl", icon: nil, trailing: app.settings.name),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
@@ -402,6 +402,7 @@ final class BubbleMenu {
             card.fit()
             card.onClose = { [weak self] in self?.closeCard() }
             card.onOpenURL = { NSWorkspace.shared.open($0) }
+            card.addSettingsButton { [weak self] in self?.closeCard(); self?.app.toggleMiniMenu(open: .privacy) }
             card.onSaveNote = { [weak self] text, folder in
                 Task { @MainActor in
                     do {
@@ -425,6 +426,7 @@ final class BubbleMenu {
             card.onSetup = { [weak self] in self?.app.openWallet() }
             card.onSetLimit = { [weak self] v in self?.updateLimits(perWeek: v) }
             card.onPause = { [weak self] p in self?.updateLimits(paused: p) }
+            card.addSettingsButton { [weak self] in self?.closeCard(); self?.app.toggleMiniMenu(open: .wallet) }
             return card
         }
         showCard(make(wallet, []), name: "wallet")

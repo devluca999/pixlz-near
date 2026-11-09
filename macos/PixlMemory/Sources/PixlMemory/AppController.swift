@@ -113,6 +113,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
         PixlSkins.currentID = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
         PixlSkins.displayName = settings.name
+        PixlSkins.looks = settings.looks ?? [:]
         buildFrogg()
         setUpStatusItem()
         HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
@@ -1544,13 +1545,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: mini menu (⌃⌥P, SPEC §11.5)
 
-    func toggleMiniMenu() {
+    /// Settings (C12). `open`: a section to show expanded (from the Wallet or Memory card).
+    func toggleMiniMenu(open: MiniMenuView.Section? = nil) {
         Debug.log("mini menu toggle (open=\(miniPanel?.isVisible == true))")
-        if let p = miniPanel, p.isVisible { p.orderOut(nil); miniPanel = nil; return }
+        if let p = miniPanel, p.isVisible { p.orderOut(nil); miniPanel = nil; if open == nil { return } }
         // Open at once with what we last knew; fresh service/wallet status fills in after.
         var status = cachedStatus ?? ServiceStatus(service: "checking…")
         status.lastVerdict = lastVerdict
-        let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook, statusLine: statusLine)
+        let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook, statusLine: statusLine, open: open)
         view.fit()
         let card = SurfaceView.card(view, look: menu.cardLook)
         let panel = KeyPanel(size: card.frame.size)
@@ -1560,12 +1562,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.onClose = panel.onCancel
         view.onChange = { [weak self] s in self?.apply(s) }
         view.onOpenWallet = { [weak self] in self?.openWallet() }
+        view.onOpenMemory = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil; self?.menu.showMemory() }
+        view.onResize = { [weak view, weak panel, weak card] in
+            guard let view, let panel, let card else { return }
+            let top = panel.frame.maxY
+            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            panel.setContentSize(card.frame.size)
+            panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
+        }
         view.onAdjustSize = { [weak self] in
             self?.miniPanel?.orderOut(nil); self?.miniPanel = nil
             self?.resizer.beginAdjust()
         }
         placeBeside(panel, avoid: menu.avoidRects())
+        panel.autorecalculatesKeyViewLoop = true   // Tab walks the controls
         panel.makeKeyAndOrderFront(nil)
+        if let f = view.initialFocus { panel.makeFirstResponder(f) }
         miniPanel = panel
         Debug.log("mini menu shown")
         Task { @MainActor [weak self, weak view, weak panel, weak card] in
@@ -1592,7 +1604,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if new.scale != old.scale { setSize(new.scale) }
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
         if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
-        if new.roams != old.roams { roam.refresh() }
+        if new.roams != old.roams || new.behavior != old.behavior { roam.refresh() }
+        if new.looks != old.looks {   // an alternate skin: new frames and accent
+            PixlSkins.looks = new.looks ?? [:]
+            let at = foot
+            buildFrogg()
+            if let at { place(at: at); puff(at: at) }
+            showFrogg()
+        }
         if new.sleepiness != old.sleepiness || new.hoverWakes != old.hoverWakes { sleep.settingsChanged() }
     }
 

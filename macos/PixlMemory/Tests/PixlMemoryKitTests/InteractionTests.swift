@@ -116,3 +116,60 @@ struct AppearanceTests {
         #expect(r.appearance?.name == .aqua)
     }
 }
+
+@MainActor
+@Suite struct SettingsC12Tests {
+    func view(_ s: PixlSettings = PixlSettings(), open: MiniMenuView.Section? = nil) -> MiniMenuView {
+        let v = MiniMenuView(settings: s, status: ServiceStatus(service: "running", model: "z-ai/glm-5.3-flash", highlights: 12), statusLine: "Frogg is practicing his croak.", open: open)
+        v.fit()
+        return v
+    }
+
+    @Test func itIsLabelledSettingsWithTheNewHierarchy() {
+        let v = view()
+        #expect(v.accessibilityLabel() == "Settings")
+        let labels = v.descendants(of: NSTextField.self).map(\.stringValue)
+        for s in ["Settings", "PET", "SIZE", "BEHAVIOR"] { #expect(labels.contains(s), "\(s)") }
+        #expect(labels.contains("Frogg is practicing his croak.") && labels.contains("Tree frog, the red-eyed kind"))
+        let rows = v.descendants(of: DisclosureRow.self).map { $0.accessibilityLabel() ?? "" }
+        #expect(rows == ["Focus", "Shortcuts", "Privacy & Memory", "Wallet"])
+        #expect(v.descendants(of: DisclosureRow.self).allSatisfy { !$0.open })   // collapsed by default
+        #expect(v.descendants(of: ChoiceCard.self).map { $0.accessibilityLabel()?.components(separatedBy: ":").first ?? "" } == ["Calm", "Roam", "Chaos"])
+        #expect(v.descendants(of: SizeCard.self).map(\.value) == [2, 3, 4, 5])
+        #expect(v.descendants(of: PetCard.self).count == PixlSkins.all.count)
+    }
+
+    @Test func changesApplyAtOnce() {
+        var got: [PixlSettings] = []
+        let v = view()
+        v.onChange = { got.append($0) }
+        v.descendants(of: ChoiceCard.self)[2].onPress?()   // Chaos
+        #expect(got.last?.behavior == "chaos" && got.last?.roams == true && got.last?.chaos == true)
+        v.descendants(of: SizeCard.self)[3].onPress?()     // XL
+        #expect(got.last?.scale == 5)
+        let toggle = v.descendants(of: PixelToggle.self).first { $0.accessibilityLabel() == "Let me wake them by hovering" }!
+        toggle.accessibilityPerformPress()
+        #expect(got.last?.hoverWakes == true)
+    }
+
+    @Test func fromTheMemoryBubbleItOpensAtPrivacyWithTheRealModel() {
+        let v = view(open: .privacy)
+        let privacy = v.descendants(of: DisclosureRow.self).first { $0.accessibilityLabel() == "Privacy & Memory" }!
+        #expect(privacy.open && !privacy.content.isHidden)
+        let text = v.descendants(of: NSTextField.self).map(\.stringValue).joined(separator: " ")
+        #expect(text.contains("z-ai/glm-5.3-flash") && !text.contains("Llama"))
+        #expect(text.contains("12, kept encrypted on this Mac"))
+    }
+
+    @Test func slugsAlternateSkinsShowSelectedAndLocked() {
+        let before = PixlSkins.currentID
+        defer { PixlSkins.currentID = before }
+        PixlSkins.currentID = "slugg"
+        var s = PixlSettings(); s.skin = "slugg"; s.looks = ["slugg": "neon"]
+        let v = view(s)
+        let sw = v.descendants(of: SwatchCard.self)
+        #expect(sw.map(\.option.id) == ["default", "leopard", "neon", "dapper", "humbug"])
+        #expect(sw.first { $0.selected }?.option.id == "neon")
+        #expect(sw.filter { $0.option.locked == true }.allSatisfy { !$0.isAccessibilityEnabled() })
+    }
+}

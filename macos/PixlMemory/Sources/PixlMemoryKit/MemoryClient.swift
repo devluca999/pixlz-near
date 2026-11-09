@@ -44,7 +44,7 @@ public struct MemoryClient: Sendable {
     /// Service, model and wallet lines for the mini menu and the menu bar.
     public func status() async -> ServiceStatus {
         struct Health: Decodable { let model: String; let has_api_key: Bool }
-        struct Wallet: Decodable { let ready: Bool?; let account: String?; let balance_near: String?; let setup: String? }
+        struct Wallet: Decodable { let ready: Bool?; let account: String?; let balance_near: String?; let setup: String?; let spent_week_near: String? }
         guard let (hd, hs) = try? await send(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/health")!)), hs == 200,
               let h = try? JSONDecoder().decode(Health.self, from: hd) else {
             return ServiceStatus(service: "not running (make -C memory serve)")
@@ -54,7 +54,10 @@ public struct MemoryClient: Sendable {
            let w = try? JSONDecoder().decode(Wallet.self, from: wd) {
             st.walletReady = w.ready == true
             st.wallet = w.ready == true ? "\(w.account ?? "your Pixl") · \(w.balance_near ?? "?") Ⓝ" : (w.setup ?? "not set up")
+            st.balance = w.balance_near
+            st.spentWeek = w.spent_week_near
         }
+        st.highlights = await highlights(limit: 1000).count
         return st
     }
 
