@@ -15,15 +15,16 @@ final class HotKeys {
         case p = 35       // kVK_ANSI_P
         case h = 4        // kVK_ANSI_H
         case space = 49   // kVK_Space
+        case s = 1, f = 3, d = 2, a = 0, n = 45   // debug sleep keys (with ⇧)
     }
 
-    func register(_ key: Key, _ handler: @escaping () -> Void) {
+    func register(_ key: Key, shift: Bool = false, _ handler: @escaping () -> Void) {
         installIfNeeded()
         let id = UInt32(handlers.count + 1)
         handlers[id] = handler
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: OSType(0x5058_4C5A), id: id)  // 'PXLZ'
-        let status = RegisterEventHotKey(key.rawValue, UInt32(controlKey | optionKey), hotKeyID,
+        let status = RegisterEventHotKey(key.rawValue, UInt32(controlKey | optionKey | (shift ? shiftKey : 0)), hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
         if status == noErr, let ref { refs.append(ref) }
         Debug.log("hotkey ⌃⌥\(key) " + (status == noErr ? "registered" : "FAILED (status \(status): taken by another app or macOS)"))

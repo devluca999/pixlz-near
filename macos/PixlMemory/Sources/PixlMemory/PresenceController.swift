@@ -34,16 +34,12 @@ final class PresenceController {
         if mood != before {
             Debug.log("presence: \(before) → \(mood)")
             switch mood {
-            case .napping where calm:
-                app.startSleep()                  // asleep: z's, and Boo floats
-            case .waking:
-                app.stopSleep()
-                app.frogg.frameName = "rest_0"   // the yawn
-                app.later(Presence.wakeTime) { [weak self] in self?.app.backToIdle() }
+            case .napping, .waking:
+                break   // sleeping and waking belong to SleepController (PixlzCore SleepCycle)
             default: break
             }
         }
-        guard calm, app.frogg.frameName == "idle_0", let foot = app.foot else { return }
+        guard calm, !app.sleep.dozing, app.frogg.frameName == "idle_0", let foot = app.foot else { return }
         let head = CGPoint(x: foot.x, y: foot.y - app.spriteSize.height * 0.7)
         switch presence.cursor(app.topLeft(NSEvent.mouseLocation), head: head, at: t) {
         case .look(let left):

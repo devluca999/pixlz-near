@@ -90,7 +90,7 @@ final class RoamController {
         if app.menu.isOpen || app.game.isOn || app.focusUntil != nil { return "menu, game or focus" }
         if app.foot == nil { return "not placed" }
         if !ignoringPresence, app.presence.typing { return "you're typing" }
-        if !ignoringPresence, app.presence.presence.mood == .napping { return "napping (you're away)" }
+        if app.sleep.dozing { return "asleep" }
         return nil
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import PixlMemoryKit
+import PixlzCore
 
 /// Debug only (PIXL_DEBUG=1): an end-to-end driver posts `com.pixl.memory.e2e.dump` and reads
 /// back where Frogg and every visible control are, in global top-left points. Costs nothing
@@ -35,8 +36,10 @@ enum E2EState {
                 case "game": app.game.start()
                 case "adjust": app.resizer.beginAdjust()
                 case "voice": app.chatter(info["text"] ?? "Hello!")
-                case "sleep": app.startSleep()
-                case "wake": app.stopSleep(); app.backToIdle()
+                case "sleep": app.sleep.debugSleepNow()
+                case "ff": app.sleep.debugFastForward(Double(info["s"] ?? "60") ?? 60)
+                case "nap": app.sleep.debugNap()
+                case "sleepInput": SleepCycle.Input(rawValue: info["input"] ?? "").map { app.sleep.handle($0) }
                 case "finish": app.resizer.finish()
                 default: break
                 }
@@ -91,6 +94,7 @@ enum E2EState {
             "deviceId": app.travel.me.deviceId,
             "surface": app.frogg.surface.rawValue,
             "hanging": app.roamHanging != nil,
+            "sleep": app.sleep.stage.rawValue,
             "handles": app.resizer.panel.map { tl($0.frame) } ?? NSNull(),
             "peers": app.travel.peers.map(\.deviceName),
             "awayOn": app.awayOn ?? NSNull(),

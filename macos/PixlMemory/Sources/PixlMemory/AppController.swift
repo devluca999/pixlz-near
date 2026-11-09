@@ -50,6 +50,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var presence = PresenceController(app: self)
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
+    lazy var sleep = SleepController(app: self)
     /// Silk hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
@@ -116,6 +117,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
         HotKeys.shared.register(.space) { [weak self] in self?.chatStub() }
         HotKeys.shared.register(.h) { [weak self] in self?.toggleHidden() }
+        if Debug.enabled {
+            // PIXL_DEBUG: sleep testing (⌃⌥⇧): S sleep now · F +60 s · D +10 min (deep) · A nap now · N notification
+            HotKeys.shared.register(.s, shift: true) { [weak self] in self?.sleep.debugSleepNow() }
+            HotKeys.shared.register(.f, shift: true) { [weak self] in self?.sleep.debugFastForward(60) }
+            HotKeys.shared.register(.d, shift: true) { [weak self] in self?.sleep.debugFastForward(600) }
+            HotKeys.shared.register(.a, shift: true) { [weak self] in self?.sleep.debugNap() }
+            HotKeys.shared.register(.n, shift: true) { [weak self] in self?.sleep.handle(.notification) }
+        }
         if !AX.trusted {
             AX.requestTrust()
             say("I need Accessibility to see your window and selection", for: 8)
@@ -152,6 +161,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateCardLimit()
         if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         updateHover()
+        if !CommandLine.arguments.contains("--selftest") { sleep.start() }
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -212,6 +222,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: following windows and Spaces
 
     func windowChanged(_ change: WindowWatcher.Change) {
+        if change == .switched, sleep.dozing { sleep.handle(.windowSwitch) }
         if change == .switched {
             if AX.trusted { AX.enableWebAccessibility(for: NSWorkspace.shared.frontmostApplication) }
             userPlaced = false
@@ -256,7 +267,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Hop to the perch. Mid-motion, the current flight is retargeted (never snaps back).
     func reposition(force: Bool = false) {
-        guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced,
+        guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced, !sleep.dozing,
               let spot = target() else { return }
         guard let current = foot else { place(at: spot.foot); return }
         if let m = motion, floats {
@@ -688,42 +699,51 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         animTimers.forEach { $0.invalidate() }
         animTimers.removeAll()
         idleTimer?.invalidate()
-        stopSleep()
+        if !sleep.dozing { stopSleep() }
     }
 
     // MARK: sleeping (you've been away a while)
 
     var sleepTimer: Timer?
-    var sleepBase: NSRect?
-    var lastZ: TimeInterval = 0
 
     /// Asleep: rising pixel "z"s for every Pixl. Boo floats instead of squashing: eyes closed,
     /// bobbing slowly, fading softly in and out like breathing.
-    func startSleep() {
-        cancelAnimations()
-        let floats = PixlSkins.current.manifest.movement.rawValue == "float"
-        frogg.frameName = floats ? "emotion_sleepy" : "rest_1"
-        if let f = foot { place(at: f) }
-        sleepBase = froggPanel.frame
+    /// What it looks like asleep: Frogg under in its pond, Boo upright with closed eyes, the
+    /// others in their rest pose (deeper: rest_2).
+    func sleepFrame(deep: Bool) -> String {
+        if PixlSkins.currentID == "frogg" { return mode == .perched ? "mischief_2" : "rest_1" }
+        if floats { return "emotion_sleepy" }
+        return deep ? "rest_2" : "rest_1"
+    }
+
+    /// Asleep (SleepController): its sleep pose, Frogg's pond, Boo breathing faintly. The z's
+    /// come from the sleep clock.
+    func startSleep(deep: Bool = false) {
+        animTimers.forEach { $0.invalidate() }
+        animTimers.removeAll()
+        idleTimer?.invalidate()
+        sleepTimer?.invalidate()
+        frogg.frameName = sleepFrame(deep: deep)
+        if let f = foot {
+            place(at: f)
+            if PixlSkins.currentID == "frogg", mode == .perched { roam.showPond(at: f) }
+        }
         let t0 = now
-        lastZ = t0 - 1.2
+        let floats = self.floats
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let base = self.sleepBase else { return }
-                let t = self.now - t0
-                _ = base
-                if floats { self.froggPanel.alphaValue = 0.72 + 0.2 * sin(t * 2 * .pi / 3.6) }   // it breathes, faintly
-                if self.now - self.lastZ > 2.2 { self.lastZ = self.now; self.puffZ() }
+                guard let self else { return }
+                if floats { self.froggPanel.alphaValue = 0.72 + 0.2 * sin((self.now - t0) * 2 * .pi / 3.6) }   // it breathes, faintly
             }
         }
         sleepTimer?.tolerance = 0.01
     }
 
     func stopSleep() {
+        roam.hidePond()
         guard let timer = sleepTimer else { return }
         timer.invalidate()
         sleepTimer = nil
-        sleepBase = nil
         froggPanel.alphaValue = 1
         if let f = foot { place(at: f) }
     }
@@ -779,6 +799,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func backToIdle() {
         guard mode == .perched, !moving else { return }
+        if sleep.dozing {   // still asleep (say, after being carried): back to its sleep pose
+            if sleep.stage.sleeping { startSleep(deep: sleep.stage == .deep) } else { frogg.frameName = "emotion_sleepy" }
+            return
+        }
         frogg.frameName = roamHanging != nil ? "mischief_0" : "idle_0"   // on its thread: the hanging pose
         scheduleIdle()
     }
@@ -877,6 +901,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             longPressed = false
             if event.clickCount == 2 {
                 gesture = nil
+                sleep.handle(.menuClick)   // asleep: wakes, and the menu opens
                 menu.open(trigger: "double-click")
                 return
             }
@@ -887,6 +912,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MainActor.assumeIsolated {
                     guard let self, self.gesture?.dragging == false, self.mode == .perched else { return }
                     self.longPressed = true
+                    self.sleep.handle(.menuClick)
                     self.menu.open(trigger: "long-press")
                 }
             }
@@ -908,12 +934,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let g = gesture, g.isClick(releasedAt: mouseTopLeft, time: now) { clicked(event) }
             else if gesture != nil { Debug.log("mouse up: not a click (moved)") }
         case .right:
+            sleep.handle(.menuClick)
             menu.open(trigger: "right-click")
         }
     }
 
     /// A single click: Frogg gets poked (and is annoyed by the third in 4 s). That's all (C8).
     func clicked(_ event: NSEvent) {
+        if sleep.handle(.poke) { return }   // asleep: startled, then grumpy, then awake
         roam.poked()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
@@ -941,6 +969,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         leaveSurface()
         roam.dragged()
         bubblePanel.orderOut(nil)
+        if sleep.handle(.grab) {
+            roam.hidePond()
+            frogg.frameName = sleepFrame(deep: false)   // dangling, still asleep
+            moveHeld()
+            return
+        }
         frogg.frameName = "grab_0"  // peel-stretch
         after(0.25) { [weak self] in if self?.mode == .held { self?.frogg.frameName = "grab_1" } }  // limp sway
         moveHeld()
@@ -961,7 +995,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         flight = ThrowFlight(foot: start, velocity: v, scale: scale, screens: screens,
                              window: settings.perchOnWindows ? watcher.activeWindowFrame : nil, halfWidth: spriteSize.width / 2)
         mode = .airborne
-        frogg.frameName = MotionFrames.fall
+        frogg.frameName = sleep.dozing ? sleepFrame(deep: false) : MotionFrames.fall
+        sleep.handle(.release)
         Debug.log("throw v=(\(Int(v.dx)),\(Int(v.dy)))")
         startClock()
     }
@@ -1213,6 +1248,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func endFocus(completed: Bool) {
+        sleep.handle(.focusEnded)
         focusTimer?.invalidate()
         focusUntil = nil
         if completed {
@@ -1272,6 +1308,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// ⌃⌥Space: ask your Pixl something, wherever you are.
     func chatStub() {
         guard !userHidden else { return }
+        sleep.handle(.hotkey)
         menu.showAsk()
     }
 
@@ -1412,6 +1449,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
         if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
         if new.roams != old.roams { roam.refresh() }
+        if new.sleepiness != old.sleepiness || new.hoverWakes != old.hoverWakes { sleep.settingsChanged() }
     }
 
     /// Switches Pixl: a quick puff out, the new one pops in where the old one stood. Memory,

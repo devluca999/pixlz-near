@@ -111,6 +111,15 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(behavior)
         stack.addArrangedSubview(label(settings.roams ? "Explores now and then. Poke it to make it sit still." : "Stays with you and waits.",
                                        Theme.mono(10), Theme.textMuted))
+        let sleepy = NSSegmentedControl(labels: ["Night owl", "Normal", "Sleepy"], trackingMode: .selectOne, target: self, action: #selector(sleepinessChanged(_:)))
+        sleepy.selectedSegment = ["nightOwl", "normal", "sleepy"].firstIndex(of: settings.sleepiness ?? "normal") ?? 1
+        sleepy.setToolTip("Naps after 10 min away, and rarely otherwise", forSegment: 0)
+        sleepy.setToolTip("Naps after 5 min away, and every hour or so", forSegment: 1)
+        sleepy.setToolTip("Naps after 2 min away, and often", forSegment: 2)
+        let sleepRow = NSStackView(views: [label("Sleepiness", Theme.mono(11, .bold), Theme.text), sleepy])
+        sleepRow.spacing = 8
+        stack.addArrangedSubview(sleepRow)
+        stack.addArrangedSubview(check("Let me wake them by hovering", settings.hoverWakes ?? false, #selector(hoverWakesChanged(_:))))
         stack.addArrangedSubview(check("Perch on the window I'm using", settings.perchOnWindows, #selector(perchChanged(_:))))
         stack.addArrangedSubview(check("Hide when an app goes fullscreen", settings.hideInFullscreen, #selector(fullscreenChanged(_:))))
 
@@ -182,6 +191,8 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     }
 
     @objc private func sizeChanged(_ s: NSSegmentedControl) { settings.scale = PixlScale.presets[max(0, s.selectedSegment)]; changed() }
+    @objc private func sleepinessChanged(_ c: NSSegmentedControl) { settings.sleepiness = ["nightOwl", "normal", "sleepy"][max(0, c.selectedSegment)]; changed() }
+    @objc private func hoverWakesChanged(_ b: NSButton) { settings.hoverWakes = b.state == .on; changed() }
     @objc private func behaviorChanged(_ c: NSSegmentedControl) { settings.roams = c.selectedSegment == 1; changed() }
     @objc private func perchChanged(_ b: NSButton) { settings.perchOnWindows = b.state == .on; changed() }
     @objc private func fullscreenChanged(_ b: NSButton) { settings.hideInFullscreen = b.state == .on; changed() }

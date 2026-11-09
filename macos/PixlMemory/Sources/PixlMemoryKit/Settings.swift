@@ -17,6 +17,10 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     public var skinID: String { skin ?? "frogg" }
     /// Behavior: "calm" (stays with you; the default) or "roam" (explores on its own).
     public var behavior: String?
+    /// Sleepiness: "nightOwl", "normal" (default) or "sleepy" (PixlzCore SleepCycle.Sleepiness).
+    public var sleepiness: String?
+    /// "Let me wake them by hovering" (off by default).
+    public var hoverWakes: Bool?
     public var roams: Bool {
         get { behavior == "roam" }
         set { behavior = newValue ? "roam" : "calm" }
