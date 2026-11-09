@@ -7,8 +7,6 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     /// Names you gave each Pixl, by skin id (only the ones you changed). Optional so older
     /// settings still load.
     public var names: [String: String]?
-    /// How each Pixl's status refers to it (he, she, they, it, name), by skin id. Unset: its default.
-    public var pronouns: [String: String]?
     public var scale: Double = 2      // 1× to 6× in half steps (PixlScale); drag a corner or pick a preset
     public var perchOnWindows = true  // off: Frogg stays on the ground
     public var hideInFullscreen = true

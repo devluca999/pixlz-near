@@ -144,9 +144,9 @@
       "being definitely a slug",
       "taking it slow",
       "leaving a little trail",
-      "polishing {pos} shell",
+      "polishing the shell",
       "thinking about lettuce",
-      "peeking out of {pos} shell",
+      "peeking out of the shell",
       "enjoying the damp"
     ],
     "sounds": {
@@ -183,7 +183,6 @@
         "squelch"
       ]
     },
-    "pronoun": "they",
     "description": "Definitely a slug",
     "skins": [
       {

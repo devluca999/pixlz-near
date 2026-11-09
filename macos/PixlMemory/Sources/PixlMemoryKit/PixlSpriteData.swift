@@ -176,7 +176,7 @@ let pixlManifestJSON: [String: String] = [
     "busy": "being a frog",
     "status": [
       "catching flies",
-      "practicing {pos} croak",
+      "practicing a croak",
       "sitting very still",
       "dreaming of lily pads",
       "counting flies",
@@ -219,7 +219,6 @@ let pixlManifestJSON: [String: String] = [
         "rrbt"
       ]
     },
-    "pronoun": "he",
     "description": "Tree frog, the red-eyed kind",
     "skins": [
       {
@@ -385,7 +384,7 @@ let pixlManifestJSON: [String: String] = [
       "being mysterious",
       "eyeing your desk",
       "chasing a dust mote",
-      "guarding {pos} warm spot"
+      "guarding the warm spot"
     ],
     "sounds": {
       "greet": [
@@ -421,7 +420,6 @@ let pixlManifestJSON: [String: String] = [
         "mrrp"
       ]
     },
-    "pronoun": "she",
     "description": "Friendly feline",
     "skins": [
       {
@@ -581,7 +579,7 @@ let pixlManifestJSON: [String: String] = [
     "busy": "being a very good dog",
     "status": [
       "being a very good dog",
-      "wagging {pos} tail",
+      "wagging that tail",
       "sniffing everything",
       "guarding the desktop",
       "waiting for treats",
@@ -624,7 +622,6 @@ let pixlManifestJSON: [String: String] = [
         "boof"
       ]
     },
-    "pronoun": "he",
     "description": "Shiba Inu, professional zoomer",
     "skins": [
       {
@@ -793,7 +790,7 @@ let pixlManifestJSON: [String: String] = [
       "haunting quietly",
       "hovering",
       "fading in and out",
-      "rattling {pos} tiny chain",
+      "rattling a tiny chain",
       "hiding behind the window",
       "whispering to the folders"
     ],
@@ -832,7 +829,6 @@ let pixlManifestJSON: [String: String] = [
         "boo"
       ]
     },
-    "pronoun": "they",
     "description": "Sheety ghost",
     "skins": [
       {
@@ -1003,11 +999,11 @@ let pixlManifestJSON: [String: String] = [
       "weaving",
       "spinning a web",
       "hanging around",
-      "tidying {pos} silk",
+      "tidying the silk",
       "lurking politely",
-      "counting {pos} legs",
+      "counting legs (still eight)",
       "knitting a hammock",
-      "checking {pos} threads"
+      "checking the threads"
     ],
     "sounds": {
       "greet": [
@@ -1039,7 +1035,6 @@ let pixlManifestJSON: [String: String] = [
         "tk"
       ]
     },
-    "pronoun": "she",
     "description": "Black widow, mostly harmless",
     "skins": [
       {
@@ -1198,9 +1193,9 @@ let pixlManifestJSON: [String: String] = [
       "being definitely a slug",
       "taking it slow",
       "leaving a little trail",
-      "polishing {pos} shell",
+      "polishing the shell",
       "thinking about lettuce",
-      "peeking out of {pos} shell",
+      "peeking out of the shell",
       "enjoying the damp"
     ],
     "sounds": {
@@ -1237,7 +1232,6 @@ let pixlManifestJSON: [String: String] = [
         "squelch"
       ]
     },
-    "pronoun": "they",
     "description": "Definitely a slug",
     "skins": [
       {

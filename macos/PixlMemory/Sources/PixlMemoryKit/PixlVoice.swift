@@ -41,20 +41,6 @@ public struct VoicePicker: Sendable {
     }
 }
 
-/// How the status refers to a Pixl: by a pronoun, or by name.
-public enum PixlPronoun: String, CaseIterable, Sendable {
-    case he, she, they, it, name
-    public func possessive(name: String) -> String {
-        switch self {
-        case .he: "his"
-        case .she: "her"
-        case .they: "their"
-        case .it: "its"
-        case .name: "\(name)'s"
-        }
-    }
-}
-
 /// What the Pixl is up to, for its status line.
 public enum PixlActivity: Equatable, Sendable {
     case idle(Int)              // one of its own status lines (an index, so it changes now and then)
@@ -69,9 +55,8 @@ public enum PixlActivity: Equatable, Sendable {
 }
 
 public enum PixlStatus {
-    /// "Frogg is practicing his croak."
-    public static func line(name: String, pronoun: PixlPronoun, activity: PixlActivity, ui: PixlUI?) -> String {
-        let pos = pronoun.possessive(name: name)
+    /// "Frogg is practicing a croak." (No pronouns: lines are written so they never need one.)
+    public static func line(name: String, activity: PixlActivity, ui: PixlUI?) -> String {
         let phrase: String
         switch activity {
         case .idle(let i):
@@ -90,7 +75,7 @@ public enum PixlStatus {
         case .resizing: phrase = "getting resized"
         case .hidden: phrase = "hiding"
         }
-        return "\(name) is \(phrase.replacingOccurrences(of: "{pos}", with: pos))."
+        return "\(name) is \(phrase)."
     }
 
     static func outingPhrase(_ o: String) -> String {
@@ -102,7 +87,7 @@ public enum PixlStatus {
         case "drift": "drifting about"
         case "glance": "reading along"
         case "nap": "napping"
-        case "pond": "taking a dip in {pos} pond"
+        case "pond": "taking a dip in the pond"
         case let s where s.hasPrefix("crawl"): "climbing the walls"
         case "climb and move": "spinning a new thread"
         default: "exploring"

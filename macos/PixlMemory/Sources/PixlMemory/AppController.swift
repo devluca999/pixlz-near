@@ -1319,8 +1319,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Status: what it's doing, narrated in the third person. Settings header, hover tooltip and
     /// the menu bar; never in a bubble.
     var statusLine: String {
-        PixlStatus.line(name: settings.name, pronoun: PixlPronoun(rawValue: settings.pronouns?[settings.skinID] ?? ui.pronoun ?? "they") ?? .they,
-                        activity: activity, ui: ui)
+        PixlStatus.line(name: settings.name, activity: activity, ui: ui)
     }
 
     /// Changes its idle status line every few minutes.

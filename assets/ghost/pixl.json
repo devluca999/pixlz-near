@@ -154,7 +154,7 @@
       "haunting quietly",
       "hovering",
       "fading in and out",
-      "rattling {pos} tiny chain",
+      "rattling a tiny chain",
       "hiding behind the window",
       "whispering to the folders"
     ],
@@ -193,7 +193,6 @@
         "boo"
       ]
     },
-    "pronoun": "they",
     "description": "Sheety ghost",
     "skins": [
       {

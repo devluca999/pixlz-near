@@ -151,7 +151,7 @@
       "being mysterious",
       "eyeing your desk",
       "chasing a dust mote",
-      "guarding {pos} warm spot"
+      "guarding the warm spot"
     ],
     "sounds": {
       "greet": [
@@ -187,7 +187,6 @@
         "mrrp"
       ]
     },
-    "pronoun": "she",
     "description": "Friendly feline",
     "skins": [
       {

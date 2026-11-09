@@ -145,7 +145,7 @@
     "busy": "being a very good dog",
     "status": [
       "being a very good dog",
-      "wagging {pos} tail",
+      "wagging that tail",
       "sniffing everything",
       "guarding the desktop",
       "waiting for treats",
@@ -188,7 +188,6 @@
         "boof"
       ]
     },
-    "pronoun": "he",
     "description": "Shiba Inu, professional zoomer",
     "skins": [
       {

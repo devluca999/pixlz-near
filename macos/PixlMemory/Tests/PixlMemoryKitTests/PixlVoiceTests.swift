@@ -50,23 +50,28 @@ import PixlzCore
         }
     }
 
-    @Test func statusIsThirdPersonNarrationWithThePronounYouPicked() {
+    @Test func statusIsThirdPersonNarrationWithoutPronouns() {
         let frogg = ui("frogg")
-        let idle = (0..<8).map { PixlStatus.line(name: "Frogg", pronoun: .he, activity: .idle($0), ui: frogg) }
-        #expect(idle.contains("Frogg is practicing his croak."))
+        let idle = (0..<8).map { PixlStatus.line(name: "Frogg", activity: .idle($0), ui: frogg) }
+        #expect(idle.contains("Frogg is practicing a croak."))
         #expect(idle.allSatisfy { $0.hasPrefix("Frogg is ") && $0.hasSuffix(".") && !$0.contains("{") })
-        #expect(PixlStatus.line(name: "Kiti", pronoun: .she, activity: .idle(7), ui: ui("cat")) == "Kiti is guarding her warm spot.")
-        #expect(PixlStatus.line(name: "Boo", pronoun: .they, activity: .idle(4), ui: ui("ghost")) == "Boo is rattling their tiny chain.")
-        #expect(PixlStatus.line(name: "Silky", pronoun: .name, activity: .idle(3), ui: ui("widow")) == "Silky is tidying Silky's silk.")
-        #expect(PixlStatus.line(name: "Frogg", pronoun: .he, activity: .outing("pond"), ui: frogg) == "Frogg is taking a dip in his pond.")
-        #expect(PixlStatus.line(name: "Kiti", pronoun: .she, activity: .asleep, ui: ui("cat")) == "Kiti is asleep.")
+        #expect(PixlStatus.line(name: "Kiti", activity: .idle(7), ui: ui("cat")) == "Kiti is guarding the warm spot.")
+        #expect(PixlStatus.line(name: "Frogg", activity: .outing("pond"), ui: frogg) == "Frogg is taking a dip in the pond.")
+        #expect(PixlStatus.line(name: "Kiti", activity: .asleep, ui: ui("cat")) == "Kiti is asleep.")
         // status never borrows a sound
         let sounds = PixlSkins.all.flatMap { VoicePicker.allSounds(ui: $0.manifest.ui) }
         let words = Set(idle.flatMap { $0.lowercased().split { !$0.isLetter }.map(String.init) })
         #expect(words.isDisjoint(with: Set(sounds.map { $0.lowercased() })))
     }
 
-    @Test func everyPixlHasADefaultPronoun() {
-        for skin in PixlSkins.all { #expect(PixlPronoun(rawValue: skin.manifest.ui?.pronoun ?? "") != nil, "\(skin.id)") }
+    @Test func noStatusLineNeedsAPronoun() {
+        let pronouns: Set<String> = ["he", "she", "his", "her", "hers", "him", "they", "their", "them", "its"]
+        for skin in PixlSkins.all {
+            for i in 0..<(skin.manifest.ui?.status?.count ?? 0) {
+                let line = PixlStatus.line(name: "X", activity: .idle(i), ui: skin.manifest.ui)
+                let words = Set(line.lowercased().split { !$0.isLetter }.map(String.init))
+                #expect(words.isDisjoint(with: pronouns), "\(skin.id): \(line)")
+            }
+        }
     }
 }

@@ -149,7 +149,7 @@
     "busy": "being a frog",
     "status": [
       "catching flies",
-      "practicing {pos} croak",
+      "practicing a croak",
       "sitting very still",
       "dreaming of lily pads",
       "counting flies",
@@ -192,7 +192,6 @@
         "rrbt"
       ]
     },
-    "pronoun": "he",
     "description": "Tree frog, the red-eyed kind",
     "skins": [
       {

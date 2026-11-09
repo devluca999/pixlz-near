@@ -125,21 +125,6 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         if let statusLine { col.append(label(statusLine, .systemFont(ofSize: 12, weight: .medium), t.text, width: 270)) }
         verifiedLabel = label("", Theme.mono(10, .bold), Theme.verified, width: 270)
         col.append(verifiedLabel)
-        // how its status refers to it
-        let current = settings.pronouns?[settings.skinID] ?? skin.ui.pronoun ?? "they"
-        let pron = NSStackView(views: PixlPronoun.allCases.map { p in
-            let b = PixelButton(title: p.rawValue, primary: p.rawValue == current) { [weak self] in
-                guard let self else { return }
-                var d = self.settings.pronouns ?? [:]
-                d[self.settings.skinID] = p.rawValue
-                self.settings.pronouns = d
-                self.changed()
-            }
-            b.setAccessibilityLabel("Status calls \(settings.name) \(p.rawValue)")
-            return b
-        })
-        pron.spacing = 2
-        col.append(pron)
         let nameCol = NSStackView(views: col); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 3
         stack.addArrangedSubview(row([tile, nameCol], width: inner, spacing: 12))
 

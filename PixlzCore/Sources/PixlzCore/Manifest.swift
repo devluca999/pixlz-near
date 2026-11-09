@@ -111,8 +111,6 @@ public struct PixlUI: Codable, Equatable, Sendable {
     /// Its voice: the only words that go in its speech bubbles, by event (greet, happy, curious,
     /// annoyed, startled, sleepy, sad, idle). E.g. Frogg: "ribbit", "rrbt?", "RIBBIT!".
     public var sounds: [String: [String]]?
-    /// How its status refers to it by default: he, she, they, it or name (Settings can change it).
-    public var pronoun: String?
     /// A short line about it for the picker and Settings ("Shiba Inu, professional zoomer").
     public var description: String?
     /// Its looks: the default and any alternate skins (Slugg: Leopard grey, Neon, Dapper, Humbug).
