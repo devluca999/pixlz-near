@@ -3,7 +3,7 @@ import Foundation
 /// Per-device settings (SPEC §10.1: not part of PetState). Stored in UserDefaults.
 public struct PixlSettings: Codable, Equatable, Sendable {
     public var name = "Frogg"
-    public var scale = 2              // 2×, 3× or 4× (SPEC §3.1)
+    public var scale: Double = 2      // 1× to 6× in half steps (PixlScale); drag a corner or pick a preset
     public var perchOnWindows = true  // off: Frogg stays on the ground
     public var hideInFullscreen = true
     public var mischief = "normal"    // chill | normal | chaos (stored; mischief acts aren't built yet)
@@ -25,7 +25,7 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     @MainActor public static func load(_ defaults: UserDefaults = .standard) -> PixlSettings {
         guard let data = defaults.data(forKey: key), var s = try? JSONDecoder().decode(PixlSettings.self, from: data)
         else { return PixlSettings() }
-        s.scale = [2, 3, 4].contains(s.scale) ? s.scale : 2
+        s.scale = PixlScale.snap(s.scale)
         s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (PixlSkins.skin(s.skinID) ?? PixlSkins.current).manifest.name : String(s.name.prefix(24))
         return s
     }

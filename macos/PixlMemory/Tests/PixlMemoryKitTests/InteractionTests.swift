@@ -79,7 +79,7 @@ struct MenuTests {
         s.scale = 7; s.name = "   "
         s.save(d)
         let loaded = PixlSettings.load(d)
-        #expect(loaded.scale == 2 && loaded.name == "Frogg")
+        #expect(loaded.scale == 6 && loaded.name == "Frogg")   // clamped to the largest size
     }
 
     @Test func miniMenuLaysOut() {

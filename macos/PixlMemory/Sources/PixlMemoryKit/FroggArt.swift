@@ -127,7 +127,8 @@ public final class FroggArt {
         context.translateBy(x: feetX, y: feetY)
         if topShift != 0 { context.concatenate(CGAffineTransform(a: 1, b: 0, c: topShift / max(h, 1), d: 1, tx: 0, ty: 0)) }
         if mirrored { context.scaleBy(x: -1, y: 1) }
-        context.draw(img, in: CGRect(x: (-w / 2).rounded(.down), y: 0, width: w, height: h))
+        // half points are whole device pixels on Retina, so half-step scales stay on the grid
+        context.draw(img, in: CGRect(x: (-w).rounded(.down) / 2, y: 0, width: w, height: h))
         context.restoreGState()
     }
 

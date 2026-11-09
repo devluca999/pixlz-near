@@ -49,6 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var travel = TravelController(app: self)
     lazy var presence = PresenceController(app: self)
     lazy var roam = RoamController(app: self)
+    lazy var resizer = ResizeController(app: self)
     /// Silk hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
@@ -149,7 +150,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         reposition(force: true)
         updateCardLimit()
-        if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
+        if !CommandLine.arguments.contains("--selftest") { roam.refresh(); resizer.start() }
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -1294,12 +1295,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
     }
 
-    func setSize(_ s: Int) {
+    /// `live`: while a corner is being dragged. The feet stay put and nothing is saved yet.
+    func setSize(_ s: Double, live: Bool = false) {
         settings.scale = s
-        settings.save()
         cancelMotion()
         buildFrogg()
         froggPanel.orderFrontRegardless()
+        if live { return }
+        settings.save()
         userPlaced = false
         reposition(force: true)
         backToIdle()
@@ -1403,13 +1406,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let size = add("Size", nil)
         size.submenu = NSMenu()
-        for s in [2, 3, 4] {
-            let i = NSMenuItem(title: "\(s)×", action: #selector(sizeChosen(_:)), keyEquivalent: "")
-            i.tag = s
+        for s in PixlScale.presets {
+            let i = NSMenuItem(title: PixlScale.label(s), action: #selector(sizeChosen(_:)), keyEquivalent: "")
+            i.representedObject = s
             i.target = self
             i.state = settings.scale == s ? .on : .off
             size.submenu?.addItem(i)
         }
+        size.submenu?.addItem(.separator())
+        size.submenu?.addItem(withTitle: "Or hover \(settings.name) and drag a corner", action: nil, keyEquivalent: "").isEnabled = false
         _ = add(paused ? "Resume" : "Pause", #selector(togglePause))
         _ = add("Reset position", #selector(resetPosition))
         _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
@@ -1443,7 +1448,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.mischief = sender.representedObject as? String ?? "normal"
         settings.save()
     }
-    @objc func sizeChosen(_ sender: NSMenuItem) { setSize(sender.tag) }
+    @objc func sizeChosen(_ sender: NSMenuItem) { setSize(sender.representedObject as? Double ?? 2) }
 
     @objc func togglePause() {
         paused.toggle()

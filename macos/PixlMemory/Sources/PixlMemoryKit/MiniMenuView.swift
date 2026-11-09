@@ -93,9 +93,10 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(picker)
 
         stack.addArrangedSubview(section("SIZE"))
-        let size = NSSegmentedControl(labels: ["2×", "3×", "4×"], trackingMode: .selectOne, target: self, action: #selector(sizeChanged(_:)))
-        size.selectedSegment = max(0, settings.scale - 2)
+        let size = NSSegmentedControl(labels: PixlScale.presets.map(PixlScale.label), trackingMode: .selectOne, target: self, action: #selector(sizeChanged(_:)))
+        size.selectedSegment = PixlScale.presets.firstIndex(of: settings.scale) ?? -1
         stack.addArrangedSubview(size)
+        stack.addArrangedSubview(label("Now \(PixlScale.label(settings.scale)). Or hover \(settings.name) and drag a corner.", Theme.mono(10), Theme.textMuted))
 
         stack.addArrangedSubview(section("BEHAVIOR"))
         let behavior = NSSegmentedControl(labels: ["Calm", "Roam"], trackingMode: .selectOne, target: self, action: #selector(behaviorChanged(_:)))
@@ -181,7 +182,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         onChange?(settings)
     }
 
-    @objc private func sizeChanged(_ s: NSSegmentedControl) { settings.scale = s.selectedSegment + 2; changed() }
+    @objc private func sizeChanged(_ s: NSSegmentedControl) { settings.scale = PixlScale.presets[max(0, s.selectedSegment)]; changed() }
     @objc private func behaviorChanged(_ c: NSSegmentedControl) { settings.roams = c.selectedSegment == 1; changed() }
     @objc private func perchChanged(_ b: NSButton) { settings.perchOnWindows = b.state == .on; changed() }
     @objc private func fullscreenChanged(_ b: NSButton) { settings.hideInFullscreen = b.state == .on; changed() }
