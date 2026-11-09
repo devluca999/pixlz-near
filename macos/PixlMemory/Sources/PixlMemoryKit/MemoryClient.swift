@@ -22,7 +22,7 @@ public struct MemoryClient: Sendable {
         return t
     }
 
-    func request(_ path: String, method: String = "GET", body: [String: String]? = nil) throws(MemoryError) -> URLRequest {
+    func request(_ path: String, method: String = "GET", body: [String: Any]? = nil) throws(MemoryError) -> URLRequest {
         var r = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         r.httpMethod = method
         r.timeoutInterval = 180  // attestation + inference + signature
@@ -61,9 +61,9 @@ public struct MemoryClient: Sendable {
         return st
     }
 
-    public func ask(_ question: String, name: String, personality: String) async throws(MemoryError) -> AskResult {
+    public func ask(_ question: String, name: String, personality: String, web: Bool = true) async throws(MemoryError) -> AskResult {
         let (data, status) = try await send(try request("/ask", method: "POST",
-                                                        body: ["question": question, "name": name, "personality": personality]))
+                                                        body: ["question": question, "name": name, "personality": personality, "web": web]))
         if status == 200 {
             do { return try JSONDecoder().decode(AskResult.self, from: data) } catch { throw .upstream("Unreadable reply from the service") }
         }
@@ -71,9 +71,10 @@ public struct MemoryClient: Sendable {
     }
 
     /// Saves a note (or an answer) into memory, encrypted like a highlight. No URL: it's yours.
-    public func saveNote(_ text: String, title: String?, folder: String?) async throws(MemoryError) -> HighlightItem {
+    public func saveNote(_ text: String, title: String?, folder: String?, url: String? = nil) async throws(MemoryError) -> HighlightItem {
         var body = ["text": text]
         if let title { body["title"] = title }
+        if let url { body["url"] = url }
         if let folder { body["folder"] = folder }
         let (d, s) = try await send(try request("/highlights", method: "POST", body: body))
         if (200..<300).contains(s), let h = try? JSONDecoder().decode(HighlightItem.self, from: d) { return h }

@@ -45,6 +45,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var menu = BubbleMenu(app: self)
     lazy var game = GameController(app: self)
     let bridge = BridgeServer()
+    lazy var intents = IntentRunner(app: self)
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
     lazy var presence = PresenceController(app: self)

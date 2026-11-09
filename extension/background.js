@@ -63,7 +63,29 @@ function readSelection() {
   };
 }
 
+/**
+ * Runs inside the page: a short description of it, for saving a page with nothing selected.
+ * Self-contained (serialized by executeScript).
+ */
+function readSummary() {
+  const meta = (n) => document.querySelector(`meta[name="${n}"],meta[property="${n}"]`)?.content?.trim();
+  const lead = [...document.querySelectorAll("article p, main p, p")].map((p) => p.innerText.trim()).find((t) => t.length > 80);
+  return (meta("og:description") || meta("description") || lead || "").slice(0, 600);
+}
+
 async function save(tab, fallbackText) {
+  const r = await saveFrom(tab, fallbackText);
+  if (r.ok) flash(tab.id, "✓", "#2f9e44", "Saved to Pixl Memory");
+  else flash(tab.id, r.error === "nothing selected" ? "?" : "!", r.error === "nothing selected" ? "#888" : "#e03131",
+             r.error === "nothing selected" ? "Select some text first" : `Not saved: ${r.error}`);
+}
+
+/**
+ * Saves the selection in `tab` with a text-fragment backlink. With `wholePage`, a page with
+ * nothing selected is saved too: its title, description and URL (the URL is the backlink).
+ * `note` (the user's words) goes in front. Returns { ok, text, url, title, link } or { ok: false, error }.
+ */
+export async function saveFrom(tab, fallbackText, { wholePage = false, note = null } = {}) {
   let sel = null;
   try {
     const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: readSelection });
@@ -71,11 +93,22 @@ async function save(tab, fallbackText) {
   } catch {
     // chrome:// pages, the PDF viewer, the Web Store: no script access. Save the plain text.
   }
-  const text = (sel?.text || fallbackText || "").trim();
-  if (!text) return flash(tab.id, "?", "#888", "Select some text first");
+  let text = (sel?.text || fallbackText || "").trim();
+  let pageOnly = false;
+  if (!text && wholePage && /^https?:/.test(tab.url || "")) {
+    let summary = "";
+    try {
+      const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: readSummary });
+      summary = res?.result || "";
+    } catch { /* no script access: title and link only */ }
+    text = [tab.title, summary].filter(Boolean).join(" — ") || tab.url;
+    pageOnly = true;
+  }
+  if (!text) return { ok: false, error: "nothing selected" };
+  if (note) text = `${note}\n\n${text}`;
 
   let fragmentUrl = null;
-  if (sel?.linkable && /^https?:/.test(tab.url || "")) {
+  if (!pageOnly && sel?.linkable && /^https?:/.test(tab.url || "")) {
     const firstWords = text.split(/\s+/).slice(0, 4).join(" ");
     fragmentUrl = buildFragmentUrl(tab.url, {
       text: sel.text,
@@ -91,9 +124,9 @@ async function save(tab, fallbackText) {
       body: { text, url: tab.url || null, title: tab.title || null, fragment_url: fragmentUrl,
               folder: (await chrome.storage.local.get("folder")).folder || null },
     });
-    flash(tab.id, "✓", "#2f9e44", "Saved to Pixl Memory");
+    return { ok: true, text, url: tab.url || null, title: tab.title || null, link: fragmentUrl || tab.url || null };
   } catch (e) {
-    flash(tab.id, "!", "#e03131", `Not saved: ${e.message}`);
+    return { ok: false, error: e.message };
   }
 }
 
@@ -125,3 +158,11 @@ async function inActiveTab(func, args = []) {
 
 onAppRequest("get_selection", () => inActiveTab(pageSelection));
 onAppRequest("replace_selection", (msg) => inActiveTab(pageReplace, [msg.original ?? "", msg.text ?? ""]));
+// "save this" said to the Pixl: the selection in the active tab, or the page itself, with a backlink.
+onAppRequest("save_page", async (msg) => {
+  const tab = await activeTab();
+  if (!tab?.id || !/^(https?|file):/.test(tab.url || "")) return { ok: false, error: "no web page in front" };
+  const r = await saveFrom(tab, null, { wholePage: true, note: msg.text || null });
+  if (r.ok) flash(tab.id, "✓", "#2f9e44", "Saved to Pixl Memory");
+  return r;
+});

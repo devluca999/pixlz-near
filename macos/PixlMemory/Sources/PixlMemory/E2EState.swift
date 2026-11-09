@@ -30,6 +30,10 @@ enum E2EState {
                     .map { l, i in l.onSelect?(l.rows[i]) }
                 case "ask": Debug.log("e2e: local answer: \(app.travel.localAnswer(info["q"] ?? "") ?? "(for the model)")")
                 case "callback": app.travel.callBack()
+                // types a question into the Ask card and presses return, as a person would
+                case "askcard":
+                    if app.menu.askCard == nil { app.menu.showAsk() }
+                    if let c = app.menu.askCard { c.input.stringValue = info["q"] ?? ""; c.submit() }
                 case "behavior": var s = app.settings; s.roams = info["value"] == "roam"; app.apply(s)
                 case "skin": var s = app.settings; s.skin = info["id"]; app.apply(s)
                 case "roam":

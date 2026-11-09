@@ -139,6 +139,12 @@ final class BridgeServer {
         }
     }
 
+    /// "Save this": the extension saves the active tab's selection (or the page) to memory with a
+    /// backlink, and replies with what it saved. `note` is the user's own words, kept in front.
+    func savePage(note: String?, completion: @escaping @MainActor (BridgeMessage?) -> Void) {
+        request(BridgeMessage(type: BridgeMessage.Kind.savePage, text: note), timeout: 5, completion: completion)
+    }
+
     /// Replaces `original` with `text` in the page, the way typing would (input events fire).
     func replace(original: String, with text: String, completion: @escaping @MainActor (Bool) -> Void) {
         request(BridgeMessage(type: BridgeMessage.Kind.replace, text: text, original: original), timeout: 2) { reply in

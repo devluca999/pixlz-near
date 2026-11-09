@@ -187,6 +187,26 @@ enum AX {
         return true
     }
 
+    /// The web page in an app's focused window (Chrome, Safari, Arc…): its address and title, read
+    /// from the page's AXWebArea. Read-only; nil when there's no page or the browser doesn't say.
+    static func webPage(pid: pid_t) -> (url: URL, title: String?)? {
+        guard let win = focusedWindow(pid: pid) else { return nil }
+        var queue: [AXUIElement] = [win], seen = 0
+        while !queue.isEmpty, seen < 1500 {
+            let el = queue.removeFirst(); seen += 1
+            if (attr(el, kAXRoleAttribute) as String?) == "AXWebArea" {
+                let url: URL? = (attr(el, kAXURLAttribute) as CFURL?).map { $0 as URL } ?? (attr(el, kAXURLAttribute) as String?).flatMap(URL.init(string:))
+                if let url, url.scheme == "http" || url.scheme == "https" {
+                    let title = (attr(el, kAXTitleAttribute) as String?).flatMap { $0.isEmpty ? nil : $0 } ?? attr(win, kAXTitleAttribute)
+                    return (url, title)
+                }
+                continue   // a page's own frames don't hold another top-level page
+            }
+            if let kids: [AXUIElement] = attr(el, kAXChildrenAttribute) { queue.append(contentsOf: kids) }
+        }
+        return nil
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

@@ -514,7 +514,7 @@ public final class AskCard: PixlCard {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func submit() {
+    public func submit() {
         let q = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         lastQuestion = q
@@ -530,8 +530,28 @@ public final class AskCard: PixlCard {
     public var onHandOff: ((String) -> Void)?
     var lastQuestion = ""
 
+    /// The model's light markdown (bold, italics, code, links) as styled text; the rest stays as written.
+    static func styled(_ text: String, font: NSFont, color: NSColor) -> NSAttributedString {
+        let md = text.replacingOccurrences(of: #"(?m)^(\s*)[-*] "#, with: "$1• ", options: .regularExpression)
+        guard let a = try? AttributedString(markdown: md, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return NSAttributedString(string: md, attributes: [.font: font, .foregroundColor: color])
+        }
+        let out = NSMutableAttributedString()
+        for run in a.runs {
+            let piece = String(a[run.range].characters)
+            var f = font
+            if let i = run.inlinePresentationIntent {
+                if i.contains(.stronglyEmphasized) { f = NSFontManager.shared.convert(f, toHaveTrait: .boldFontMask) }
+                if i.contains(.emphasized) { f = NSFontManager.shared.convert(f, toHaveTrait: .italicFontMask) }
+                if i.contains(.code) { f = .monospacedSystemFont(ofSize: font.pointSize - 1, weight: .regular) }
+            }
+            out.append(NSAttributedString(string: piece, attributes: [.font: f, .foregroundColor: color]))
+        }
+        return out
+    }
+
     public func show(_ r: AskResult) {
-        answer.stringValue = r.answer
+        answer.attributedStringValue = Self.styled(r.answer, font: answer.font ?? .systemFont(ofSize: 13.5), color: tokens.text)
         answer.isHidden = false
         let saveB = PixelButton(title: "Save answer", style: .secondary) { [weak self] in
             guard let self else { return }
@@ -544,7 +564,8 @@ public final class AskCard: PixlCard {
         // the verdict sits under the answer (the footer is for the buttons)
         sources.forEach { $0.removeFromSuperview() }
         sources = []
-        let verdict = text((v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge)" + (v.checks.isEmpty ? "" : " · \(v.passed)/\(v.checks.count) checks") + (r.receipt.map { " · " + $0.bubble } ?? ""),
+        let verdict = text((v.verdict == "verified" ? "✔ " : "! ") + "\(v.badge)" + (v.checks.isEmpty ? "" : " · \(v.passed)/\(v.checks.count) checks")
+                           + (r.searched == true ? " · searched the web" : "") + (r.receipt.map { " · " + $0.bubble } ?? ""),
                            size: 10, weight: .bold, mono: true)
         verdict.textColor = v.verdict == "verified" ? Theme.verified : v.verdict == "partial" ? Theme.partial : Theme.failed
         stack.addArrangedSubview(verdict)
@@ -563,15 +584,43 @@ public final class AskCard: PixlCard {
                 sources.append(row)
             }
         }
+        // what a web search found (the search itself ran at NEAR AI; the query went to its search provider)
+        if let web = r.webSources, !web.isEmpty {
+            let cap = caption("FROM THE WEB", look: look)
+            stack.addArrangedSubview(cap)
+            sources.append(cap)
+            for w in web.prefix(3) {
+                let host = URL(string: w.url)?.host?.replacingOccurrences(of: "www.", with: "") ?? w.url
+                let row = HighlightRow(snippet: w.title, source: host, look: look, width: inner) { [weak self] in
+                    if let u = URL(string: w.url) { Debug.log("ask: open web source"); self?.onOpenURL?(u) }
+                }
+                stack.addArrangedSubview(row)
+                sources.append(row)
+            }
+        }
         fit()
     }
 
-    /// An answer the Mac knew itself (screens, devices, "jump to…"): no model, nothing sent.
-    public func showLocal(_ text: String) {
+    /// An answer the Mac knew itself (screens, devices, "jump to…", opening apps and sites, saving
+    /// the page): no model, nothing sent. `saved` shows what went into memory, with its backlink.
+    public func showLocal(_ text: String, saved: HighlightItem? = nil, note: String = "answered on this Mac · nothing sent") {
+        sources.forEach { $0.removeFromSuperview() }
+        sources = []
         answer.stringValue = text
         answer.isHidden = false
-        hint.stringValue = "answered on this Mac · nothing sent"
+        hint.stringValue = note
         hint.textColor = tokens.text2
+        if let h = saved {
+            let cap = caption("SAVED TO MEMORY", look: look)
+            stack.addArrangedSubview(cap)
+            sources.append(cap)
+            let source = h.title ?? h.url.flatMap { URL(string: $0)?.host } ?? "Saved text"
+            let row = HighlightRow(snippet: h.text.count > 140 ? String(h.text.prefix(140)) + "…" : h.text, source: source, look: look, width: inner) { [weak self] in
+                if let link = h.link { Debug.log("ask: open saved backlink"); self?.onOpenURL?(link) }
+            }
+            stack.addArrangedSubview(row)
+            sources.append(row)
+        }
         fit()
     }
 

@@ -199,4 +199,16 @@ public struct AskResult: Codable, Sendable, Equatable {
     public let receipt: Receipt?
     /// Saved highlights that matched the question and went along as context, with backlinks.
     public let highlights: [HighlightItem]?
+    /// True when the model searched the web (NEAR AI web search) for this answer.
+    public var searched: Bool? = nil
+    /// The pages that search returned.
+    public var webSources: [WebSource]? = nil
+    enum CodingKeys: String, CodingKey { case answer, verification, receipt, highlights, searched, webSources = "web_sources" }
+}
+
+/// A page a web search returned for an answer.
+public struct WebSource: Codable, Sendable, Equatable {
+    public let title: String
+    public let url: String
+    public init(title: String, url: String) { self.title = title; self.url = url }
 }

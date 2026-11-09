@@ -141,6 +141,16 @@ final class TravelController {
         return displays + peers.map { ($0.deviceName, Place.device($0)) }
     }
 
+    /// True when `target` names a display or a nearby device ("the left screen", "my phone"), so
+    /// "go to …" means a hop, not a website.
+    func knowsPlace(_ target: String) -> Bool {
+        let t = target.lowercased()
+        if (t.contains("left") || t.contains("right")) && NSScreen.screens.count > 1 { return true }
+        if t.range(of: #"\b(screen|display|monitor|phone|iphone|ipad|device)\b"#, options: .regularExpression) != nil { return true }
+        let words = t.split(separator: " ").map(String.init)
+        return places().contains { p in let n = p.0.lowercased(); return n.contains(t) || words.contains { $0.count > 2 && n.contains($0) } }
+    }
+
     /// Answers questions about screens and devices, and "jump/go to <place>", without sending
     /// anything anywhere. Nil when it's a question for the model.
     func localAnswer(_ q: String) -> String? {

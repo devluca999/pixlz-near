@@ -310,11 +310,20 @@ final class BubbleMenu {
         let h = content.frame.height + card.shadowInsetPublic
         card.setFrameSize(NSSize(width: card.frame.width, height: h))
         p.setContentSize(card.frame.size)
-        p.setFrameTopLeftPoint(NSPoint(x: p.frame.minX, y: top))
+        // grow downward, but never off the screen: a long answer moves the card up instead
+        var y = top
+        if let vis = (p.screen ?? NSScreen.main)?.visibleFrame {
+            y = min(max(top, vis.minY + p.frame.height), vis.maxY)
+        }
+        p.setFrameTopLeftPoint(NSPoint(x: p.frame.minX, y: y))
     }
+
+    /// The open Ask card (debug commands type into it).
+    weak var askCard: AskCard?
 
     func showAsk() {
         let card = AskCard(placeholder: ui.askPlaceholder, look: cardLook)
+        askCard = card
         card.fit()
         card.onClose = { [weak self] in self?.closeCard() }
         card.onOpenURL = { NSWorkspace.shared.open($0) }  // the text-fragment link reopens the passage, highlighted
@@ -332,6 +341,15 @@ final class BubbleMenu {
         }
         card.onAsk = { [weak self, weak card] q in
             guard let self, let card else { return }
+            // "open Spotify", "go to github.com", "save this": done on the Mac, no model
+            let front = self.previousApp ?? NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
+            let handled = self.app.intents.run(q, front: front) { [weak self, weak card] said, saved in
+                guard let self, let card else { return }
+                card.showLocal(said, saved: saved, note: saved != nil ? "saved on this Mac · no model" : "done on this Mac · nothing sent")
+                self.app.show(saved != nil ? "emotion_proud" : "emotion_happy", for: 2)
+                self.resizeCard(card)
+            }
+            if handled { return }
             // screens, devices, "jump to …": answered on the Mac, nothing sent anywhere
             if let local = self.app.travel.localAnswer(q) {
                 Debug.log("ask: answered locally")

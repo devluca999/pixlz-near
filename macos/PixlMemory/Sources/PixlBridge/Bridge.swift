@@ -59,13 +59,15 @@ public struct BridgeMessage: Codable, Equatable, Sendable {
     public var url: String?
     public var title: String?
     public var app: String?
+    /// saved (extension → app): the backlink to what was saved
+    public var link: String?
 
     public init(id: String? = nil, type: String, method: String? = nil, path: String? = nil, body: JSONValue? = nil,
                 ok: Bool? = nil, status: Int? = nil, error: String? = nil, text: String? = nil, original: String? = nil,
-                url: String? = nil, title: String? = nil, app: String? = nil) {
+                url: String? = nil, title: String? = nil, app: String? = nil, link: String? = nil) {
         self.id = id; self.type = type; self.method = method; self.path = path; self.body = body
         self.ok = ok; self.status = status; self.error = error; self.text = text; self.original = original
-        self.url = url; self.title = title; self.app = app
+        self.url = url; self.title = title; self.app = app; self.link = link
     }
 
     /// Message types.
@@ -77,6 +79,8 @@ public struct BridgeMessage: Codable, Equatable, Sendable {
         public static let selection = "selection"        // extension → app
         public static let replace = "replace_selection"  // app → extension
         public static let replaced = "replaced"          // extension → app
+        public static let savePage = "save_page"         // app → extension: save the active tab ("save this")
+        public static let saved = "saved"                // extension → app
         public static let status = "status"              // host → extension: is the app connected?
     }
 }

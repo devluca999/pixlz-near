@@ -383,6 +383,29 @@ MainActor.assumeIsolated {
         } catch { print("error: \(error)"); exit(1) }
         exit(0)
     }
+    // The Ask card with a real reply: --ask <out.png> <question> <reply.json | "local:<what it said>">
+    // (a saved item for "save this" comes as a third piece: local:<said>|<title>|<url>|<text>)
+    if CommandLine.arguments.count == 5, CommandLine.arguments[1] == "--ask" {
+        do {
+            let a = CommandLine.arguments
+            let look = SurfaceView.Look.text(designFill: 0.26, prefersDark: true, glass: false)
+            let card = AskCard(placeholder: PixlData.ui.askPlaceholder, look: look)
+            card.input.stringValue = a[3]
+            if a[4].hasPrefix("local:") {
+                let parts = String(a[4].dropFirst(6)).components(separatedBy: "|")
+                let saved = parts.count >= 4 ? HighlightItem(id: "", text: parts[3], url: parts[2], title: parts[1], fragmentUrl: nil) : nil
+                card.showLocal(parts[0], saved: saved, note: saved != nil ? "saved on this Mac · no model" : "done on this Mac · nothing sent")
+            } else {
+                card.show(try JSONDecoder().decode(AskResult.self, from: Data(contentsOf: URL(fileURLWithPath: a[4]))))
+            }
+            card.fit()
+            let c = SurfaceView.card(card, look: look)
+            let bg = Canvas(NSSize(width: c.frame.width + 32, height: c.frame.height + 32), fill: NSColor(srgbRed: 0.10, green: 0.11, blue: 0.14, alpha: 1))
+            c.frame.origin = NSPoint(x: 16, y: 16); bg.addSubview(c)
+            try png(bg, a[2])
+        } catch { print("error: \(error)"); exit(1) }
+        exit(0)
+    }
     if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--icon" {
         do { try renderIcon(CommandLine.arguments[2]) } catch { print("error: \(error)"); exit(1) }
         exit(0)

@@ -47,7 +47,8 @@ export function connect() {
     } catch (e) {
       reply = { ok: false, error: String(e?.message || e) };
     }
-    port?.postMessage({ id: msg.id, type: msg.type === "get_selection" ? "selection" : "replaced", ...reply });
+    const replyType = { get_selection: "selection", replace_selection: "replaced", save_page: "saved" }[msg.type] || "reply";
+    port?.postMessage({ id: msg.id, type: replyType, ...reply });
   });
   port.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError?.message || "";
