@@ -1417,10 +1417,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Accent.color.setFill(); NSRect(x: 2, y: 0, width: r.width - 4, height: 2).fill()
             (text as NSString).draw(at: NSPoint(x: 8, y: 4), withAttributes: [.font: font, .foregroundColor: Theme.paper])
         }
-        let f = froggPanel.frame
-        let top = f.minY + FroggArt.shared.size(frogg.frameName).height * scale + 6
-        let r = Placement.fit(CGRect(x: f.midX - w / 2, y: top, width: w, height: h), in: froggScreen, margin: 4)
-        tip.setFrameOrigin(r.origin)
+        tip.setFrameOrigin(Placement.beside(pet: petRect, size: CGSize(width: w, height: h), in: froggScreen, gap: 6).origin)
         tip.orderFrontRegardless()
         statusTip = tip
         Debug.log("status: \(text)")
@@ -1478,13 +1475,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func positionBubble() {
         guard let froggPanel, let frogg else { return }
+        _ = frogg
+        bubblePanel.setFrameOrigin(Placement.beside(pet: petRect, size: bubblePanel.frame.size, in: froggScreen, gap: 2).origin)
+    }
+
+    /// The box the Pixl covers on screen (AppKit coordinates): standing, its frame's art box
+    /// (stretched by a squash); on a wall, the ceiling or around a corner, the drawn pose's box.
+    var petRect: CGRect {
+        guard let froggPanel, let frogg else { return .zero }
         let f = froggPanel.frame
-        let s = bubblePanel.frame.size
-        let headTop = f.minY + FroggArt.shared.size(frogg.frameName).height * scale
-        let screen = froggScreen
-        var r = CGRect(x: f.midX - s.width / 2, y: headTop + 2, width: s.width, height: s.height)
-        if r.maxY > screen.maxY - 4 { r.origin.y = f.minY - s.height }  // no room above: say it below
-        bubblePanel.setFrameOrigin(Placement.fit(r, in: screen, margin: 4).origin)
+        if frogg.surface == .floor, !frogg.drawn.anchored, frogg.turns == 0 {
+            let art = FroggArt.shared.size(frogg.frameName)
+            let w = art.width * scale * max(1, frogg.squash.width), h = art.height * scale * max(1, frogg.squash.height)
+            return CGRect(x: f.midX - w / 2, y: f.minY, width: w, height: h)
+        }
+        // turned or anchored poses are drawn about the panel's middle: their art, either way round
+        let art = FroggArt.shared.size(frogg.drawn.name)
+        let side = max(art.width, art.height) * scale
+        return CGRect(x: f.midX - side / 2, y: f.midY - side / 2, width: side, height: side)
     }
 
     /// ⌃⌥Space: ask your Pixl something, wherever you are.
