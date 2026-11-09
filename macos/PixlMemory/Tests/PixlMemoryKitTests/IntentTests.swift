@@ -40,7 +40,7 @@ import Testing
         #expect(PixlIntent.parse("google glass frogs") == .searchInBrowser("glass frogs"))
     }
 
-    @Test(arguments: ["tell me a joke", "what's the weather in Lisbon?", "What did I save about tree frogs?", "how do frogs breathe",
+    @Test(arguments: ["tell me a joke", "what's the weather in Lisbon?", "how do frogs breathe",
                       "open my notes and find the bit about frogs that I liked", "Is it raining?", "who won the game last night"])
     func everythingElseIsAQuestion(_ q: String) {
         #expect(PixlIntent.parse(q) == .ask(q))

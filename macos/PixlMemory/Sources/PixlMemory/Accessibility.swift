@@ -207,6 +207,67 @@ enum AX {
         return nil
     }
 
+    /// The readable text of the page in a browser's front window, as blocks in reading order
+    /// (each paragraph, heading or list item its own block), read through Accessibility. Capped
+    /// in nodes and time: this runs only when asked ("save the part about …").
+    static func pageText(pid: pid_t, maxNodes: Int = 6000, seconds: TimeInterval = 1.5) -> (url: URL, title: String?, blocks: [String])? {
+        guard let win = focusedWindow(pid: pid) else { Debug.log("page text: no focused window"); return nil }
+        var queue: [AXUIElement] = [win], seen = 0
+        var area: AXUIElement?
+        while !queue.isEmpty, seen < 1500, area == nil {
+            let el = queue.removeFirst(); seen += 1
+            if (attr(el, kAXRoleAttribute) as String?) == "AXWebArea" { area = el; break }
+            if let kids: [AXUIElement] = attr(el, kAXChildrenAttribute) { queue.append(contentsOf: kids) }
+        }
+        Debug.log("page text: window yes, web area \(area != nil) after \(seen) nodes")
+        guard let area else { return nil }
+        let url: URL? = (attr(area, kAXURLAttribute) as CFURL?).map { $0 as URL } ?? (attr(area, kAXURLAttribute) as String?).flatMap(URL.init(string:))
+        guard let url, url.scheme == "http" || url.scheme == "https" else { Debug.log("page text: no address (\(url?.scheme ?? "nil"))"); return nil }
+        let title = (attr(area, kAXTitleAttribute) as String?).flatMap { $0.isEmpty ? nil : $0 } ?? attr(win, kAXTitleAttribute)
+
+        // depth first, in order; each text run is tagged with the block (paragraph, heading…) it sits in
+        let inline: Set<String> = ["AXStaticText", "AXLink", "AXImage"]
+        let skip: Set<String> = ["AXButton", "AXTextField", "AXTextArea", "AXPopUpButton", "AXMenuButton", "AXCheckBox", "AXRadioButton"]
+        let deadline = Date().addingTimeInterval(seconds)
+        var runs: [(block: Int, text: String)] = []
+        var nodes = 0, nextBlock = 0
+        func walk(_ el: AXUIElement, block: Int) {
+            guard nodes < maxNodes, Date() < deadline else { return }
+            nodes += 1
+            let role: String = attr(el, kAXRoleAttribute) ?? ""
+            if skip.contains(role) { return }
+            if role == "AXStaticText" {
+                if let v: String = attr(el, kAXValueAttribute), !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { runs.append((block, v)) }
+                return
+            }
+            var b = block
+            if !inline.contains(role) { nextBlock += 1; b = nextBlock }
+            for k in (attr(el, kAXChildrenAttribute) as [AXUIElement]?) ?? [] { walk(k, block: b) }
+        }
+        walk(area, block: 0)
+        return (url, title, Self.joinRuns(runs))
+    }
+
+    /// Text runs → blocks: runs in the same block join; a run that carries on a sentence (starts in
+    /// lower case or with punctuation, after an inline <em> or <code>) joins the one before it.
+    nonisolated static func joinRuns(_ runs: [(block: Int, text: String)]) -> [String] {
+        var blocks: [String] = []
+        var last = -1
+        for r in runs {
+            let t = r.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            let continues = t.first.map { $0.isLowercase || ",.;:)!?’'".contains($0) } ?? false
+            if !blocks.isEmpty, r.block == last || (continues && !(blocks.last!.hasSuffix(".") || blocks.last!.hasSuffix("?"))) {
+                let prev = blocks.removeLast()
+                let glue = prev.hasSuffix(" ") || t.hasPrefix(" ") || (t.first.map { ",.;:)!?".contains($0) } ?? false) ? "" : " "
+                blocks.append(prev + glue + t)
+            } else {
+                blocks.append(t)
+            }
+            last = r.block
+        }
+        return blocks.map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.count > 1 }
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

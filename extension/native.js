@@ -47,7 +47,7 @@ export function connect() {
     } catch (e) {
       reply = { ok: false, error: String(e?.message || e) };
     }
-    const replyType = { get_selection: "selection", replace_selection: "replaced", save_page: "saved" }[msg.type] || "reply";
+    const replyType = { get_selection: "selection", replace_selection: "replaced", save_page: "saved", page_text: "page" }[msg.type] || "reply";
     port?.postMessage({ id: msg.id, type: replyType, ...reply });
   });
   port.onDisconnect.addListener(() => {

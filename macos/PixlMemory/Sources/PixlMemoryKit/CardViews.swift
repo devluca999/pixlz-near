@@ -604,16 +604,31 @@ public final class AskCard: PixlCard {
     /// An answer the Mac knew itself (screens, devices, "jump to…", opening apps and sites, saving
     /// the page): no model, nothing sent. `saved` shows what went into memory, with its backlink.
     public func showLocal(_ text: String, saved: HighlightItem? = nil, note: String = "answered on this Mac · nothing sent") {
+        showLocal(text, saved: saved.map { [$0] } ?? [], note: note)
+    }
+
+    /// While a request takes a moment: a status line in the hint.
+    public func showProgress(_ text: String) {
+        hint.stringValue = text
+        hint.textColor = tokens.text2
+        fit()
+    }
+
+    /// `saved`: what went into memory (or was found there, under `caption`), each with its backlink.
+    public func showLocal(_ text: String, saved: [HighlightItem], caption title: String = "SAVED TO MEMORY",
+                          note: String = "answered on this Mac · nothing sent") {
         sources.forEach { $0.removeFromSuperview() }
         sources = []
         answer.stringValue = text
         answer.isHidden = false
         hint.stringValue = note
         hint.textColor = tokens.text2
-        if let h = saved {
-            let cap = caption("SAVED TO MEMORY", look: look)
+        if !saved.isEmpty {
+            let cap = caption(title, look: look)
             stack.addArrangedSubview(cap)
             sources.append(cap)
+        }
+        for h in saved {
             let source = h.title ?? h.url.flatMap { URL(string: $0)?.host } ?? "Saved text"
             let row = HighlightRow(snippet: h.text.count > 140 ? String(h.text.prefix(140)) + "…" : h.text, source: source, look: look, width: inner) { [weak self] in
                 if let link = h.link { Debug.log("ask: open saved backlink"); self?.onOpenURL?(link) }

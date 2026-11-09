@@ -145,6 +145,14 @@ final class BridgeServer {
         request(BridgeMessage(type: BridgeMessage.Kind.savePage, text: note), timeout: 5, completion: completion)
     }
 
+    /// The active tab's readable text (paragraphs, headings, list items), for finding a passage.
+    func pageText(completion: @escaping @MainActor (_ url: URL?, _ title: String?, _ blocks: [String]) -> Void) {
+        request(BridgeMessage(type: BridgeMessage.Kind.pageText), timeout: 3) { reply in
+            guard let r = reply, r.ok == true else { completion(nil, nil, []); return }
+            completion(r.url.flatMap(URL.init(string:)), r.title, (r.text ?? "").components(separatedBy: "\n\n").filter { !$0.isEmpty })
+        }
+    }
+
     /// Replaces `original` with `text` in the page, the way typing would (input events fire).
     func replace(original: String, with text: String, completion: @escaping @MainActor (Bool) -> Void) {
         request(BridgeMessage(type: BridgeMessage.Kind.replace, text: text, original: original), timeout: 2) { reply in

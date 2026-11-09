@@ -158,7 +158,30 @@ async function inActiveTab(func, args = []) {
 
 onAppRequest("get_selection", () => inActiveTab(pageSelection));
 onAppRequest("replace_selection", (msg) => inActiveTab(pageReplace, [msg.original ?? "", msg.text ?? ""]));
+/**
+ * Runs inside the page: its readable text as blocks (headings, paragraphs, list items) in reading
+ * order, so the Pixl can find "the part about …". Self-contained (serialized by executeScript).
+ */
+export function pageBlocks() {
+  const root = document.querySelector("article, main, [role=main]") || document.body;
+  if (!root) return { ok: false, error: "empty page" };
+  const sel = "h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,dd,dt,figcaption,td";
+  const blocks = [];
+  let size = 0;
+  for (const el of root.querySelectorAll(sel)) {
+    if (el.querySelector(sel)) continue;            // a list item holding paragraphs: take the paragraphs
+    if (el.closest("nav, footer, aside, [aria-hidden=true]")) continue;
+    const t = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (t.length < 2) continue;
+    blocks.push(t);
+    size += t.length;
+    if (size > 300000) break;
+  }
+  return { ok: blocks.length > 0, text: blocks.join("\n\n"), error: blocks.length ? undefined : "no readable text" };
+}
+
 // "save this" said to the Pixl: the selection in the active tab, or the page itself, with a backlink.
+onAppRequest("page_text", () => inActiveTab(pageBlocks));
 onAppRequest("save_page", async (msg) => {
   const tab = await activeTab();
   if (!tab?.id || !/^(https?|file):/.test(tab.url || "")) return { ok: false, error: "no web page in front" };

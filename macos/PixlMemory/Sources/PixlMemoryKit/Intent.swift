@@ -14,10 +14,18 @@ public enum PixlIntent: Equatable, Sendable {
     case searchInBrowser(String)
     /// Save the page in front (its selection if there is one) to memory, with a backlink.
     case savePage(note: String?)
+    /// Save the passage of the page in front that's about a topic, linked to that exact spot.
+    case savePart(about: String)
+    /// Open a page (an `.open` or `.openURL`), wait for it, then save the part about a topic.
+    indirect case openAndSavePart(open: PixlIntent, about: String)
+    /// Find what the user saved about a topic ("" = the latest saves). Read locally.
+    case recall(String)
     /// Anything else: a question for Ask.
     case ask(String)
 
-    public static func parse(_ raw: String) -> PixlIntent {
+    public static func parse(_ raw: String) -> PixlIntent { parse(raw, inCompound: false) }
+
+    static func parse(_ raw: String, inCompound: Bool) -> PixlIntent {
         let original = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         var s = original.lowercased()
         s = s.replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)
@@ -27,6 +35,34 @@ public enum PixlIntent: Equatable, Sendable {
         s = s.replacingOccurrences(of: #"\s+(please|pls|for me|real quick|now)$"#, with: "", options: .regularExpression)
         s = s.trimmingCharacters(in: .whitespaces)
 
+        // "go to <page> and save the part about <topic>": two steps, one request
+        if !inCompound, let m = s.firstMatch(#"^(.+?)\s*,?\s+(and|then|and then)\s+((save|clip|grab|keep|remember|store|copy)\s+.+)$"#) {
+            let first = parse(Self.keepCase(m[1], from: original), inCompound: true)
+            let second = parse(Self.keepCase(m[3], from: original), inCompound: true)
+            if case .savePart(let about) = second {
+                switch first {
+                case .open, .openURL: return .openAndSavePart(open: first, about: about)
+                default: break
+                }
+            }
+        }
+        // what did I save about X
+        let recallPatterns = [
+            #"^(what|which)\s+(did|have)\s+i\s+(saved|save|clipped|clip|kept|keep|stored|store|bookmarked|bookmark)(\s+(about|on|regarding|for|from))?\s*(?<t>.*)$"#,
+            #"^did\s+i\s+(save|clip|keep|store|bookmark)\s+anything\s+(about|on|regarding|from)\s+(?<t>.+)$"#,
+            #"^(find|show|show me|search|search for|get|list|look in|look through|check)\s+(me\s+)?(my|the)\s+(notes|saves|saved stuff|saved things|saved notes|highlights|clips|bookmarks|memory)(\s+(about|on|for|regarding|from|that mention))?\s*(?<t>.*)$"#,
+            #"^(my\s+)?(notes|saves|highlights)\s+(about|on|regarding)\s+(?<t>.+)$"#,
+        ]
+        for p in recallPatterns {
+            if let re = try? NSRegularExpression(pattern: p), let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+               let r = Range(m.range(withName: "t"), in: s) {
+                return .recall(Self.keepCase(String(s[r]).trimmingCharacters(in: .whitespaces), from: original))
+            }
+        }
+        // save the part about X (before "save this": "save the …" would match that)
+        if let m = s.firstMatch(#"^(save|clip|grab|keep|remember|store|bookmark|copy)\s+(the\s+|a\s+)?(part|parts|bit|bits|section|paragraph|passage|piece|stuff|lines?|sentences?|quote|info|information|what (it|they|this|this page|the page|the article) says?)\s+(about|on|regarding|that talks about|where it talks about|where they talk about|that mentions|mentioning|explaining|that explains|describing|on how|of)\s+(.+)$"#) {
+            return .savePart(about: Self.keepCase(m[6], from: original))
+        }
         // save the page in front
         if let m = s.firstMatch(#"^(save|remember|bookmark|keep|store|clip)\s+(this|that|it|the|this page|this article|this tab|this link|this site|a reference|a note|this reference)\b(.*)$"#) {
             let rest = m[3].trimmingCharacters(in: .whitespaces)
@@ -55,12 +91,25 @@ public enum PixlIntent: Equatable, Sendable {
                 .replacingOccurrences(of: #"\s+(app|application)$"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
             guard !target.isEmpty else { return .ask(original) }
-            if let url = Self.webAddress(target) { return .openURL(url) }
-            // "open my notes and …" or a long phrase: a question, not an app name
-            if target.split(separator: " ").count > 3 { return .ask(original) }
+            if let url = Self.webAddress(Self.keepCase(target, from: original)) { return .openURL(url) }
+            if let url = Self.wikipedia(target, original: original) { return .openURL(url) }
+            // a long phrase: a question, not an app name (in "go to … and save …" it's a page to find)
+            if target.split(separator: " ").count > 3 {
+                return inCompound ? .open(name: Self.keepCase(target, from: original), web: nil, preferWeb: true) : .ask(original)
+            }
             return .open(name: Self.keepCase(target, from: original), web: Self.knownSites[target], preferWeb: preferWeb)
         }
         return .ask(original)
+    }
+
+    /// "the wikipedia page for glass frogs", "glass frogs on wikipedia" → Wikipedia's article for it.
+    static func wikipedia(_ target: String, original: String) -> URL? {
+        let topic = target.firstMatch(#"^(the\s+)?wikipedia(\s+(page|article|entry))?\s+(for|on|about|of)\s+(.+)$"#)?[5]
+            ?? target.firstMatch(#"^(the\s+)?(.+?)\s+(page\s+|article\s+)?(on|from)\s+wikipedia$"#)?[2]
+        guard let topic, !topic.isEmpty else { return nil }
+        var c = URLComponents(string: "https://en.wikipedia.org/w/index.php")!
+        c.queryItems = [URLQueryItem(name: "search", value: keepCase(topic, from: original)), URLQueryItem(name: "go", value: "Go")]
+        return c.url
     }
 
     /// "spotify.com", "https://x.com/foo", "news.ycombinator.com" → a URL; a plain word → nil.
@@ -68,7 +117,7 @@ public enum PixlIntent: Equatable, Sendable {
         let t = s.trimmingCharacters(in: .whitespaces)
         guard !t.contains(" ") else { return nil }
         if t.hasPrefix("http://") || t.hasPrefix("https://") { return URL(string: t) }
-        guard t.range(of: #"^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|ai|app|dev|co|edu|gov|me|tv|fm|xyz|news|uk|de|fr|ca|us)(/\S*)?$"#, options: .regularExpression) != nil else { return nil }
+        guard t.range(of: #"^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|ai|app|dev|co|edu|gov|me|tv|fm|xyz|news|uk|de|fr|ca|us)(/\S*)?$"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
         return URL(string: "https://" + t)
     }
 

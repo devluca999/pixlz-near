@@ -72,6 +72,8 @@ public struct BridgeMessage: Codable, Equatable, Sendable {
 
     /// Message types.
     public enum Kind {
+        public static let pageText = "page_text"       // app → extension: the active tab's text blocks
+        public static let page = "page"                // extension → app: text = blocks joined by blank lines
         public static let api = "api"                    // extension → host: call the service
         public static let apiResult = "api_result"       // host → extension
         public static let hello = "hello"                // extension → host → app: a browser is connected

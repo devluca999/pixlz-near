@@ -71,8 +71,9 @@ public struct MemoryClient: Sendable {
     }
 
     /// Saves a note (or an answer) into memory, encrypted like a highlight. No URL: it's yours.
-    public func saveNote(_ text: String, title: String?, folder: String?, url: String? = nil) async throws(MemoryError) -> HighlightItem {
+    public func saveNote(_ text: String, title: String?, folder: String?, url: String? = nil, fragmentURL: String? = nil) async throws(MemoryError) -> HighlightItem {
         var body = ["text": text]
+        if let fragmentURL { body["fragment_url"] = fragmentURL }
         if let title { body["title"] = title }
         if let url { body["url"] = url }
         if let folder { body["folder"] = folder }

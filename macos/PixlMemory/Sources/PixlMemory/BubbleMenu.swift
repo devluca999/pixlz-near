@@ -21,7 +21,19 @@ final class BubbleMenu {
     /// Bumped whenever a card opens or closes, so a slow fetch never pops up a stale card.
     var cardGen = 0
 
-    init(app: AppController) { self.app = app }
+    /// The last app the user switched to that isn't the Pixl: the "page in front" for "save this",
+    /// even when the Ask card stayed open while they moved to another window.
+    var lastOtherApp: NSRunningApplication?
+
+    init(app: AppController) {
+        self.app = app
+        let ws = NSWorkspace.shared
+        lastOtherApp = ws.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
+        ws.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
+            let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { if let a, a != .current { self?.lastOtherApp = a } }
+        }
+    }
 
     var isOpen: Bool { view.map { $0.phase != .closed } ?? false }
     var isAnimating: Bool { view?.isAnimating ?? false }
@@ -342,11 +354,18 @@ final class BubbleMenu {
         card.onAsk = { [weak self, weak card] q in
             guard let self, let card else { return }
             // "open Spotify", "go to github.com", "save this": done on the Mac, no model
-            let front = self.previousApp ?? NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
-            let handled = self.app.intents.run(q, front: front) { [weak self, weak card] said, saved in
+            let front = self.lastOtherApp ?? self.previousApp
+            self.app.intents.progress = { [weak self, weak card] text in
                 guard let self, let card else { return }
-                card.showLocal(said, saved: saved, note: saved != nil ? "saved on this Mac · no model" : "done on this Mac · nothing sent")
-                self.app.show(saved != nil ? "emotion_proud" : "emotion_happy", for: 2)
+                card.showProgress(text)
+                self.resizeCard(card)
+            }
+            let handled = self.app.intents.run(q, front: front) { [weak self, weak card] r in
+                guard let self, let card else { return }
+                let saved = !r.items.isEmpty && !r.found
+                card.showLocal(r.said, saved: r.items, caption: r.found ? "FROM YOUR NOTES" : "SAVED TO MEMORY",
+                               note: saved ? "saved on this Mac · no model" : r.found ? "found on this Mac · nothing sent" : "done on this Mac · nothing sent")
+                self.app.show(saved ? "emotion_proud" : "emotion_happy", for: 2)
                 self.resizeCard(card)
             }
             if handled { return }
