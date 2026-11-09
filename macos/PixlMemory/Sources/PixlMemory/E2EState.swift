@@ -34,6 +34,7 @@ enum E2EState {
                 case "roam": app.roam.quietUntil = .distantPast; app.roam.go(info["kind"] == "pond" ? .pond(5) : nil, debug: true)
                 case "game": app.game.start()
                 case "adjust": app.resizer.beginAdjust()
+                case "voice": app.chatter(info["text"] ?? "Hello!")
                 case "finish": app.resizer.finish()
                 default: break
                 }

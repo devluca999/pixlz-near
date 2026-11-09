@@ -764,7 +764,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         roam.poked()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
-            say(PixlVoice.busy(name: settings.name, ui: ui, species: PixlSkins.current.manifest.species), for: 2)
+            voice(PixlVoice.busy(name: settings.name, ui: ui, species: PixlSkins.current.manifest.species), for: 2)
         } else {
             play(.poke)
         }
@@ -1124,7 +1124,59 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The Pixl's own chatter (greetings, grumbles, moods), in its voice: Boo only says "…".
     func chatter(_ text: String, for seconds: TimeInterval = 2.5) {
-        say(PixlVoice.chatter(text, ui: ui), for: seconds)
+        voice(PixlVoice.chatter(text, ui: ui), for: seconds)
+    }
+
+    /// Says a line of chatter: in a speech bubble, or for a shy Pixl (Boo) just dots floating by
+    /// its head, no bubble.
+    func voice(_ line: String, for seconds: TimeInterval = 2.5) {
+        if ui.shy == true { murmur(line) } else { say(line, for: seconds) }
+    }
+
+    var murmurPanel: PropPanel?
+
+    /// Boo's "…": pixel dots that pop in one by one beside its head, drift up a little and fade.
+    func murmur(_ line: String) {
+        guard !userHidden, let froggPanel, let frogg else { return }
+        murmurPanel?.orderOut(nil)
+        let glyphs = Array(line.replacingOccurrences(of: "…", with: "...").filter { !$0.isWhitespace })
+        let unit: CGFloat = 3   // one dot = a 3 pt pixel
+        let size = NSSize(width: CGFloat(glyphs.count) * unit * 3 + 8, height: unit * 6 + 6)
+        var shown = 0
+        let panel = PropPanel(size: size) { r in
+            for (i, g) in glyphs.prefix(shown).enumerated() {
+                let x = 4 + CGFloat(i) * unit * 3
+                // a light pixel with a dark edge, readable on anything
+                func px(_ px: CGFloat, _ py: CGFloat) {
+                    NSColor(white: 0.1, alpha: 0.55).setFill(); NSRect(x: px + 1, y: py - 1, width: unit, height: unit).fill()
+                    NSColor(srgbRed: 0.93, green: 0.95, blue: 1, alpha: 1).setFill(); NSRect(x: px, y: py, width: unit, height: unit).fill()
+                }
+                switch g {
+                case "?": for (cx, cy) in [(0, 4), (1, 5), (2, 4), (2, 3), (1, 2), (1, 0)] { px(x + CGFloat(cx) * unit, 3 + CGFloat(cy) * unit) }
+                case "!": for cy in [0, 2, 3, 4, 5] { px(x + unit, 3 + CGFloat(cy) * unit) }
+                default: px(x + unit, 3)   // a dot
+                }
+            }
+        }
+        let f = froggPanel.frame
+        // above its standing height (whatever frame is showing), a little to the side
+        let headTop = f.minY + max(FroggArt.shared.size(frogg.frameName).height, FroggArt.shared.size("idle_0").height) * scale + 6
+        let side: CGFloat = frogg.mirrored ? -1 : 1
+        panel.setFrameOrigin(NSPoint(x: f.midX + side * 34 - size.width / 2, y: headTop + 2))   // above and to the side of its head
+        panel.orderFrontRegardless()
+        murmurPanel = panel
+        // one at a time, then a short hold, then up and away
+        for i in 1...glyphs.count {
+            later(0.28 * Double(i)) { [weak panel] in shown = i; panel?.contentView?.needsDisplay = true }
+        }
+        later(0.28 * Double(glyphs.count) + 1.1) { [weak self, weak panel] in
+            guard let panel else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.5
+                panel.animator().alphaValue = 0
+                panel.animator().setFrameOrigin(NSPoint(x: panel.frame.minX, y: panel.frame.minY + 10))
+            }, completionHandler: { MainActor.assumeIsolated { panel.orderOut(nil); if self?.murmurPanel === panel { self?.murmurPanel = nil } } })
+        }
     }
 
     // MARK: hide / show (⌃⌥H, the screen-share panic button)

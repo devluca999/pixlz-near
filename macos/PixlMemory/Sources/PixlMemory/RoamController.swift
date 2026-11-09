@@ -137,7 +137,7 @@ final class RoamController {
         let roll = Int.random(in: 0..<10)
         if roll < 3, Date().timeIntervalSince(lastChatter) > 90 {
             lastChatter = Date()
-            app.say(PixlVoice.doing(ui: app.ui), for: 2.4)
+            app.voice(PixlVoice.doing(ui: app.ui), for: 2.4)
         } else if roll < 6 {
             app.later(0.4) { [weak self] in self?.app.signature() }
         }
