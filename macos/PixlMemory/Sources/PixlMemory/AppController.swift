@@ -181,11 +181,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let current = foot
         link?.invalidate()
         link = nil
+        // gone at once: the system fade on a hidden panel showed the old Pixl beside the new one
+        // for a moment (each step of a resize builds a new panel)
+        froggPanel?.animationBehavior = .none
         froggPanel?.orderOut(nil)
         frogg = FroggView(scale: scale)
         frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
         frogg.onContactChange = { [weak self] in if let self, let f = self.foot { self.place(at: f) } }
         froggPanel = OverlayPanel(size: frogg.frame.size)
+        froggPanel.animationBehavior = .none
         froggPanel.contentView = frogg
         if let current { place(at: current) }
     }
