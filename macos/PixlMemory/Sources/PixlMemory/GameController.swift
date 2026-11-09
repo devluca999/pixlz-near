@@ -160,7 +160,9 @@ final class GameController {
         // frames: running, creeping low, the leap, and a proud arch after a catch
         let frame: String
         switch g.phase {
-        case .run: frame = Int(t * 10) % 2 == 0 ? "move_0" : "move_2"
+        case .run:
+            // the trot loop (C13) when it has one
+            if FroggArt.shared.frames["trot_0"] != nil { frame = "trot_\(Int(t * 12) % 6)" } else { frame = Int(t * 10) % 2 == 0 ? "move_0" : "move_2" }
         case .stalk: frame = Int(t * 3) % 2 == 0 ? "mischief_0" : "mischief_1"
         case .pounce: frame = "move_1"
         case .caught: frame = "mischief_2"

@@ -44,6 +44,7 @@ public enum RoamStyle: String, CaseIterable, Sendable {
     case trotter   // Mochi: trots after the mouse, sniffs around folders
     case drifter   // Boo: drifts about, half see-through, haunts folders
     case crawler   // Silky: walks to the screen's side, climbs, crawls the ceiling, drops on silk
+    case slider    // Slugg: crawls the floor, climbs a wall and rests up high (no thread), slides back down
 
     public static func of(id: String, movement: String) -> RoamStyle {
         switch id {
@@ -52,13 +53,14 @@ public enum RoamStyle: String, CaseIterable, Sendable {
         case "shiba": .trotter
         case "ghost": .drifter
         case "widow": .crawler
+        case "slugg": .slider
         default: movement == "float" ? .drifter : .hopper
         }
     }
 
     /// Points per second on the move, and the frames it cycles while moving.
     var speed: CGFloat {
-        switch self { case .hopper: 60; case .prowler: 55; case .trotter: 150; case .drifter: 45; case .crawler: 110 }
+        switch self { case .hopper: 60; case .prowler: 55; case .trotter: 150; case .drifter: 45; case .crawler: 110; case .slider: 36 }
     }
 }
 
@@ -148,6 +150,8 @@ public struct RoamPlanner: Sendable {
             if w.hanging != nil { options = [(3, .moveHanging), (1, .nap)] }
             else if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .climbDown), (1, .nap)] }
             else { options = [(3, .crawlTour), (g, .glance), (0.3, .nap)] }
+        case .slider:
+            options = w.surface == .rightWall || w.surface == .leftWall ? [(3, .climbDown), (1, .nap)] : [(3, .walk), (2, .crawlTour), (0.5, .nap)]
         }
         // weighted draw; if the pick doesn't fit right now, try the others
         while !options.isEmpty {
@@ -308,7 +312,7 @@ public struct RoamPlanner: Sendable {
         let sc = w.screen
         let half = w.sprite.width / 2
         // where along the top to stop and drop: somewhere it won't hang over your window's content
-        for _ in 0..<10 {
+        for _ in 0..<(style == .slider ? 0 : 10) {
             let x = CGFloat.random(in: (sc.minX + half)...(sc.maxX - half), using: &rng)
             let below = w.active.flatMap { a in a.minX - half < x && x < a.maxX + half ? a.minY - 6 : nil } ?? (sc.minY + sc.height * 0.35)
             let depth = min(below - w.sprite.height - sc.minY, sc.height * 0.4)
@@ -378,6 +382,18 @@ public struct RoamPlanner: Sendable {
     }
 }
 
+/// A Pixl's locomotion loop (C13): the frames, their rate, and the ground speed that keeps the
+/// feet from skating. `bob` lifts the whole sprite in the stride's float (Mochi: 1 art pixel).
+public struct Gait: Equatable, Sendable {
+    public var frames: [String]
+    public var fps: Double
+    public var speed: CGFloat      // pt/s
+    public var bob: CGFloat        // pt, phase-locked to the loop
+    public init(frames: [String], fps: Double, speed: CGFloat, bob: CGFloat = 0) {
+        self.frames = frames; self.fps = fps; self.speed = speed; self.bob = bob
+    }
+}
+
 // MARK: playing an outing
 
 extension RoamPlanner {
@@ -391,10 +407,12 @@ extension RoamPlanner {
     }
 
     /// A timeline for `outing` starting at `foot`. `hop` builds a hop (the app's route planner).
-    public static func choreography(_ outing: Outing, from foot: CGPoint, style: RoamStyle, hanging: CGPoint?,
+    public static func choreography(_ outing: Outing, from foot: CGPoint, style: RoamStyle, hanging: CGPoint?, gait: Gait? = nil,
                                     hop: (CGPoint, CGPoint) -> Choreography) -> Choreography {
-        let speed = style.speed
-        let frames = moveFrames(style)
+        let speed = gait?.speed ?? style.speed
+        let frames = gait?.frames ?? moveFrames(style)
+        let fps = gait?.fps ?? (style == .trotter ? 10 : 6)
+        let bob = -(gait?.bob ?? 0)   // negative: phase-locked to the loop
         func dur(_ a: CGPoint, _ b: CGPoint, _ v: CGFloat = speed) -> TimeInterval { max(0.3, Double(hypot(b.x - a.x, b.y - a.y) / v)) }
         switch outing {
         case .hop(let to, _):
@@ -402,7 +420,7 @@ extension RoamPlanner {
         case .walk(let to):
             let left = to.x < foot.x
             return Choreography([
-                .travel(from: foot, to: to, frames: frames, fps: style == .trotter ? 10 : 6, surface: .floor, mirrored: left, bob: 0, alpha: 1, duration: dur(foot, to)),
+                .travel(from: foot, to: to, frames: frames, fps: fps, surface: .floor, mirrored: left, bob: bob, alpha: 1, duration: dur(foot, to)),
                 .settle(at: to, duration: 0.2),
             ])
         case .drift(let to):
@@ -454,7 +472,7 @@ extension RoamPlanner {
                 if leg.surface == .floor, abs(from.y - leg.from.y) > 4 {
                     segs += hop(from, leg.from).segments
                 }
-                segs.append(.travel(from: leg.from, to: leg.to, frames: frames, fps: 8, surface: leg.surface,
+                segs.append(.travel(from: leg.from, to: leg.to, frames: frames, fps: gait?.fps ?? 8, surface: leg.surface,
                                     mirrored: leg.to.x < leg.from.x || leg.to.y < leg.from.y, bob: 0, alpha: 1, duration: dur(leg.from, leg.to)))
                 from = leg.to
             }

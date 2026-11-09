@@ -11,6 +11,8 @@ public final class FroggView: NSView {
     public var lean: CGFloat = 0 { didSet { if lean != oldValue { needsDisplay = true } } }
     /// On a wall or the ceiling (Roam), the art is turned about the view's centre.
     public var surface: Surface = .floor { didSet { if surface != oldValue { needsDisplay = true } } }
+    /// Slugg's shell, drawn as its own layer this many art pixels behind the body (shell lag).
+    public var shellOffset: CGPoint = .zero { didSet { if shellOffset != oldValue { needsDisplay = true } } }
     public let scale: CGFloat
     /// Room around the canvas so a stretch or squash never clips (transparent, click-through).
     public static let headroom: CGFloat = 1.3
@@ -40,6 +42,15 @@ public final class FroggView: NSView {
             ctx.rotate(by: surface.rotation)
             if mirrored { ctx.scaleBy(x: -1, y: 1) }
             ctx.draw(img, in: CGRect(x: (-w / 2).rounded(), y: (-h / 2).rounded(), width: w, height: h))
+            ctx.restoreGState()
+            return
+        }
+        if art.frames[frameName + "_shell"] != nil {
+            // body, then the shell layer offset by its lag
+            art.draw(frameName + "_body", in: bounds, scale: scale, context: ctx, squash: squash, mirrored: mirrored, lean: lean)
+            ctx.saveGState()
+            ctx.translateBy(x: shellOffset.x * scale, y: shellOffset.y * scale)
+            art.draw(frameName + "_shell", in: bounds, scale: scale, context: ctx, squash: squash, mirrored: mirrored, lean: lean)
             ctx.restoreGState()
             return
         }

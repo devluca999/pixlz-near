@@ -292,6 +292,39 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         run(move(from: current, to: spot.foot), target: spot.foot)
     }
 
+    /// This Pixl's locomotion loop (C13), at its ground speed in points (design px × scale):
+    /// Katt walks at 24 px/s, Mochi trots at 70 with a 1 px bob, Slugg crawls at 18.
+    var gait: Gait? {
+        let art = FroggArt.shared
+        func loop(_ base: String, _ n: Int) -> [String]? {
+            let f = (0..<n).map { "\(base)_\($0)" }
+            return f.allSatisfy { art.frames[$0] != nil } ? f : nil
+        }
+        switch PixlSkins.currentID {
+        case "cat": return loop("walk", 8).map { Gait(frames: $0, fps: 8, speed: 24 * scale) }
+        case "shiba": return loop("trot", 6).map { Gait(frames: $0, fps: 12, speed: 70 * scale, bob: scale) }
+        case "slugg": return loop("crawl", 8).map { Gait(frames: $0, fps: 6, speed: 18 * scale) }
+        default: return nil
+        }
+    }
+
+    // MARK: Slugg's shell lag (C13: the shell follows the body on a spring, stiffness 180, damping 14)
+
+    var shellLag: CGFloat = 0, shellLagV: CGFloat = 0
+    var lastShellFoot: CGPoint?
+
+    func stepShell(dt: TimeInterval) {
+        guard FroggArt.shared.frames["crawl_0_shell"] != nil, let f = foot, dt > 0 else { return }
+        let vx = lastShellFoot.map { (f.x - $0.x) / CGFloat(dt) } ?? 0
+        lastShellFoot = f
+        let target = max(-1.5, min(1.5, -vx / 30 / scale))          // art pixels, behind the way it's going
+        let a = 180 * (target - shellLag) - 14 * shellLagV
+        shellLagV += a * CGFloat(dt)
+        shellLag += shellLagV * CGFloat(dt)
+        let px = (shellLag * (frogg.mirrored ? -1 : 1)).rounded()   // whole art pixels: crisp
+        if frogg.shellOffset.x != px { frogg.shellOffset = CGPoint(x: px, y: 0) }
+    }
+
     /// A ghost floats (Boo, pixl.json movement "float"): it hovers and glides, never hops.
     var floats: Bool { PixlSkins.current.manifest.movement.rawValue == "float" }
 
@@ -505,7 +538,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func stopClockIfIdle() {
-        guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001, menu.view == nil else { return }
+        guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001, menu.view == nil,
+              abs(shellLag) < 0.05, abs(shellLagV) < 0.05 else { return }
         link?.invalidate()
         link = nil
         dustPanel?.orderOut(nil)
@@ -568,6 +602,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         frogg.lean += (lean - frogg.lean) * min(1, CGFloat(dt) * 14)
         if abs(frogg.lean - lean) < 0.002 { frogg.lean = lean }
         if let dust, !dust.pool.isEmpty { dust.step(to: Date(), dt: dt) }
+        stepShell(dt: dt)
         menu.step(t0)
         stopClockIfIdle()
     }

@@ -243,7 +243,12 @@ public struct Choreography: Sendable {
         case .travel(let a, let b, let frames, let fps, let surface, let m, let bob, let alpha, _):
             let e = CGFloat(f)
             var p = CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e)
-            if bob != 0 { p.y -= bob * CGFloat(sin(t * 2 * .pi / 1.6)) }
+            if bob > 0 { p.y -= bob * CGFloat(sin(t * 2 * .pi / 1.6)) }   // a float (Boo)
+            if bob < 0, !frames.isEmpty {
+                // phase-locked: up in the stride's float (two per loop for a trot)
+                let phase = (t * fps / Double(frames.count)).truncatingRemainder(dividingBy: 1)
+                p.y += bob * CGFloat(max(0, sin(phase * 4 * .pi))).rounded()
+            }
             let frame = frames.isEmpty ? MotionFrames.settle : frames[Int(t * fps) % frames.count]
             // fade out over the first fifth and back in over the last fifth
             let fade = min(1, min(e, 1 - e) * 5)

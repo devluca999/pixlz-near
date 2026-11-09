@@ -164,3 +164,35 @@ import PixlzCore
         #expect(Choreography.glide(from: .zero, to: .zero).segments.isEmpty)
     }
 }
+
+@Suite struct GaitTests {
+    let screen = CGRect(x: 0, y: 30, width: 1470, height: 890)
+    func hop(_ a: CGPoint, _ b: CGPoint) -> Choreography { Choreography([.settle(at: b, duration: 0.2)]) }
+
+    @Test func walksUseTheLoopAtTheGroundSpeed() {
+        let walk = Gait(frames: (0..<8).map { "walk_\($0)" }, fps: 8, speed: 48)
+        let c = RoamPlanner.choreography(.walk(to: CGPoint(x: 496, y: 900)), from: CGPoint(x: 400, y: 900), style: .prowler, hanging: nil, gait: walk, hop: hop)
+        #expect(abs(c.duration - 0.2 - 2) < 0.01)                         // 96 pt at 48 pt/s, then settle
+        let seen = Set((0..<16).map { c.pose(at: Double($0) / 8).pose.frame })
+        #expect(seen == Set(walk.frames))                                  // all eight frames, in a loop
+    }
+
+    @Test func aTrotBobsInTheFloatOnly() {
+        let trot = Gait(frames: (0..<6).map { "trot_\($0)" }, fps: 12, speed: 140, bob: 2)
+        let c = RoamPlanner.choreography(.walk(to: CGPoint(x: 680, y: 900)), from: CGPoint(x: 400, y: 900), style: .trotter, hanging: nil, gait: trot, hop: hop)
+        let ys = (0..<24).map { c.pose(at: Double($0) / 24).pose.foot.y }
+        #expect(ys.min()! == 898 && ys.max()! == 900)                      // up 2 pt in the float, never down
+    }
+
+    @Test func sluggClimbsAndRestsOnAWallButNeverDangles() {
+        var p = RoamPlanner(style: .slider, seed: 4)
+        let w = RoamWorld(screens: [screen], active: CGRect(x: 300, y: 300, width: 600, height: 400), foot: CGPoint(x: 1200, y: screen.maxY),
+                          sprite: CGSize(width: 200, height: 120))
+        for _ in 0..<40 {
+            guard let o = p.next(w) else { continue }
+            if case .crawl(_, let dangle) = o { #expect(dangle == nil) }
+            if case .climbAndMove = o { Issue.record("Slugg doesn't hang on a thread") }
+        }
+        #expect(RoamStyle.of(id: "slugg", movement: "walk") == .slider)
+    }
+}
