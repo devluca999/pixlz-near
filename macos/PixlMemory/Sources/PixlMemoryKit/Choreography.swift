@@ -25,9 +25,9 @@ public struct Pose: Equatable, Sendable {
     public var squash = CGSize(width: 1, height: 1)
     public var mirrored = false        // face left
     public var alpha: CGFloat = 1
-    /// Which surface the feet are on (Silk on a wall or the ceiling): the art is turned to match.
+    /// Which surface the feet are on (Silky on a wall or the ceiling): the art is turned to match.
     public var surface: Surface = .floor
-    /// Silk's thread: where it's tied (top-left global coordinates), or nil.
+    /// Silky's thread: where it's tied (top-left global coordinates), or nil.
     public var thread: CGPoint? = nil
 }
 
@@ -53,7 +53,7 @@ public struct Choreography: Sendable {
                     bob: CGFloat, alpha: CGFloat, duration: TimeInterval)
         /// A ghost's move: no hop, a smooth drift that eases in and out, fading a little mid-way.
         case glide(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
-        /// Silk on its thread, tied at `anchor`, going from one depth below it to another.
+        /// Silky on its thread, tied at `anchor`, going from one depth below it to another.
         case dangle(anchor: CGPoint, from: CGFloat, to: CGFloat, duration: TimeInterval)
 
         var duration: TimeInterval {

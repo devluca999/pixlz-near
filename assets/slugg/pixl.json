@@ -1,0 +1,224 @@
+{
+  "id": "slugg",
+  "name": "Slugg",
+  "species": "Garden snail",
+  "canvas": {
+    "w": 115,
+    "h": 82
+  },
+  "anchor": {
+    "x": 57,
+    "y": 76
+  },
+  "hitbox": {
+    "x": 21,
+    "y": 36,
+    "w": 72,
+    "h": 40
+  },
+  "movement": "walk",
+  "sticky": true,
+  "aura": "none",
+  "physics": {
+    "gravity": 900,
+    "hopApex": [
+      18,
+      30
+    ],
+    "hopDistance": [
+      40,
+      90
+    ],
+    "walkSpeed": 18
+  },
+  "slots": {
+    "idle": {
+      "holds": [
+        6,
+        2,
+        8
+      ],
+      "loop": "all"
+    },
+    "move": {
+      "holds": [
+        3,
+        0,
+        3
+      ],
+      "loop": "none"
+    },
+    "rest": {
+      "holds": [
+        6,
+        6,
+        12
+      ],
+      "loop": "last"
+    },
+    "poke": {
+      "holds": [
+        2,
+        4,
+        6
+      ],
+      "loop": "none"
+    },
+    "grab": {
+      "holds": [
+        2,
+        6,
+        3
+      ],
+      "loop": "middle"
+    },
+    "file_ride": {
+      "holds": [
+        3,
+        3,
+        6
+      ],
+      "loop": "last"
+    },
+    "perch": {
+      "holds": [
+        4,
+        4,
+        8
+      ],
+      "loop": "last"
+    },
+    "signature": {
+      "holds": [
+        4,
+        2,
+        8
+      ],
+      "loop": "none"
+    },
+    "mischief": {
+      "holds": [
+        6,
+        12,
+        4
+      ],
+      "loop": "none"
+    }
+  },
+  "props": {
+    "signature": [],
+    "mischief": []
+  },
+  "ui": {
+    "accent": "#C9A93A",
+    "menuFace": "emotion_curious",
+    "glassBody": false,
+    "signature": "Shell spin",
+    "askPlaceholder": "Ask Slugg, slowly…",
+    "personality": "Slow, unbothered and quietly wise. Speaks rarely and briefly.",
+    "detail": "A slime drop on the bottom edge",
+    "decal": {
+      "grid": [
+        "...kk...",
+        "..kaak..",
+        ".kaaaak.",
+        "kaaaabak",
+        "kaaaaaak",
+        ".kkkkkk."
+      ],
+      "colors": {
+        "a": "#C9A93A",
+        "b": "#F2E6A8"
+      },
+      "pos": {
+        "bottom": 8,
+        "right": 12
+      }
+    },
+    "game": {
+      "name": "Leaf munch",
+      "target": "leaf"
+    },
+    "busy": "being a slug",
+    "status": [
+      "being definitely a slug",
+      "taking it slow",
+      "leaving a little trail",
+      "polishing {pos} shell",
+      "thinking about lettuce",
+      "peeking out of {pos} shell",
+      "enjoying the damp"
+    ],
+    "sounds": {
+      "greet": [
+        "...",
+        "squelch"
+      ],
+      "happy": [
+        "mlem",
+        "squelch!"
+      ],
+      "curious": [
+        "...?",
+        "shlp?"
+      ],
+      "annoyed": [
+        "SQUELCH",
+        "hss…"
+      ],
+      "startled": [
+        "!",
+        "shlp!"
+      ],
+      "sleepy": [
+        "zz…",
+        "…"
+      ],
+      "sad": [
+        "…",
+        "squelch…"
+      ],
+      "idle": [
+        "...",
+        "squelch"
+      ]
+    },
+    "pronoun": "they",
+    "description": "Definitely a slug",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#C9A93A"
+      },
+      {
+        "id": "leopard",
+        "name": "Leopard grey",
+        "accent": "#A9B8C2",
+        "frames": "sprites_leopard.json",
+        "locked": false
+      },
+      {
+        "id": "neon",
+        "name": "Neon nudibranch",
+        "accent": "#9AF4FF",
+        "frames": "sprites_neon.json",
+        "locked": false
+      },
+      {
+        "id": "dapper",
+        "name": "Dapper",
+        "accent": "#E6D488",
+        "frames": "sprites_dapper.json",
+        "locked": true
+      },
+      {
+        "id": "humbug",
+        "name": "Humbug",
+        "accent": "#F4D8EC",
+        "frames": "sprites_humbug.json",
+        "locked": true
+      }
+    ]
+  }
+}

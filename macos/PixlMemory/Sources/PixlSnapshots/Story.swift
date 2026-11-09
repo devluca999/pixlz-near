@@ -189,7 +189,7 @@ enum Story {
             try png(v, "\(out)/04-wallet.png")
         }
 
-        // 5. Hand-off: Silk puts the drafted prompt into Claude's message box; you press send
+        // 5. Hand-off: Silky puts the drafted prompt into Claude's message box; you press send
         do {
             let v = desktop { _ in
                 window(NSRect(x: 260, y: 120, width: 620, height: 380), title: "Claude", dark: true)
@@ -207,7 +207,7 @@ enum Story {
             try png(v, "\(out)/05-handoff.png")
         }
 
-        // 6. Travel: Nox leaves the Mac for the Laptop; the Laptop asks before catching
+        // 6. Travel: Katt leaves the Mac for the Laptop; the Laptop asks before catching
         do {
             let v = Canvas(size, fill: NSColor(srgbRed: 0.83, green: 0.87, blue: 0.92, alpha: 1)) { r in
                 for (x, name) in [(30.0, "Studio Mac"), (500.0, "Laptop")] {
@@ -226,14 +226,14 @@ enum Story {
             }
             pet("cat", "move_1", feet: CGPoint(x: 360, y: 230), in: v)
             PixlSkins.currentID = "cat"
-            let rows = [ListMenuView.Row(id: "yes", title: "Catch Nox from Studio Mac", icon: nil, trailing: "↵"),
+            let rows = [ListMenuView.Row(id: "yes", title: "Catch Katt from Studio Mac", icon: nil, trailing: "↵"),
                         ListMenuView.Row(id: "no", title: "Not now", icon: nil, trailing: "esc")]
             let list = ListMenuView(rows: rows, look: solid)
             list.setFocus(0)
             put(list, at: NSPoint(x: 640, y: 130), in: v)
             pill("Send to Laptop", at: NSPoint(x: 120, y: 120), accent: "#AE90EC")
             v.addSubview(Painting(frame: v.bounds) { _ in
-                label("Bonjour finds the Laptop · only Nox's name, mood and stats travel · the Mac keeps a note until Nox is called back",
+                label("Bonjour finds the Laptop · only Katt's name, mood and stats travel · the Mac keeps a note until Katt is called back",
                       Theme.mono(10), NSColor(white: 0.3, alpha: 1), at: NSPoint(x: 40, y: 410))
             })
             try png(v, "\(out)/06-travel.png")
@@ -305,13 +305,13 @@ enum Story {
             try png(v, "\(out)/10-hover.png")
         }
 
-        // Roam: Silk's route (up the wall, along the top, down on silk); Frogg reads along in a code app
+        // Roam: Silky's route (up the wall, along the top, down on silk); Frogg reads along in a code app
         do {
             let caretX: CGFloat = 330
             let v = desktop { r in
                 window(NSRect(x: 60, y: 250, width: 560, height: 270), title: "claude — ~/pixlz-near", lines: [
                     "> make the frog hop to folders", "  ⏺ Editing Roam.swift…", "  ⏺ 95 tests passed", "> |"], dark: true)
-                // Silk's route: right wall up, ceiling left, then the thread down
+                // Silky's route: right wall up, ceiling left, then the thread down
                 let path = NSBezierPath()
                 path.move(to: NSPoint(x: 935, y: 545)); path.line(to: NSPoint(x: 935, y: 40)); path.line(to: NSPoint(x: 760, y: 40))
                 path.lineWidth = 2
@@ -345,8 +345,8 @@ enum Story {
             let v = desktop()
             let pets: [(String, String, Notice, String)] = [
                 ("frogg", "ribbit!", .replaced, "Frogg is practicing his croak."),
-                ("cat", "mrrp?", .noDevices, "Nox is judging you."),
-                ("widow", "tk tk", .copied, "Silk is climbing the walls."),
+                ("cat", "mrrp?", .noDevices, "Katt is judging you."),
+                ("widow", "tk tk", .copied, "Silky is climbing the walls."),
             ]
             for (i, (skin, sound, notice, status)) in pets.enumerated() {
                 let x = 40 + CGFloat(i) * 310

@@ -193,6 +193,14 @@
         "boo"
       ]
     },
-    "pronoun": "they"
+    "pronoun": "they",
+    "description": "Sheety ghost",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#A8C8F0"
+      }
+    ]
   }
 }

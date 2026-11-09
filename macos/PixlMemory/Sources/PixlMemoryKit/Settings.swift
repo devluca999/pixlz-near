@@ -51,6 +51,7 @@ public struct PixlSettings: Codable, Equatable, Sendable {
         s.scale = PixlScale.snap(s.scale)
         let fallback = (PixlSkins.skin(s.skinID) ?? PixlSkins.current).manifest.name
         if let own = s.names?[s.skinID] { s.name = own }   // each Pixl's own name wins
+        else if s.names != nil || PixlSkins.formerNames.contains(s.name) { s.name = fallback }   // a default (or a retired default, Nox, Silk) follows the Pixl
         s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : String(s.name.prefix(24))
         // settings from before per-Pixl names: a custom name belongs to the Pixl it was saved with
         if s.names == nil, !PixlSkins.all.contains(where: { $0.manifest.name == s.name }) { s.rememberName(default: fallback) }

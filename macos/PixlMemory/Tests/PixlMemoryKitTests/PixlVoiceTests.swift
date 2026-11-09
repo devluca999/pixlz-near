@@ -55,11 +55,11 @@ import PixlzCore
         let idle = (0..<8).map { PixlStatus.line(name: "Frogg", pronoun: .he, activity: .idle($0), ui: frogg) }
         #expect(idle.contains("Frogg is practicing his croak."))
         #expect(idle.allSatisfy { $0.hasPrefix("Frogg is ") && $0.hasSuffix(".") && !$0.contains("{") })
-        #expect(PixlStatus.line(name: "Nox", pronoun: .she, activity: .idle(7), ui: ui("cat")) == "Nox is guarding her warm spot.")
+        #expect(PixlStatus.line(name: "Katt", pronoun: .she, activity: .idle(7), ui: ui("cat")) == "Katt is guarding her warm spot.")
         #expect(PixlStatus.line(name: "Boo", pronoun: .they, activity: .idle(4), ui: ui("ghost")) == "Boo is rattling their tiny chain.")
-        #expect(PixlStatus.line(name: "Silk", pronoun: .name, activity: .idle(3), ui: ui("widow")) == "Silk is tidying Silk's silk.")
+        #expect(PixlStatus.line(name: "Silky", pronoun: .name, activity: .idle(3), ui: ui("widow")) == "Silky is tidying Silky's silk.")
         #expect(PixlStatus.line(name: "Frogg", pronoun: .he, activity: .outing("pond"), ui: frogg) == "Frogg is taking a dip in his pond.")
-        #expect(PixlStatus.line(name: "Nox", pronoun: .she, activity: .asleep, ui: ui("cat")) == "Nox is asleep.")
+        #expect(PixlStatus.line(name: "Katt", pronoun: .she, activity: .asleep, ui: ui("cat")) == "Katt is asleep.")
         // status never borrows a sound
         let sounds = PixlSkins.all.flatMap { VoicePicker.allSounds(ui: $0.manifest.ui) }
         let words = Set(idle.flatMap { $0.lowercased().split { !$0.isLetter }.map(String.init) })

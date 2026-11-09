@@ -101,7 +101,7 @@ final class SkinTile: NSView {
         name.frame = NSRect(x: 2, y: size.height - (compact ? 16 : 34), width: size.width - 4, height: 14)
         addSubview(name)
         if !compact {
-            let sp = NSTextField(labelWithString: skin.manifest.species)
+            let sp = NSTextField(labelWithString: skin.manifest.ui?.description ?? skin.manifest.species)
             sp.font = Theme.mono(9)
             sp.textColor = look.mutedColor
             sp.alignment = .center
@@ -111,7 +111,7 @@ final class SkinTile: NSView {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel("\(skin.manifest.name), \(skin.manifest.species)")
+        setAccessibilityLabel("\(skin.manifest.name), \(skin.manifest.ui?.description ?? skin.manifest.species)")
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 

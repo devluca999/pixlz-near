@@ -83,7 +83,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         nameField.delegate = self
         nameField.placeholderString = "Name"
         nameField.widthAnchor.constraint(equalToConstant: 180).isActive = true
-        let species = label(PixlData.manifest.species, Theme.mono(10), Theme.textMuted)
+        let species = label(PixlData.ui.description ?? PixlData.manifest.species, Theme.mono(10), Theme.textMuted)
         var col: [NSView] = [nameField]
         if let statusLine {
             let st = NSTextField(wrappingLabelWithString: statusLine)

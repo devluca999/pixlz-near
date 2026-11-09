@@ -51,7 +51,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
     lazy var sleep = SleepController(app: self)
-    /// Silk hangs on a thread tied here (Roam); nil when on its feet.
+    /// Silky hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
     /// The Pixl is on another device (by name) and this one waits to call it back.
@@ -582,7 +582,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showThread(pose.thread)
     }
 
-    /// Silk's thread from where it's tied down to its feet.
+    /// Silky's thread from where it's tied down to its feet.
     func showThread(_ anchor: CGPoint?) {
         guard let anchor, let foot else { threadPanel?.orderOut(nil); return }
         let t = threadPanel ?? ThreadPanel()
@@ -2183,7 +2183,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pill = NSApp.windows.first { $0.isVisible && $0.contentView is CoinPill }
         check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
 
-        // Nox: Laser chase. The dot follows the mouse and Nox runs after it.
+        // Katt: Laser chase. The dot follows the mouse and Katt runs after it.
         if game.info.target == "laser" {
             let before = foot
             game.start()

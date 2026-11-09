@@ -199,7 +199,7 @@ final class RoamController {
 
     func hidePond() { pond?.orderOut(nil); pond = nil }
 
-    /// Silk's cobweb: in a corner it climbed past, or where it hung. At most four; each fades after 10 min.
+    /// Silky's cobweb: in a corner it climbed past, or where it hung. At most four; each fades after 10 min.
     func leaveWeb(at p: CGPoint, small: Bool = false) {
         let size: CGFloat = small ? 46 : 92
         let sc = app.screensTopLeft.first { $0.insetBy(dx: -8, dy: -8).contains(p) } ?? app.screensTopLeft.first ?? .zero
@@ -303,7 +303,7 @@ final class RoamController {
     }
 }
 
-/// Silk's thread: a thin line from where it's tied down to the spider.
+/// Silky's thread: a thin line from where it's tied down to the spider.
 @MainActor
 final class ThreadPanel: NSPanel {
     init() {

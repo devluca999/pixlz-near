@@ -113,6 +113,10 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var sounds: [String: [String]]?
     /// How its status refers to it by default: he, she, they, it or name (Settings can change it).
     public var pronoun: String?
+    /// A short line about it for the picker and Settings ("Shiba Inu, professional zoomer").
+    public var description: String?
+    /// Its looks: the default and any alternate skins (Slugg: Leopard grey, Neon, Dapper, Humbug).
+    public var skins: [PixlSkinOption]?
     /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
     public var decal: PixlDecal?
     /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a
@@ -137,6 +141,19 @@ public struct PixlDecal: Codable, Equatable, Sendable {
     public var colors: [String: String]
     public var pos: [String: Double]
     public init(grid: [String], colors: [String: String], pos: [String: Double]) { self.grid = grid; self.colors = colors; self.pos = pos }
+}
+
+/// One of a Pixl's looks. `frames` names its own sprites file when it has one; locked skins show
+/// in the picker but can't be chosen yet.
+public struct PixlSkinOption: Codable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var accent: String?
+    public var frames: String?
+    public var locked: Bool?
+    public init(id: String, name: String, accent: String? = nil, frames: String? = nil, locked: Bool? = nil) {
+        self.id = id; self.name = name; self.accent = accent; self.frames = frames; self.locked = locked
+    }
 }
 
 public struct PixlGame: Codable, Equatable, Sendable {

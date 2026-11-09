@@ -119,7 +119,7 @@ final class GameController {
         app.backToIdle()
     }
 
-    // MARK: Laser chase (Nox)
+    // MARK: Laser chase (Katt)
 
     func startLaser(_ foot: CGPoint) {
         let h = app.spriteSize.height

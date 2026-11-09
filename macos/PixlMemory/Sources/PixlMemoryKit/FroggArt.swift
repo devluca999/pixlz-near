@@ -165,11 +165,14 @@ public enum PixlSkins {
     /// Which one is on screen. Set by the app from the saved setting.
     public static var currentID = "frogg"
     public static var current: Skin { skin(currentID) ?? all[0] }
+    /// Default names that were renamed (Nox → Katt, Silk → Silky): a saved one isn't a custom name.
+    nonisolated public static let formerNames: Set<String> = ["Nox", "Silk"]
+
     /// The name you gave your Pixl (the app keeps it in sync with Settings); else the skin's.
     public static var displayName: String?
     public static var name: String { displayName.flatMap { $0.isEmpty ? nil : $0 } ?? current.manifest.name }
 
-    /// The third-poke grumble, true to whichever Pixl you have: "Nox is busy being a black cat."
+    /// The third-poke grumble, true to whichever Pixl you have: "Katt is busy being a black cat."
     public static func busyLine(name: String, busy: String?, species: String) -> String { busyLineSync(name: name, busy: busy, species: species) }
 
     nonisolated public static func busyLineSync(name: String, busy: String?, species: String) -> String {

@@ -12,7 +12,7 @@ import PixlzCore
 /// Which surface the Pixl's feet are on. The art is drawn turned so its feet face the surface.
 public enum Surface: String, Equatable, Sendable {
     case floor, rightWall, ceiling, leftWall
-    /// Hanging below the point (Silk on its thread): upright, its body below.
+    /// Hanging below the point (Silky on its thread): upright, its body below.
     case hanging
 
     /// Rotation for drawing, in radians, counter-clockwise in a y-up view.
@@ -40,10 +40,10 @@ public enum Surface: String, Equatable, Sendable {
 /// How each Pixl roams (from its id and movement in pixl.json).
 public enum RoamStyle: String, CaseIterable, Sendable {
     case hopper    // Frogg: folders, window tops, reading along above your caret
-    case prowler   // Nox: walks the edge it's on, naps, hops up high
+    case prowler   // Katt: walks the edge it's on, naps, hops up high
     case trotter   // Mochi: trots after the mouse, sniffs around folders
     case drifter   // Boo: drifts about, half see-through, haunts folders
-    case crawler   // Silk: walks to the screen's side, climbs, crawls the ceiling, drops on silk
+    case crawler   // Silky: walks to the screen's side, climbs, crawls the ceiling, drops on silk
 
     public static func of(id: String, movement: String) -> RoamStyle {
         switch id {
@@ -73,8 +73,8 @@ public struct RoamWorld: Sendable {
     public var foot: CGPoint
     public var sprite: CGSize           // the Pixl's on-screen size
     public var codeContext: Bool        // a terminal or code editor is in front
-    public var hanging: CGPoint?        // Silk: the anchor of the thread it hangs from
-    public var surface: Surface = .floor // what its feet are on now (Silk can rest on a wall)
+    public var hanging: CGPoint?        // Silky: the anchor of the thread it hangs from
+    public var surface: Surface = .floor // what its feet are on now (Silky can rest on a wall)
 
     public init(screens: [CGRect], active: CGRect? = nil, others: [CGRect] = [], folders: [CGRect] = [],
                 avoid: [CGRect] = [], cursor: CGPoint = .zero, foot: CGPoint, sprite: CGSize,
@@ -95,12 +95,12 @@ public enum Outing: Equatable, Sendable {
     case hop(to: CGPoint, why: String)
     case walk(to: CGPoint)                                    // along the edge it stands on
     case drift(to: CGPoint)                                   // Boo
-    case crawl(legs: [CrawlLeg], dangle: CGFloat?)            // Silk; then down a thread by this much
-    case climbAndMove(to: CGPoint, dangle: CGFloat?)          // Silk, hanging: up the thread, along, down again
+    case crawl(legs: [CrawlLeg], dangle: CGFloat?)            // Silky; then down a thread by this much
+    case climbAndMove(to: CGPoint, dangle: CGFloat?)          // Silky, hanging: up the thread, along, down again
     case glance(at: CGPoint, lookLeft: Bool)                  // read along: above your caret
     case nap(TimeInterval)
     case pond(TimeInterval)                                   // Frogg dives into a little pond, eyes peeking
-    case stalk(to: CGPoint)                                   // Nox creeps low, then arches its back
+    case stalk(to: CGPoint)                                   // Katt creeps low, then arches its back
 
     public var name: String {
         switch self {
@@ -284,7 +284,7 @@ public struct RoamPlanner: Sendable {
         let half = w.sprite.width / 2
         let caretX = w.avoid.last?.midX ?? a.midX
         if style == .crawler {
-            // Silk lowers itself from the top of the screen to just above the window, over the caret
+            // Silky lowers itself from the top of the screen to just above the window, over the caret
             let sc = w.screen
             let x = min(max(caretX, sc.minX + half), sc.maxX - half)
             let depth = a.minY - 6 - w.sprite.height - sc.minY
@@ -301,7 +301,7 @@ public struct RoamPlanner: Sendable {
         return .glance(at: s, lookLeft: caretX < x)
     }
 
-    // MARK: Silk
+    // MARK: Silky
 
     /// Walk to the nearer side of the screen, climb the wall, crawl the ceiling, drop on a thread.
     mutating func crawlTour(_ w: RoamWorld) -> Outing? {
@@ -326,7 +326,7 @@ public struct RoamPlanner: Sendable {
         return .crawl(legs: [legs[0], up], dangle: nil)
     }
 
-    /// Silk resting on a wall: down to the floor, then off along it.
+    /// Silky resting on a wall: down to the floor, then off along it.
     mutating func climbDown(_ w: RoamWorld) -> Outing? {
         let sc = w.screen
         let h = w.sprite.height, half = w.sprite.width / 2

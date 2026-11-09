@@ -188,6 +188,14 @@
         "boof"
       ]
     },
-    "pronoun": "he"
+    "pronoun": "he",
+    "description": "Shiba Inu, professional zoomer",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#EC9A44"
+      }
+    ]
   }
 }

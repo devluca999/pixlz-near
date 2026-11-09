@@ -1,5 +1,5 @@
 {
- "source": "design/explorations/c3 (Claude Design C7–C10), rendered by scripts/render-pixls.mjs",
+ "source": "design/explorations/c3 (Claude Design C7–C14), rendered by scripts/render-pixls.mjs",
  "pet": "ghost",
  "name": "Ghost",
  "species": "Bedsheet ghost · cozy",
@@ -749,6 +749,10 @@
     "0.......06660.......0660.....000.......01.",
     ".........060.........00.................0.",
     "..........0..............................0"
+   ],
+   "pin": [
+    21,
+    0
    ]
   },
   "file_ride_0": {

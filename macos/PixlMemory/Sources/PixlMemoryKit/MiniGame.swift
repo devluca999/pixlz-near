@@ -1,7 +1,7 @@
 import AppKit
 import PixlzCore
 
-/// Mischief ▸ Catch: for 20 s, things pop up around the Pixl (flies for Frogg, yarn for Nox…);
+/// Mischief ▸ Catch: for 20 s, things pop up around the Pixl (flies for Frogg, yarn for Katt…);
 /// click one before it vanishes and the Pixl snaps it. Pure rules here (seeded, testable);
 /// the app draws targets and reacts.
 public struct CatchGame: Sendable {
@@ -98,6 +98,8 @@ public enum GameArt {
                  ["k": "#1B2A1A", "a": "#AE90EC", "b": "#D9C8FF"]),
         "ball": (["...kkkk...", "..kaaaak..", ".kaabbaak.", ".kabaaabk.", ".kaaaaaak.", ".kbaaaabk.", ".kaabbaak.", "..kaaaak..", "...kkkk...", ".........."],
                  ["k": "#1B2A1A", "a": "#D9F25A", "b": "#FFFBF2"]),
+        "leaf": (["......k...", ".....kak..", "....kaaak.", "...kaabaak", "..kaabaaak", ".kaabaaak.", ".kabaaak..", "kbbaakk...", ".kkkk.....", ".........."],
+                 ["k": "#1B2A1A", "a": "#7CC24A", "b": "#3E7A2A"]),
         "laser": (["..........", "...kkkk...", "..kbbbbk..", ".kbaaaabk.", ".kbawaabk.", ".kbaaaabk.", ".kbaaaabk.", "..kbbbbk..", "...kkkk...", ".........."],
                   ["k": "#1B2A1A", "a": "#FF1A26", "b": "#FF8A90", "w": "#FFFFFF"]),
         "sock": (["..kkkk....", "..kbbk....", "..kaak....", "..kaak....", "..kaak....", "..kaakkk..", ".kaaaaaak.", ".kaaaaaak.", "..kkkkkk..", ".........."],
@@ -123,8 +125,8 @@ public enum GameArt {
     public static var names: [String] { grids.keys.sorted() }
 }
 
-/// Nox's game: a laser dot follows your mouse and Nox chases it, creeping when close and
-/// pouncing; keep it moving. 20 s, counts how often Nox catches it. Pure and seeded-free:
+/// Katt's game: a laser dot follows your mouse and Katt chases it, creeping when close and
+/// pouncing; keep it moving. 20 s, counts how often Katt catches it. Pure and seeded-free:
 /// the app feeds the dot (the mouse) and time, and draws `cat` with `phase`.
 public struct LaserChase: Sendable {
     public enum Phase: Equatable, Sendable { case run, stalk, pounce, caught }

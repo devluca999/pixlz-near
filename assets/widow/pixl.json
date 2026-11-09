@@ -1,6 +1,6 @@
 {
   "id": "widow",
-  "name": "Silk",
+  "name": "Silky",
   "species": "Black widow",
   "canvas": {
     "w": 104,
@@ -118,9 +118,9 @@
     "menuFace": "emotion_curious",
     "glassBody": false,
     "signature": "Web",
-    "askPlaceholder": "Ask Silk anything…",
+    "askPlaceholder": "Ask Silky anything…",
     "personality": "a composed, precise little spider who answers exactly and dryly",
-    "detail": "Silk thread + tiny spider, top edge",
+    "detail": "A corner web with a tiny spider",
     "decal": {
       "grid": [
         "sssssssssssss",
@@ -192,6 +192,14 @@
         "tk"
       ]
     },
-    "pronoun": "she"
+    "pronoun": "she",
+    "description": "Black widow, mostly harmless",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#D0202A"
+      }
+    ]
   }
 }

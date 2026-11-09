@@ -1,5 +1,5 @@
 {
- "source": "design/explorations/c3 (Claude Design C7–C10), rendered by scripts/render-pixls.mjs",
+ "source": "design/explorations/c3 (Claude Design C7–C14), rendered by scripts/render-pixls.mjs",
  "pet": "widow",
  "name": "Web crawler",
  "species": "Black widow",
@@ -812,6 +812,10 @@
     ".01............0...........0....................0...........0............01..",
     ".0.............0...........0....................0...........0.............0..",
     "...............0...........0....................0...........0................"
+   ],
+   "pin": [
+    38,
+    0
    ]
   },
   "file_ride_0": {

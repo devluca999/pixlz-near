@@ -6,7 +6,7 @@ import Testing
 @MainActor
 @Suite struct PixlCopyTests {
     @Test func theGrumbleMatchesThePixl() {
-        #expect(PixlSkins.busyLine(name: "Nox", busy: nil, species: "Black cat") == "Hey! Nox is busy being a black cat.")
+        #expect(PixlSkins.busyLine(name: "Katt", busy: nil, species: "Black cat") == "Hey! Katt is busy being a black cat.")
         #expect(PixlSkins.busyLine(name: "Frogg", busy: nil, species: "Red-eyed tree frog") == "Hey! Frogg is busy being a red-eyed tree frog.")
         #expect(PixlSkins.busyLine(name: "Boo", busy: nil, species: "Bedsheet ghost") == "Hey! Boo is busy being a bedsheet ghost.")
         #expect(PixlSkins.busyLine(name: "Ink", busy: nil, species: "Inky octopus · deep sea").hasSuffix("being an inky octopus."))
@@ -27,7 +27,7 @@ import Testing
         let (id, name) = (PixlSkins.currentID, PixlSkins.displayName)
         defer { PixlSkins.currentID = id; PixlSkins.displayName = name }
         PixlSkins.currentID = "cat"; PixlSkins.displayName = nil
-        #expect(PixlSkins.name == "Nox")
+        #expect(PixlSkins.name == "Katt")
         PixlSkins.displayName = "Midnight"
         #expect(PixlSkins.name == "Midnight")
     }
@@ -46,13 +46,13 @@ import Testing
 @Suite struct PixlNameTests {
     @Test func eachPixlKeepsItsOwnName() {
         var s = PixlSettings()
-        s.switchSkin(to: "widow", default: "Silk")
-        s.name = "Charlotte"; s.rememberName(default: "Silk")
-        s.switchSkin(to: "cat", default: "Nox")
-        #expect(s.name == "Nox")                         // not Charlotte
-        s.switchSkin(to: "widow", default: "Silk")
+        s.switchSkin(to: "widow", default: "Silky")
+        s.name = "Charlotte"; s.rememberName(default: "Silky")
+        s.switchSkin(to: "cat", default: "Katt")
+        #expect(s.name == "Katt")                         // not Charlotte
+        s.switchSkin(to: "widow", default: "Silky")
         #expect(s.name == "Charlotte")                   // she gets her name back
-        s.name = "Silk"; s.rememberName(default: "Silk")
+        s.name = "Silky"; s.rememberName(default: "Silky")
         #expect(s.names == nil)                          // back to the default: nothing to remember
     }
 

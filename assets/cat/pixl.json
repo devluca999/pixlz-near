@@ -1,6 +1,6 @@
 {
   "id": "cat",
-  "name": "Nox",
+  "name": "Katt",
   "species": "Black cat",
   "canvas": {
     "w": 101,
@@ -116,7 +116,7 @@
     "menuFace": "emotion_curious",
     "glassBody": false,
     "signature": "Slow blink",
-    "askPlaceholder": "Ask Nox anything…",
+    "askPlaceholder": "Ask Katt anything…",
     "personality": "an aloof black cat who judges first, then helps anyway, in very few words",
     "detail": "Tail curl off the right edge",
     "decal": {
@@ -187,6 +187,14 @@
         "mrrp"
       ]
     },
-    "pronoun": "she"
+    "pronoun": "she",
+    "description": "Friendly feline",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#AE90EC"
+      }
+    ]
   }
 }

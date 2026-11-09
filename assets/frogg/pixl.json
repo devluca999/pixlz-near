@@ -192,6 +192,14 @@
         "rrbt"
       ]
     },
-    "pronoun": "he"
+    "pronoun": "he",
+    "description": "Tree frog, the red-eyed kind",
+    "skins": [
+      {
+        "id": "default",
+        "name": "Default",
+        "accent": "#7CD93A"
+      }
+    ]
   }
 }

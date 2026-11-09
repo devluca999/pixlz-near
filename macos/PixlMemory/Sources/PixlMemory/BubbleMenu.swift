@@ -88,7 +88,7 @@ final class BubbleMenu {
         let v = OptionBubblesView(frame: NSRect(origin: .zero, size: box.size), slots: slots, head: local(head),
                                   centers: placement.centers.map(local), look: iconLook, labelLook: labelLook)
         v.accent = accent
-        v.style = ui.menuStyle  // Silk's bubbles hang on threads, Boo's trail wisps
+        v.style = ui.menuStyle  // Silky's bubbles hang on threads, Boo's trail wisps
         if ui.menuStyle == "wisp" { v.styleColor = accent }
         v.onSelect = { [weak self] slot in self?.selected(slot) }
         v.onCancel = { [weak self] in self?.close(reason: "esc") }
