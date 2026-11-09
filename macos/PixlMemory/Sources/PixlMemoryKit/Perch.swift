@@ -58,5 +58,14 @@ public enum Perch {
         return toAppKit(topLeft, primaryHeight: primaryHeight)
     }
 
+    /// Whether the Pixl standing at `foot` (top-left coordinates) is mostly on one of `screens`.
+    public static func isOnScreen(foot: CGPoint, sprite: CGSize, screens: [CGRect]) -> Bool {
+        let body = CGRect(x: foot.x - sprite.width / 2, y: foot.y - sprite.height, width: sprite.width, height: sprite.height)
+        return screens.contains { s in
+            let i = s.insetBy(dx: -4, dy: -4).intersection(body)
+            return !i.isNull && i.width * i.height >= body.width * body.height * 0.5
+        }
+    }
+
     static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { lo > hi ? (lo + hi) / 2 : min(max(v, lo), hi) }
 }

@@ -31,6 +31,10 @@ public class PixlCard: NSView {
     private let column = NSStackView()
     private var footerPlate: PlateView!
     static let width: CGFloat = 340
+    /// The tallest the body may be before it scrolls. The app sets it from the screen the
+    /// Pixl is on (short laptop screens, big text), so a card never runs off the bottom.
+    @MainActor public static var maxBodyHeight: CGFloat = 10_000
+    private(set) var bodyScroll: NSScrollView!
     /// Width of text inside the body plate.
     var inner: CGFloat { Self.width - 10 - 20 }
     var tokens: MaterialTokens { look.tokens }
@@ -73,8 +77,29 @@ public class PixlCard: NSView {
         stack.alignment = .leading
         stack.spacing = 10
         let bp = PlateView.wrap(stack, look: look, padding: NSEdgeInsets(top: 8, left: 10, bottom: 10, right: 10))
-        column.addArrangedSubview(bp)
-        bp.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        // On a short screen the body scrolls; the header and the footer's buttons stay put.
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.contentView = TopClipView()
+        scroll.contentView.drawsBackground = false
+        scroll.documentView = bp
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        bp.translatesAutoresizingMaskIntoConstraints = false
+        column.addArrangedSubview(scroll)
+        let fill = scroll.heightAnchor.constraint(equalTo: bp.heightAnchor)
+        fill.priority = NSLayoutConstraint.Priority(740)   // below the text's compression resistance, so the text never squashes
+        NSLayoutConstraint.activate([
+            scroll.widthAnchor.constraint(equalTo: column.widthAnchor),
+            bp.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            bp.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            bp.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            scroll.heightAnchor.constraint(lessThanOrEqualToConstant: Self.maxBodyHeight),
+            fill,
+        ])
+        bodyScroll = scroll
 
         // footer (hidden until something goes in it)
         footer.spacing = 8
@@ -132,6 +157,11 @@ public class PixlCard: NSView {
         layoutSubtreeIfNeeded()
         setFrameSize(NSSize(width: Self.width, height: fittingSize.height))
     }
+}
+
+/// Keeps a scrolled document pinned to the top.
+final class TopClipView: NSClipView {
+    override var isFlipped: Bool { true }
 }
 
 @MainActor

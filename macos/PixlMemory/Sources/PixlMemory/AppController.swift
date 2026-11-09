@@ -143,6 +143,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         reposition(force: true)
+        updateCardLimit()
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -162,7 +163,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let current { place(at: current) }
     }
 
-    @objc func screensChanged() { reposition(force: true) }
+    @objc func screensChanged() {
+        // A display came or went, or its resolution, scaling or Dock changed.
+        let screens = screensTopLeft
+        Debug.log("screens changed: \(screens.count) · \(screens.map { "\(Int($0.width))×\(Int($0.height))" }.joined(separator: ", "))")
+        updateCardLimit()
+        // If the Pixl's spot is no longer on any screen (its monitor was unplugged), even a
+        // spot you dragged it to is let go, so it comes back instead of being stranded.
+        if let f = foot, !Perch.isOnScreen(foot: f, sprite: spriteSize, screens: screens) {
+            userPlaced = false
+            cancelMotion()
+            if let spot = target() { place(at: spot.foot); puff(at: spot.foot) }
+            return
+        }
+        reposition(force: true)
+    }
+
+    /// Cards scroll their body rather than run past the bottom of the Pixl's screen.
+    func updateCardLimit() {
+        let h = (froggPanel.map { _ in froggScreen } ?? NSScreen.main?.visibleFrame ?? .zero).height
+        PixlCard.maxBodyHeight = max(160, h - 170)   // room for the header, footer and margins
+    }
 
     // MARK: geometry
 
