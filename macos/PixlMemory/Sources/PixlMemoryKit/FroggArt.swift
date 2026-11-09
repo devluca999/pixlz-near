@@ -164,6 +164,17 @@ public enum PixlSkins {
     /// Which one is on screen. Set by the app from the saved setting.
     public static var currentID = "frogg"
     public static var current: Skin { skin(currentID) ?? all[0] }
+    /// The name you gave your Pixl (the app keeps it in sync with Settings); else the skin's.
+    public static var displayName: String?
+    public static var name: String { displayName.flatMap { $0.isEmpty ? nil : $0 } ?? current.manifest.name }
+
+    /// The third-poke grumble, true to whichever Pixl you have: "Nox is busy being a black cat."
+    public static func busyLine(name: String, species: String) -> String {
+        var kind = species.components(separatedBy: " · ")[0].trimmingCharacters(in: .whitespaces)
+        if let f = kind.first { kind = f.lowercased() + kind.dropFirst() }
+        let article = kind.first.map { "aeiou".contains($0) } == true ? "an" : "a"
+        return "Hey! \(name) is busy being \(article) \(kind)."
+    }
     public static func skin(_ id: String) -> Skin? { all.first { $0.id == id } }
 
     /// Every frame name the app asks for: all slots × 3, the six emotions.

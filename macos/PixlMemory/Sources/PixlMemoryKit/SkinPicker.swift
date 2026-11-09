@@ -160,8 +160,9 @@ public enum DecalArt {
         func color(_ ch: Character) -> NSColor? {
             switch ch {
             case ".": return nil
-            case "k": return look.glass ? NSColor.white.withAlphaComponent(0.92) : Theme.ink
-            case "f": return look.glass ? NSColor.white.withAlphaComponent(0.34) : Theme.paper
+            // outline and fill follow the surface, so the detail shows on dark cards too
+            case "k": return look.glass ? NSColor.white.withAlphaComponent(0.92) : look.tokens.outline
+            case "f": return look.glass ? NSColor.white.withAlphaComponent(0.34) : (look.variant == .dark ? Theme.ink : Theme.paper)
             default:
                 let hex = d.colors[String(ch)] ?? accent
                 let c = RGB(hex: hex)

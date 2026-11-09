@@ -35,7 +35,7 @@ final class KeyPanel: OverlayPanel {
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     enum Mode { case perched, held, airborne, dropping }
 
-    var settings = PixlSettings.load()
+    var settings = PixlSettings.load() { didSet { PixlSkins.displayName = settings.name } }
     let client = MemoryClient()
     let watcher = WindowWatcher()
     var frogg: FroggView!
@@ -105,6 +105,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("launch pid=\(ProcessInfo.processInfo.processIdentifier) accessibility=\(AX.trusted) debug=\(Debug.enabled)")
         bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
         PixlSkins.currentID = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
+        PixlSkins.displayName = settings.name
         buildFrogg()
         setUpStatusItem()
         HotKeys.shared.register(.p) { [weak self] in self?.toggleMiniMenu() }
@@ -725,7 +726,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func clicked(_ event: NSEvent) {
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
-            say("Hey! \(settings.name) is busy being a frog.", for: 2)
+            say(PixlSkins.busyLine(name: settings.name, species: PixlSkins.current.manifest.species), for: 2)
         } else {
             play(.poke)
         }
@@ -1375,7 +1376,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = add("Reset position", #selector(resetPosition))
         _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
         menu.addItem(.separator())
-        let wallet = add("Frogg's wallet…", #selector(openWallet))
+        let wallet = add("\(settings.name)'s wallet…", #selector(openWallet))
         Task { @MainActor in
             let s = await client.status()
             wallet.title = "Wallet: " + (s.wallet ?? "not set up")

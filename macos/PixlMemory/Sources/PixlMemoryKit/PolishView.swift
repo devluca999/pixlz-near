@@ -86,9 +86,9 @@ public final class PolishView: NSView {
             stack.addArrangedSubview(wrapping(v.summary, font: .systemFont(ofSize: 12), color: Theme.textMuted))
             if let rc = r.receipt {
                 let line = rc.status == "paid"
-                    ? "🐸 Frogg paid \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?") from its own testnet wallet"
+                    ? "\(PixlSkins.name) paid \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?") from its own testnet wallet"
                         + (rc.balanceAfterNear.map { " · \($0) Ⓝ left" } ?? "")
-                    : "🐸 " + rc.bubble
+                    : rc.bubble
                 let f = wrapping(line, font: Theme.mono(11, .bold), color: rc.status == "paid" ? Theme.text : Theme.partial)
                 if let link = rc.explorer, let url = URL(string: link) {
                     let a = NSMutableAttributedString(attributedString: f.attributedStringValue)

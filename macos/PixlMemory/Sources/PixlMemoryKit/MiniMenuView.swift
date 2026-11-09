@@ -122,7 +122,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         modelLabel = label("", Theme.mono(11), Theme.text)
         lastLabel = label("", Theme.mono(11), Theme.text)
         walletLabel = label("", Theme.mono(11), Theme.partial)
-        walletButton = PixelButton(title: "Set up Frogg's wallet", primary: true) { [weak self] in self?.onOpenWallet?() }
+        walletButton = PixelButton(title: "Set up \(settings.name)'s wallet", primary: true) { [weak self] in self?.onOpenWallet?() }
         [serviceLabel, modelLabel, lastLabel, walletLabel, walletButton].forEach { stack.addArrangedSubview($0!) }
         update(status: status)
 
@@ -185,7 +185,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         guard let field = obj.object as? NSTextField else { return }
         if field === nameField {
             let n = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            settings.name = n.isEmpty ? "Frogg" : String(n.prefix(24))
+            settings.name = n.isEmpty ? PixlSkins.current.manifest.name : String(n.prefix(24))
         } else if field === appsField {
             settings.distractingApps = field.stringValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }

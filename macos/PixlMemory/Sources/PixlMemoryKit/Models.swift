@@ -129,7 +129,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .badToken: "The service rejected the token."
         case .noApiKey(let m), .noCredits(let m), .notPrivate(let m), .upstream(let m): m
         case .offline(let m): m + " Nothing was sent. Highlights, notes, memory search and trips between your devices on this Wi-Fi still work."
-        case .outOfAllowance(let m): m + " Your text was not sent. Top up Frogg or wait until tomorrow (UTC)."
+        case .outOfAllowance(let m): m + " Your text was not sent. Top up your Pixl's wallet or wait until the limit resets."
         case .attestationFailed(let m, _): m + " Your text was not sent."
         }
     }

@@ -42,6 +42,16 @@ public final class SurfaceView: NSView {
         }
 
         public var textColor: NSColor { tokens.text }
+        /// The fill behind a hovered (or pressed) row, chosen per theme so this look's text
+        /// stays legible on it: pale green on light paper, an accent tint on dark.
+        @MainActor public func rowFill(pressed: Bool) -> NSColor {
+            if glass {
+                return variant == .dark ? NSColor.white.withAlphaComponent(pressed ? 0.2 : 0.12)
+                                        : NSColor.white.withAlphaComponent(pressed ? 0.6 : 0.4)
+            }
+            if variant == .dark { return Accent.color.withAlphaComponent(pressed ? 0.3 : 0.2) }
+            return pressed ? (Theme.selected.blended(withFraction: 0.08, of: Theme.ink) ?? Theme.selected) : Theme.selected
+        }
         public var mutedColor: NSColor { tokens.text2 }
         public var appearance: NSAppearance? { NSAppearance(named: variant == .dark ? .darkAqua : .aqua) }
     }

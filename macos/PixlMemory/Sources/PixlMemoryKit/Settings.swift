@@ -16,11 +16,11 @@ public struct PixlSettings: Codable, Equatable, Sendable {
 
     public static let key = "PixlMemory.settings"
 
-    public static func load(_ defaults: UserDefaults = .standard) -> PixlSettings {
+    @MainActor public static func load(_ defaults: UserDefaults = .standard) -> PixlSettings {
         guard let data = defaults.data(forKey: key), var s = try? JSONDecoder().decode(PixlSettings.self, from: data)
         else { return PixlSettings() }
         s.scale = [2, 3, 4].contains(s.scale) ? s.scale : 2
-        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Frogg" : String(s.name.prefix(24))
+        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (PixlSkins.skin(s.skinID) ?? PixlSkins.current).manifest.name : String(s.name.prefix(24))
         return s
     }
 

@@ -285,6 +285,25 @@ enum Story {
             PixlSkins.currentID = "frogg"
             try png(v, "\(out)/09-decals.png")
         }
+
+        // Menus with a highlighted row in every theme (hover legibility)
+        do {
+            let v = desktop()
+            let rows = [ListMenuView.Row(id: "skins", title: "Change Pixl", icon: "settings"),
+                        ListMenuView.Row(id: "game", title: "Mischief: Fly snap", icon: "polish", trailing: "best 7"),
+                        ListMenuView.Row(id: "hide", title: "Hide for now", icon: nil, trailing: "⌃⌥H")]
+            let looks: [(String, SurfaceView.Look)] = [
+                ("frogg", .init(glass: false, variant: .light, dim: 0.94)), ("frogg", .init(glass: false, variant: .dark, dim: 0.94)),
+                ("cat", .init(glass: false, variant: .dark, dim: 0.94)), ("ghost", .init(glass: true, variant: .dark, dim: 0.66))]
+            for (i, (skin, look)) in looks.enumerated() {
+                PixlSkins.currentID = skin
+                let list = ListMenuView(rows: rows, look: look)
+                list.setFocus(1)
+                put(list, at: NSPoint(x: 30 + CGFloat(i) * 230, y: 120), in: v)
+            }
+            PixlSkins.currentID = "frogg"
+            try png(v, "\(out)/10-hover.png")
+        }
         PixlSkins.currentID = "frogg"
     }
 }

@@ -42,7 +42,7 @@ public final class OptionBubblesView: NSView {
         buttons.forEach { addSubview($0.label) }  // labels float above every bubble
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Frogg's menu")
+        setAccessibilityLabel("\(PixlSkins.name)'s menu")
         layoutButtons()
     }
 

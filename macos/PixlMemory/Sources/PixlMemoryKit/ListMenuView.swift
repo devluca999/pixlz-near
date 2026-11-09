@@ -27,7 +27,7 @@ public final class ListMenuView: NSView {
     static func width(for rows: [Row]) -> CGFloat {
         let title = NSFont.systemFont(ofSize: 13, weight: .semibold), mono = Theme.mono(10)
         let need = rows.map { r in
-            (r.title as NSString).size(withAttributes: [.font: title]).width + 42 + 20 +
+            (r.title as NSString).size(withAttributes: [.font: title]).width + 42 + 20 + 12 + 4 +   // icon, gaps, the row inset, rounding
             (r.trailing.map { ($0 as NSString).size(withAttributes: [.font: mono]).width + 10 } ?? 0)
         }.max() ?? 0
         return min(max(ceil(need), 220), 320)
@@ -153,15 +153,12 @@ final class ListRow: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard row.enabled, hovering || focused || down else { return }
-        let bg: NSColor = look.glass ? (look.variant == .dark ? NSColor.white.withAlphaComponent(down ? 0.2 : 0.12)
-                                                              : NSColor.white.withAlphaComponent(down ? 0.6 : 0.4))
-                                     : Theme.selected
-        bg.setFill()
+        look.rowFill(pressed: down).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
         if focused {
             let p = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
             p.lineWidth = 2
-            Theme.accent.setStroke()
+            Accent.color.setStroke()   // the current Pixl's colour
             p.stroke()
         }
     }

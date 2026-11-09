@@ -53,7 +53,7 @@ public struct MemoryClient: Sendable {
         if let r = try? request("/wallet"), let (wd, ws) = try? await send(r), ws == 200,
            let w = try? JSONDecoder().decode(Wallet.self, from: wd) {
             st.walletReady = w.ready == true
-            st.wallet = w.ready == true ? "\(w.account ?? "Frogg") · \(w.balance_near ?? "?") Ⓝ" : (w.setup ?? "not set up")
+            st.wallet = w.ready == true ? "\(w.account ?? "your Pixl") · \(w.balance_near ?? "?") Ⓝ" : (w.setup ?? "not set up")
         }
         return st
     }
