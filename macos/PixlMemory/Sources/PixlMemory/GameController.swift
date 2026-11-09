@@ -33,7 +33,7 @@ final class GameController {
         app.busy = true
         app.cancelAnimations()
         app.frogg.frameName = "poke_1"
-        app.say("\(info.name)! Click them before they're gone.", for: 2)
+        app.notify(.gameStart(info.name))
         Debug.log("game start \(info.name)")
         // Esc ends it early
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
@@ -106,7 +106,7 @@ final class GameController {
         Debug.log("game over score=\(score) best=\(max(score, best))")
         stop()
         app.show(newBest ? "emotion_happy" : "emotion_proud", for: 3)
-        app.say(newBest ? "\(score) \(thing)! New best." : "\(score) \(thing). Best: \(best).", for: 3.5)
+        app.notify(.gameScore(score, thing, best: best, newBest: newBest), voice: newBest ? .happy : .idle)
     }
 
     func end(early: Bool) {
@@ -115,7 +115,7 @@ final class GameController {
         let wasLaser = laser != nil
         stop()
         if wasLaser { app.later(0.3) { [weak self] in self?.app.userPlaced = false; self?.app.reposition(force: true) } }
-        app.chatter("Okay, later.", for: 1.5)
+        app.notify(.gameEnded)
         app.backToIdle()
     }
 
@@ -129,7 +129,7 @@ final class GameController {
         app.busy = true
         app.cancelAnimations()
         app.leaveSurface()
-        app.say("\(info.name)! Keep the dot away from \(app.settings.name).", for: 2.2)
+        app.notify(.laserStart(info.name, name: app.settings.name))
         Debug.log("game start \(info.name)")
         let size = NSSize(width: 22, height: 22)
         let p = OverlayPanel(size: size)
@@ -185,7 +185,7 @@ final class GameController {
         Debug.log("laser over catches=\(catches) best=\(max(catches, best))")
         stop()
         let name = app.settings.name
-        app.say(catches == 0 ? "You're too quick for \(name)!" : "\(name) caught it \(catches) time\(catches == 1 ? "" : "s")!" + (catches > best ? " A record." : ""), for: 3.5)
+        app.notify(.laserScore(catches, name: name, record: catches > best), voice: catches > best ? .happy : .idle)
         app.show(catches > best ? "emotion_happy" : "emotion_proud", for: 2.5)
         app.later(2.6) { [weak self] in self?.app.userPlaced = false; self?.app.reposition(force: true) }
     }

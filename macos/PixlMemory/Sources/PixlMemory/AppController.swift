@@ -127,7 +127,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if !AX.trusted {
             AX.requestTrust()
-            say("I need Accessibility to see your window and selection", for: 8)
+            notify(.accessibilityNeeded)
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, AX.trusted else { return }
@@ -148,7 +148,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !secondCopy { Task { @MainActor in
             if let why = await service.ensureRunning() {
                 Debug.log("service: \(why)")
-                say("Memory service: \(why)", for: 6)
+                notify(.serviceProblem(why))
             }
         } }
         watcher.onChange = { [weak self] change in self?.windowChanged(change) }
@@ -945,11 +945,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         roam.poked()
         if pokes.poke(at: now) {
             show("emotion_annoyed", for: 2)
-            voice(PixlVoice.busy(name: settings.name, ui: ui, species: PixlSkins.current.manifest.species), for: 2)
+            speak(.annoyed)
         } else {
             play(.poke)
         }
-        if let until = focusUntil { say("Focus: \(Int(until.timeIntervalSinceNow / 60) + 1) min left", for: 2) }
+        if let until = focusUntil { notify(.focusLeft(Int(until.timeIntervalSinceNow / 60) + 1)) }
     }
 
     func signature() {
@@ -1078,9 +1078,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         busy = true
         resultPanel?.orderOut(nil)
         show("emotion_curious", for: 600)
-        say("Checking the enclave…", for: nil)
+        notify(.checkingEnclave)
         let stage = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { if self?.busy == true { self?.say("Thinking privately…", for: nil) } }
+            MainActor.assumeIsolated { if self?.busy == true { self?.notify(.thinking) } }
         }
         Task { @MainActor in
             defer { busy = false; stage.invalidate() }
@@ -1090,14 +1090,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 lastVerdict = "\(v.badge) · \(v.passed)/\(v.checks.count)"
                 show(v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed", for: 4)
                 let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
-                say(r.receipt.map { verdict + "\n" + $0.bubble } ?? verdict, for: 5)
+                notify(.polished(r.receipt.map { verdict + ". " + $0.bubble } ?? verdict), voice: r.verification.verdict == "verified" ? .happy : .curious)
                 if let rc = r.receipt, rc.status == "paid", let amt = rc.amountNear { coinPop(amt) }
                 showResult(.result(r, instruction: ins.title, app: sel.app))
                 menu.refreshWallet()
             } catch {
                 let e = (error as? MemoryError) ?? .upstream(error.localizedDescription)
                 show("emotion_annoyed", for: 5)
-                say(e.bubble, for: 6)
+                notify(.error(e), voice: .sad)
                 switch e {
                 case .attestationFailed, .serviceDown, .noApiKey, .noCredits, .outOfAllowance: showResult(.error(e, app: sel.app))
                 default: break
@@ -1109,7 +1109,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func replaced(_ r: PolishResult, panel: NSPanel?) {
         panel?.orderOut(nil)
         show("emotion_happy", for: 3)
-        say("Replaced. Saved as accepted.", for: 2.5)
+        notify(.replaced, voice: .happy)
         Task { await client.markAccepted(draftId: r.draftId) }
     }
 
@@ -1124,7 +1124,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(r.suggestion, forType: .string)
             show("emotion_curious", for: 3)
-            say("Couldn't write there. Copied: paste with ⌘V", for: 3.5)
+            notify(.couldntWrite)
         }
     }
 
@@ -1142,7 +1142,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.onCopy = { [weak self] s in
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(s, forType: .string)
-            self?.say("Copied", for: 1.5)
+            self?.notify(.copied)
         }
         view.onReplace = { [weak self, weak panel] r in
             guard let self, let original = self.polishedText else { return }
@@ -1165,7 +1165,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.onDropped = { [weak self, weak panel] r in
             panel?.orderOut(nil)
             self?.show("emotion_happy", for: 3)
-            self?.say("Dropped in. Saved as accepted.", for: 2.5)
+            self?.notify(.droppedIn, voice: .happy)
             Task { await self?.client.markAccepted(draftId: r.draftId) }
         }
         view.onResize = { [weak self, weak panel, weak view, weak card] in
@@ -1239,7 +1239,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func startFocus(minutes: Int) {
         Debug.log("focus start \(minutes) min")
         focusUntil = Date().addingTimeInterval(TimeInterval(minutes * 60))
-        say("Focus for \(minutes) min. I'll sit still.", for: 3)
+        notify(.focusStarted(minutes, name: settings.name))
         focusTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.endFocus(completed: true) }
         }
@@ -1253,9 +1253,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         focusUntil = nil
         if completed {
             show("emotion_proud", for: 4)
-            say("Focus session done! 🎉", for: 4)
+            notify(.focusDone, voice: .happy)
         } else {
-            say("Focus stopped", for: 2)
+            notify(.focusStopped)
         }
         reposition(force: true)
     }
@@ -1266,15 +1266,98 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
               settings.distractingApps.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
         lastNudge = Date()
         play(.nudge)
-        say("\(name)? Back to focus soon.", for: 3)
+        notify(.distracted(name), voice: .curious)
     }
 
     // MARK: bubble (SPEC §11.6)
 
-    func say(_ text: String, for seconds: TimeInterval? = 3) {
-        Debug.log("say \"\(text.prefix(40))\" hidden=\(userHidden) fullscreenHidden=\(fullscreenHidden)")
+    // MARK: the three text channels (SPEC §11.6)
+
+    /// Status: what it's doing, narrated in the third person. Settings header, hover tooltip and
+    /// the menu bar; never in a bubble.
+    var statusLine: String {
+        PixlStatus.line(name: settings.name, pronoun: PixlPronoun(rawValue: settings.pronouns?[settings.skinID] ?? ui.pronoun ?? "they") ?? .they,
+                        activity: activity, ui: ui)
+    }
+
+    /// Changes its idle status line every few minutes.
+    var statusIndex: Int { Int(Date().timeIntervalSince1970 / 180) }
+
+    var activity: PixlActivity {
+        if userHidden { return .hidden }
+        if let d = awayOn { return .visiting(d) }
+        if resizer.adjusting { return .resizing }
+        if game.isOn { return .playing(game.info.name) }
+        switch sleep.stage {
+        case .drowsy: return .drowsy
+        case .asleep: return .asleep
+        case .deep: return .deepSleep
+        case .waking: return .waking
+        default: break
+        }
+        if roam.outing, let o = roam.outingName { return .outing(o) }
+        if busy { return .thinking }
+        if focusUntil != nil { return .focus }
+        if sleep.stage == .resting { return .resting }
+        return .idle(statusIndex)
+    }
+
+    var statusTip: NSPanel?
+    var statusTipText = ""
+
+    /// The status as a little tooltip above the Pixl, after you rest the mouse on it for ~1 s.
+    func showStatusTip(_ show: Bool) {
+        guard show, !menu.isOpen, !moving, !resizer.adjusting, let froggPanel, let frogg, !userHidden else {
+            statusTip?.orderOut(nil); statusTip = nil; return
+        }
+        let text = statusLine
+        if statusTip != nil, text == statusTipText { return }
+        statusTip?.orderOut(nil)
+        statusTipText = text
+        let font = Theme.mono(11, .bold)
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        let w = ceil(size.width) + 16, h: CGFloat = 22
+        let tip = PropPanel(size: NSSize(width: w, height: h)) { r in
+            // a stepped ink plate, like the resize label
+            Theme.ink.setFill()
+            NSRect(x: 2, y: 0, width: r.width - 4, height: r.height).fill()
+            NSRect(x: 0, y: 2, width: r.width, height: r.height - 4).fill()
+            Accent.color.setFill(); NSRect(x: 2, y: 0, width: r.width - 4, height: 2).fill()
+            (text as NSString).draw(at: NSPoint(x: 8, y: 4), withAttributes: [.font: font, .foregroundColor: Theme.paper])
+        }
+        let f = froggPanel.frame
+        let top = f.minY + FroggArt.shared.size(frogg.frameName).height * scale + 6
+        let r = Placement.fit(CGRect(x: f.midX - w / 2, y: top, width: w, height: h), in: froggScreen, margin: 4)
+        tip.setFrameOrigin(r.origin)
+        tip.orderFrontRegardless()
+        statusTip = tip
+        Debug.log("status: \(text)")
+    }
+
+    var voicePicker = VoicePicker()
+
+    /// Voice: one of the Pixl's own sounds for `event` ("ribbit", "mrrp?", "tk tk"), never the
+    /// same line twice in a row. A shy Pixl (Boo) says it without a bubble.
+    func speak(_ event: SoundEvent, for seconds: TimeInterval = 1.8) {
+        let line = voicePicker.pick(event, ui: ui)
+        Debug.log("voice \(event.rawValue): \"\(line)\"")
+        if ui.shy == true { murmur(line) } else { voiceBubble(line, for: seconds) }
+    }
+
+    /// Notices: anything functional, in plain English with an icon, optionally led by one sound.
+    func notify(_ n: Notice, voice: SoundEvent? = nil) {
+        let line = voice.map { voicePicker.pick($0, ui: ui) }
+        Debug.log("notice \(n.kind.rawValue): \"\(n.text.prefix(60))\"")
+        present(NoticeView(n, voice: line, look: menu.cardLook), seconds: n.seconds)
+    }
+
+    /// The speech bubble, for the voice channel only (`speak`).
+    func voiceBubble(_ text: String, for seconds: TimeInterval? = 3) {
+        present(BubbleView(text: text, look: menu.labelLook), seconds: seconds)
+    }
+
+    func present(_ bubble: NSView, seconds: TimeInterval?) {
         guard !userHidden, !fullscreenHidden else { return }
-        let bubble = BubbleView(text: text, look: menu.labelLook)
         // a fresh window for each bubble: Liquid Glass didn't render when a reused window's
         // content view was swapped (only the tail showed)
         let old = bubblePanel
@@ -1312,23 +1395,42 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.showAsk()
     }
 
-    /// The Pixl's own chatter (greetings, grumbles, moods), in its voice: Boo only says "…".
-    func chatter(_ text: String, for seconds: TimeInterval = 2.5) {
-        voice(PixlVoice.chatter(text, ui: ui), for: seconds)
-    }
-
-    /// Says a line of chatter: in a speech bubble, or for a shy Pixl (Boo) just dots floating by
-    /// its head, no bubble.
-    func voice(_ line: String, for seconds: TimeInterval = 2.5) {
-        if ui.shy == true { murmur(line) } else { say(line, for: seconds) }
-    }
-
     var murmurPanel: PropPanel?
+
+    /// Boo says a word ("boo"): faint, outlined letters by its head, no bubble; they drift and fade.
+    func murmurWords(_ line: String) {
+        guard let froggPanel, let frogg else { return }
+        let font = Theme.mono(13, .bold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(srgbRed: 0.93, green: 0.95, blue: 1, alpha: 1),
+                                                    .strokeColor: NSColor(white: 0.08, alpha: 0.75), .strokeWidth: -3]
+        let size = (line as NSString).size(withAttributes: attrs)
+        let panel = PropPanel(size: NSSize(width: ceil(size.width) + 8, height: ceil(size.height) + 6)) { _ in
+            (line as NSString).draw(at: NSPoint(x: 4, y: 3), withAttributes: attrs)
+        }
+        let f = froggPanel.frame
+        let headTop = f.minY + max(FroggArt.shared.size(frogg.frameName).height, FroggArt.shared.size("idle_0").height) * scale + 6
+        let side: CGFloat = frogg.mirrored ? -1 : 1
+        let start = NSPoint(x: f.midX + side * 34 - panel.frame.width / 2, y: headTop + 2)
+        panel.setFrameOrigin(start)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        murmurPanel = panel
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.5; panel.animator().alphaValue = 0.9 }
+        later(1.6) { [weak self, weak panel] in
+            guard let panel else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.7
+                panel.animator().alphaValue = 0
+                panel.animator().setFrameOrigin(NSPoint(x: start.x, y: start.y + 12))
+            }, completionHandler: { MainActor.assumeIsolated { panel.orderOut(nil); if self?.murmurPanel === panel { self?.murmurPanel = nil } } })
+        }
+    }
 
     /// Boo's "…": pixel dots that pop in one by one beside its head, drift up a little and fade.
     func murmur(_ line: String) {
         guard !userHidden, let froggPanel, let frogg else { return }
         murmurPanel?.orderOut(nil)
+        if line.contains(where: \.isLetter) { murmurWords(line); return }
         let glyphs = Array(line.replacingOccurrences(of: "…", with: "...").filter { !$0.isWhitespace })
         let unit: CGFloat = 3   // one dot = a 3 pt pixel
         let size = NSSize(width: CGFloat(glyphs.count) * unit * 3 + 8, height: unit * 6 + 6)
@@ -1406,7 +1508,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Open at once with what we last knew; fresh service/wallet status fills in after.
         var status = cachedStatus ?? ServiceStatus(service: "checking…")
         status.lastVerdict = lastVerdict
-        let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook)
+        let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook, statusLine: statusLine)
         view.fit()
         let card = SurfaceView.card(view, look: menu.cardLook)
         let panel = KeyPanel(size: card.frame.size)
@@ -1482,7 +1584,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.run(Choreography([.land(at: at, frame: MotionFrames.land, mirrored: false, duration: Choreography.landTime, dust: true)]), target: nil)
                     self.puff(at: at)
                 }
-                self.chatter("Hi, I'm \(self.settings.name)!")
+                self.speak(.greet)
                 self.roam.refresh()   // each Pixl roams its own way
                 self.updateHover()    // a ghost floats
                 if reopenSettings { self.toggleMiniMenu() }
@@ -1497,19 +1599,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let name = target.localizedName ?? "that app"
         Debug.log("hand-off to \(name)")
         target.activate()
-        say("Taking it to \(name)…", for: 1.5)
+        notify(.handingOff(name))
         later(0.7) { [weak self] in
             guard let self else { return }
             if AX.trusted, AX.insert(text, pid: target.processIdentifier) {
                 Debug.log("hand-off: written into \(name)")
                 self.show("emotion_happy", for: 2.5)
-                self.say("It's in \(name). Read it, then send it yourself.", for: 3)
+                self.notify(.handedOff(name))
             } else {
                 Debug.log("hand-off: \(name) refused, copied")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
                 self.show("emotion_curious", for: 2.5)
-                self.say("Click where it should go in \(name), then ⌘V. It's copied.", for: 4)
+                self.notify(.pasteIn(name))
             }
         }
     }
@@ -1626,7 +1728,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hang = Choreography([.hold(at: start, frame: MotionFrames.hang, mirrored: false, duration: 0.14)])
         run(Choreography(hang.segments + (floats ? Choreography.glide(from: start, to: spot.foot) : Choreography.hop(route(from: start, to: spot.foot), notice: false)).segments), target: spot.foot)
         puff(at: start)
-        chatter("Hi! I'm here.", for: 1.8)
+        speak(.greet)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -1639,6 +1741,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(i)
             return i
         }
+        let status = add(statusLine, nil)   // what it's up to, narrated
+        status.isEnabled = false
+        menu.addItem(.separator())
         _ = add(userHidden ? "Call \(settings.name)" : "Open \(settings.name)'s menu", #selector(summonFromMenu))
         let login = add("Open at login", #selector(toggleLogin))
         login.state = LoginItem.enabled ? .on : .off
@@ -1691,15 +1796,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func summonFromMenu() { summon() }
     @objc func toggleLogin() {
         let ok = LoginItem.set(!LoginItem.enabled)
-        say(ok ? (LoginItem.enabled ? "I'll be here when you log in." : "Okay, I won't start at login.")
-               : "macOS wants you to allow it in System Settings ▸ General ▸ Login Items.", for: 3)
+        notify(ok ? (LoginItem.enabled ? .loginOn : .loginOff) : .loginNeedsApproval)
     }
     @objc func openMiniMenu() { toggleMiniMenu() }
     @objc func setBehavior(_ sender: NSMenuItem) {
         var s = settings
         s.roams = sender.representedObject as? Bool ?? false
         apply(s)
-        chatter(s.roams ? "Off to explore. Poke me if I'm in the way." : "I'll stay with you.")
+        notify(s.roams ? .roamOn(settings.name) : .calmOn(settings.name), voice: s.roams ? .happy : nil)
     }
     @objc func setMischief(_ sender: NSMenuItem) {
         settings.mischief = sender.representedObject as? String ?? "normal"
@@ -1714,7 +1818,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             cancelMotion()
             cancelAnimations()
             frogg.frameName = "idle_0"
-            say("Paused", for: 1.5)
+            notify(.paused)
         } else {
             reposition(force: true)
             scheduleIdle()
@@ -1937,7 +2041,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 check("bubbles fully on screen at the \(name) (\(menu.direction))", inside(r))
             }
             await shut()
-            say("A long-ish bubble to check it stays on screen", for: 1)
+            voiceBubble("A long-ish bubble to check it stays on screen", for: 1)
             check("speech bubble fully on screen at the \(name)", inside(bubblePanel.frame))
         }
         reposition(force: true)

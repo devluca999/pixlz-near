@@ -17,6 +17,7 @@ final class RoamController {
     var quietUntil = Date.distantPast
     var lastOutingEnd = Date.distantPast
     var outingSince: Date?
+    var outingName: String?
     /// Out on an outing: one was started and the Pixl is still playing it (a cancelled one is over).
     var outing: Bool { outingSince != nil && app.moving }
     var typingSince: Date?
@@ -108,6 +109,7 @@ final class RoamController {
         }
         guard c.duration > 0 else { schedule(); return }
         outingSince = Date()
+        outingName = o.name
         let end = c.pose(at: c.duration).pose
         if case .pond = o { showPond(at: w.foot) }
         let webCorners: [CGPoint]
@@ -137,7 +139,7 @@ final class RoamController {
         let roll = Int.random(in: 0..<10)
         if roll < 3, Date().timeIntervalSince(lastChatter) > 90 {
             lastChatter = Date()
-            app.voice(PixlVoice.doing(ui: app.ui), for: 2.4)
+            app.speak([.happy, .idle, .curious].randomElement()!)   // a little sound now and then
         } else if roll < 6 {
             app.later(0.4) { [weak self] in self?.app.signature() }
         }
@@ -237,7 +239,7 @@ final class RoamController {
     func poked() {
         guard on, outing || Date().timeIntervalSince(lastOutingEnd) < 10 else { return }
         quietUntil = Date().addingTimeInterval(180)
-        app.chatter("Okay, okay. I'll sit still for a bit.")
+        app.notify(.sittingStill(app.settings.name), voice: .annoyed)
         Debug.log("roam: poked after an outing, quiet for 3 min")
     }
 

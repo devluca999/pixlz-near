@@ -146,12 +146,47 @@
     "status": [
       "plotting something",
       "loafing",
-      "judging you softly",
+      "judging you",
       "staring at nothing",
       "being mysterious",
-      "knocking things off desks",
+      "eyeing your desk",
       "chasing a dust mote",
-      "guarding the warm spot"
-    ]
+      "guarding {pos} warm spot"
+    ],
+    "sounds": {
+      "greet": [
+        "meow!",
+        "mrrp?"
+      ],
+      "happy": [
+        "purr…",
+        "mrrrow",
+        "mrrp!"
+      ],
+      "curious": [
+        "mrrp?",
+        "mew?"
+      ],
+      "annoyed": [
+        "hss",
+        "mrrrr"
+      ],
+      "startled": [
+        "MRAOW!",
+        "hss!"
+      ],
+      "sleepy": [
+        "mrrm…",
+        "prrr…"
+      ],
+      "sad": [
+        "mew…"
+      ],
+      "idle": [
+        "meow",
+        "mrrp"
+      ]
+    },
+    "pronoun": "she"
   }
 }

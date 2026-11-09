@@ -173,14 +173,50 @@ let pixlManifestJSON: [String: String] = [
     "busy": "being a frog",
     "status": [
       "catching flies",
-      "being a frog",
-      "practicing his croak",
+      "practicing {pos} croak",
       "sitting very still",
       "dreaming of lily pads",
       "counting flies",
       "pondering the pond",
-      "ribbiting quietly"
-    ]
+      "ribbiting quietly",
+      "being a frog"
+    ],
+    "sounds": {
+      "greet": [
+        "ribbit!",
+        "rrbt?"
+      ],
+      "happy": [
+        "ribbit!",
+        "ribbit ribbit",
+        "rrbbit!"
+      ],
+      "curious": [
+        "rrbt?",
+        "rbt…?"
+      ],
+      "annoyed": [
+        "RIBBIT!",
+        "rrbt!"
+      ],
+      "startled": [
+        "RIBBIT!?",
+        "rbt!"
+      ],
+      "sleepy": [
+        "rrb… zz",
+        "rbt…"
+      ],
+      "sad": [
+        "rbt…",
+        "rrb…"
+      ],
+      "idle": [
+        "ribbit",
+        "rrbt"
+      ]
+    },
+    "pronoun": "he"
   }
 }
 """##,
@@ -333,13 +369,48 @@ let pixlManifestJSON: [String: String] = [
     "status": [
       "plotting something",
       "loafing",
-      "judging you softly",
+      "judging you",
       "staring at nothing",
       "being mysterious",
-      "knocking things off desks",
+      "eyeing your desk",
       "chasing a dust mote",
-      "guarding the warm spot"
-    ]
+      "guarding {pos} warm spot"
+    ],
+    "sounds": {
+      "greet": [
+        "meow!",
+        "mrrp?"
+      ],
+      "happy": [
+        "purr…",
+        "mrrrow",
+        "mrrp!"
+      ],
+      "curious": [
+        "mrrp?",
+        "mew?"
+      ],
+      "annoyed": [
+        "hss",
+        "mrrrr"
+      ],
+      "startled": [
+        "MRAOW!",
+        "hss!"
+      ],
+      "sleepy": [
+        "mrrm…",
+        "prrr…"
+      ],
+      "sad": [
+        "mew…"
+      ],
+      "idle": [
+        "meow",
+        "mrrp"
+      ]
+    },
+    "pronoun": "she"
   }
 }
 """##,
@@ -491,14 +562,50 @@ let pixlManifestJSON: [String: String] = [
     "busy": "being a very good dog",
     "status": [
       "being a very good dog",
-      "wagging",
+      "wagging {pos} tail",
       "sniffing everything",
       "guarding the desktop",
       "waiting for treats",
       "doing zoomies",
       "fetching nothing in particular",
       "making a new friend"
-    ]
+    ],
+    "sounds": {
+      "greet": [
+        "wan!",
+        "awoo!"
+      ],
+      "happy": [
+        "wan wan!",
+        "awoo",
+        "boof!"
+      ],
+      "curious": [
+        "wuf?",
+        "boof?"
+      ],
+      "annoyed": [
+        "grr",
+        "wuff!"
+      ],
+      "startled": [
+        "WAN!",
+        "yip!"
+      ],
+      "sleepy": [
+        "awoo…",
+        "huff…"
+      ],
+      "sad": [
+        "whine…",
+        "awoo…"
+      ],
+      "idle": [
+        "wan",
+        "boof"
+      ]
+    },
+    "pronoun": "he"
   }
 }
 """##,
@@ -659,11 +766,46 @@ let pixlManifestJSON: [String: String] = [
       "haunting quietly",
       "hovering",
       "fading in and out",
-      "rattling a tiny chain",
+      "rattling {pos} tiny chain",
       "hiding behind the window",
       "whispering to the folders"
     ],
-    "shy": true
+    "shy": true,
+    "sounds": {
+      "greet": [
+        "boo",
+        "..."
+      ],
+      "happy": [
+        "boo",
+        "…!"
+      ],
+      "curious": [
+        "…?",
+        "boo?"
+      ],
+      "annoyed": [
+        "boo!",
+        "..."
+      ],
+      "startled": [
+        "!",
+        "…!"
+      ],
+      "sleepy": [
+        "…",
+        "……"
+      ],
+      "sad": [
+        "…",
+        "boo…"
+      ],
+      "idle": [
+        "...",
+        "boo"
+      ]
+    },
+    "pronoun": "they"
   }
 }
 """##,
@@ -826,12 +968,43 @@ let pixlManifestJSON: [String: String] = [
       "weaving",
       "spinning a web",
       "hanging around",
-      "tidying the silk",
+      "tidying {pos} silk",
       "lurking politely",
-      "counting legs",
+      "counting {pos} legs",
       "knitting a hammock",
-      "checking the threads"
-    ]
+      "checking {pos} threads"
+    ],
+    "sounds": {
+      "greet": [
+        "tk tk"
+      ],
+      "happy": [
+        "tk tk tk",
+        "tk tk!"
+      ],
+      "curious": [
+        "tk?",
+        "tk tk?"
+      ],
+      "annoyed": [
+        "TK!",
+        "tk tk!"
+      ],
+      "startled": [
+        "tk!"
+      ],
+      "sleepy": [
+        "tk…"
+      ],
+      "sad": [
+        "tk…"
+      ],
+      "idle": [
+        "tk tk",
+        "tk"
+      ]
+    },
+    "pronoun": "she"
   }
 }
 """##,

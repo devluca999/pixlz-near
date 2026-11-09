@@ -149,13 +149,49 @@
     "busy": "being a frog",
     "status": [
       "catching flies",
-      "being a frog",
-      "practicing his croak",
+      "practicing {pos} croak",
       "sitting very still",
       "dreaming of lily pads",
       "counting flies",
       "pondering the pond",
-      "ribbiting quietly"
-    ]
+      "ribbiting quietly",
+      "being a frog"
+    ],
+    "sounds": {
+      "greet": [
+        "ribbit!",
+        "rrbt?"
+      ],
+      "happy": [
+        "ribbit!",
+        "ribbit ribbit",
+        "rrbbit!"
+      ],
+      "curious": [
+        "rrbt?",
+        "rbt…?"
+      ],
+      "annoyed": [
+        "RIBBIT!",
+        "rrbt!"
+      ],
+      "startled": [
+        "RIBBIT!?",
+        "rbt!"
+      ],
+      "sleepy": [
+        "rrb… zz",
+        "rbt…"
+      ],
+      "sad": [
+        "rbt…",
+        "rrb…"
+      ],
+      "idle": [
+        "ribbit",
+        "rrbt"
+      ]
+    },
+    "pronoun": "he"
   }
 }

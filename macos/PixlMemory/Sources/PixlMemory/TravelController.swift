@@ -17,7 +17,7 @@ final class TravelController {
 
     func openLocalNetworkSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")!)
-        app.say("Turn on Pixl Memory under Local Network, so I can see your other devices.", for: 4)
+        app.notify(.localNetworkOff)
     }
     let trustedKey = "PixlMemory.trustedDevices"
 
@@ -50,7 +50,7 @@ final class TravelController {
         r.onShrug = { [weak self] why in
             Debug.log("travel: shrug \(why)")
             self?.app.show("emotion_annoyed", for: 2)
-            self?.app.say(why == "userDeclined" ? "They said not now." : "Couldn't get there (\(why)). I'm staying.", for: 3)
+            self?.app.notify(why == "userDeclined" ? .tripDeclined : .tripFailed(why), voice: .sad)
         }
         r.transport.onState = { [weak self] s in
             Debug.log("travel: \(s)")
@@ -73,10 +73,10 @@ final class TravelController {
     var sendSlotName: String? { peers.count == 1 ? peers[0].deviceName : peers.isEmpty ? nil : "a device" }
 
     func send(to peer: DeviceRef) {
-        guard let r = runner, r.owned != nil else { app.say("I'm not here to send.", for: 2); return }
+        guard let r = runner, r.owned != nil else { app.notify(.notHere(app.settings.name)); return }
         Debug.log("travel: send to \(peer.deviceName)")
         app.show("poke_1", for: 8)
-        app.say("Off to \(peer.deviceName)…", for: 8)
+        app.notify(.travelling(app.settings.name, to: peer.deviceName), voice: .happy)
         r.send(to: peer)
     }
 
@@ -97,7 +97,7 @@ final class TravelController {
         app.awayOn = peer.deviceName
         app.menu.close(reason: "travel")
         guard let foot = app.foot else { app.froggPanel.orderOut(nil); return }
-        app.say("Bye! See you on \(peer.deviceName).", for: 1.6)
+        app.notify(.left(app.settings.name, to: peer.deviceName))
         app.puff(at: foot)
         app.run(Choreography.exit(from: foot, scale: app.scale), target: nil) { [weak self] in
             self?.app.froggPanel.orderOut(nil)
@@ -118,17 +118,17 @@ final class TravelController {
         app.settings.save()
         app.userHidden = true   // so summon() plays the entrance from the icon
         app.summon()
-        app.chatter("Hi! I came over from another device.")
+        app.notify(.arrived(app.settings.name), voice: .greet)
     }
 
     func callBack() {
         guard let r = runner, case .away(_, _, let ownerName, _)? = r.record else { return }
         guard let owner = peers.first(where: { $0.deviceName == ownerName }) else {
-            app.say("\(ownerName) isn't nearby right now.", for: 2.5)
+            app.notify(.ownerAway(ownerName))
             return
         }
         r.callBack(from: owner)
-        app.say("Calling from \(ownerName)…", for: 3)
+        app.notify(.callingFrom(ownerName))
     }
 
     // MARK: "what screens are available?" / "jump to my phone" (answered on the Mac, no AI)

@@ -108,6 +108,11 @@ public struct PixlUI: Codable, Equatable, Sendable {
     public var status: [String]?
     /// Shy Pixls (Boo) only ever say ellipses in chatter. Functional messages still read normally.
     public var shy: Bool?
+    /// Its voice: the only words that go in its speech bubbles, by event (greet, happy, curious,
+    /// annoyed, startled, sleepy, sad, idle). E.g. Frogg: "ribbit", "rrbt?", "RIBBIT!".
+    public var sounds: [String: [String]]?
+    /// How its status refers to it by default: he, she, they, it or name (Settings can change it).
+    public var pronoun: String?
     /// The one pixel detail its menus and bubbles carry (C10 per-pet theming).
     public var decal: PixlDecal?
     /// How the option bubbles hang from the Pixl: "silk" (threads, the spider), "wisp" (a

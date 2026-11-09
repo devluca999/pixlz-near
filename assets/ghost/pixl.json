@@ -154,10 +154,45 @@
       "haunting quietly",
       "hovering",
       "fading in and out",
-      "rattling a tiny chain",
+      "rattling {pos} tiny chain",
       "hiding behind the window",
       "whispering to the folders"
     ],
-    "shy": true
+    "shy": true,
+    "sounds": {
+      "greet": [
+        "boo",
+        "..."
+      ],
+      "happy": [
+        "boo",
+        "…!"
+      ],
+      "curious": [
+        "…?",
+        "boo?"
+      ],
+      "annoyed": [
+        "boo!",
+        "..."
+      ],
+      "startled": [
+        "!",
+        "…!"
+      ],
+      "sleepy": [
+        "…",
+        "……"
+      ],
+      "sad": [
+        "…",
+        "boo…"
+      ],
+      "idle": [
+        "...",
+        "boo"
+      ]
+    },
+    "pronoun": "they"
   }
 }

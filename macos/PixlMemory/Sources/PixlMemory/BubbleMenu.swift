@@ -325,8 +325,8 @@ final class BubbleMenu {
             Task { @MainActor in
                 do {
                     _ = try await self?.app.client.saveNote(text, title: question, folder: "Answers")
-                    self?.app.say("Saved to Answers.", for: 2)
-                } catch { self?.app.say("Couldn't save it", for: 2.5) }
+                    self?.app.notify(.answerSaved, voice: .happy)
+                } catch { self?.app.notify(.answerNotSaved) }
             }
         }
         card.onAsk = { [weak self, weak card] q in
@@ -355,7 +355,7 @@ final class BubbleMenu {
         if app.travel.localNetworkBlocked { app.travel.openLocalNetworkSettings(); return }
         let peers = app.travel.peers
         if peers.count == 1 { app.travel.send(to: peers[0]); return }
-        guard !peers.isEmpty else { app.say("No other device nearby (Pixl must be open on the same Wi-Fi).", for: 3); return }
+        guard !peers.isEmpty else { app.notify(.noDevices); return }
         showList(peers.map { ListMenuView.Row(id: $0.deviceId, title: $0.deviceName, icon: "send") }, near: nil) { [weak self] row in
             guard let self, let p = peers.first(where: { $0.deviceId == row.id }) else { return }
             self.closeList()
@@ -384,7 +384,7 @@ final class BubbleMenu {
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
             .prefix(12)
         let rows = apps.map { ListMenuView.Row(id: "\($0.processIdentifier)", title: $0.localizedName ?? "?", icon: nil, trailing: nil) }
-        guard !rows.isEmpty else { app.say("No other app is open", for: 2); return }
+        guard !rows.isEmpty else { app.notify(.noOtherApp); return }
         showList(rows, near: nil) { [weak self] row in
             guard let self, let pid = pid_t(row.id), let target = NSRunningApplication(processIdentifier: pid) else { return }
             self.closeList()
@@ -406,9 +406,9 @@ final class BubbleMenu {
                 Task { @MainActor in
                     do {
                         _ = try await self?.app.client.saveNote(text, title: nil, folder: folder)
-                        self?.app.say("Saved to \(folder ?? "Notes").", for: 2)
+                        self?.app.notify(.noteSaved(folder ?? "Notes"), voice: .happy)
                         self?.showMemory()
-                    } catch { self?.app.say("Couldn't save the note", for: 2.5) }
+                    } catch { self?.app.notify(.noteNotSaved) }
                 }
             }
             showCard(card, name: "memory (\(items.count))")
@@ -450,11 +450,11 @@ final class BubbleMenu {
                 let w = try await app.client.setLimits(perWeekNear: perWeek, paused: paused)
                 wallet = w
                 Debug.log("wallet limits: week \(w.caps?.perWeekNear ?? "?") paused \(w.paused == true)")
-                app.say(paused == true ? "Paused. I won't spend anything." : paused == false ? "Back on. I'll stay under \(w.caps?.perWeekNear ?? "?") NEAR a week."
-                        : "Okay: at most \(w.caps?.perWeekNear ?? "?") NEAR a week.", for: 2.5)
+                let week = w.caps?.perWeekNear ?? "?"
+                app.notify(paused.map { .walletPaused($0, perWeek: week) } ?? .walletLimit("Weekly limit set to \(week) NEAR."))
                 showWallet()
             } catch {
-                app.say((error as? MemoryError)?.bubble ?? "Couldn't change the limit", for: 3)
+                app.notify(.walletError((error as? MemoryError)?.bubble ?? "Couldn't change the limit."))
             }
         }
     }

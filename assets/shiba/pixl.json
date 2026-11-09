@@ -145,13 +145,49 @@
     "busy": "being a very good dog",
     "status": [
       "being a very good dog",
-      "wagging",
+      "wagging {pos} tail",
       "sniffing everything",
       "guarding the desktop",
       "waiting for treats",
       "doing zoomies",
       "fetching nothing in particular",
       "making a new friend"
-    ]
+    ],
+    "sounds": {
+      "greet": [
+        "wan!",
+        "awoo!"
+      ],
+      "happy": [
+        "wan wan!",
+        "awoo",
+        "boof!"
+      ],
+      "curious": [
+        "wuf?",
+        "boof?"
+      ],
+      "annoyed": [
+        "grr",
+        "wuff!"
+      ],
+      "startled": [
+        "WAN!",
+        "yip!"
+      ],
+      "sleepy": [
+        "awoo…",
+        "huff…"
+      ],
+      "sad": [
+        "whine…",
+        "awoo…"
+      ],
+      "idle": [
+        "wan",
+        "boof"
+      ]
+    },
+    "pronoun": "he"
   }
 }

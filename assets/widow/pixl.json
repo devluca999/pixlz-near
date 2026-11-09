@@ -156,11 +156,42 @@
       "weaving",
       "spinning a web",
       "hanging around",
-      "tidying the silk",
+      "tidying {pos} silk",
       "lurking politely",
-      "counting legs",
+      "counting {pos} legs",
       "knitting a hammock",
-      "checking the threads"
-    ]
+      "checking {pos} threads"
+    ],
+    "sounds": {
+      "greet": [
+        "tk tk"
+      ],
+      "happy": [
+        "tk tk tk",
+        "tk tk!"
+      ],
+      "curious": [
+        "tk?",
+        "tk tk?"
+      ],
+      "annoyed": [
+        "TK!",
+        "tk tk!"
+      ],
+      "startled": [
+        "tk!"
+      ],
+      "sleepy": [
+        "tk…"
+      ],
+      "sad": [
+        "tk…"
+      ],
+      "idle": [
+        "tk tk",
+        "tk"
+      ]
+    },
+    "pronoun": "she"
   }
 }

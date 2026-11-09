@@ -339,6 +339,32 @@ enum Story {
             PixlSkins.currentID = "frogg"
             try png(v, "\(out)/11-roam.png")
         }
+
+        // Text channels: voice (sounds only), a notice card (plain English, led by a sound), and status narration
+        do {
+            let v = desktop()
+            let pets: [(String, String, Notice, String)] = [
+                ("frogg", "ribbit!", .replaced, "Frogg is practicing his croak."),
+                ("cat", "mrrp?", .noDevices, "Nox is judging you."),
+                ("widow", "tk tk", .copied, "Silk is climbing the walls."),
+            ]
+            for (i, (skin, sound, notice, status)) in pets.enumerated() {
+                let x = 40 + CGFloat(i) * 310
+                pet(skin, "idle_0", feet: CGPoint(x: x + 90, y: 470), in: v)
+                PixlSkins.currentID = skin
+                put(BubbleView(text: sound, look: solid), at: NSPoint(x: x + 50, y: 300), in: v)
+                put(NoticeView(notice, voice: i == 0 ? "ribbit!" : nil, look: solid), at: NSPoint(x: x, y: 120), in: v)
+                v.addSubview(Painting(frame: v.bounds) { _ in
+                    let font = Theme.mono(11, .bold)
+                    let w = (status as NSString).size(withAttributes: [.font: font]).width + 16
+                    let r = NSRect(x: x, y: 500, width: w, height: 22)
+                    Theme.ink.setFill(); r.insetBy(dx: 0, dy: 2).fill(); r.insetBy(dx: 2, dy: 0).fill()
+                    (status as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 4), withAttributes: [.font: font, .foregroundColor: Theme.paper])
+                })
+            }
+            PixlSkins.currentID = "frogg"
+            try png(v, "\(out)/12-channels.png")
+        }
         PixlSkins.currentID = "frogg"
     }
 }

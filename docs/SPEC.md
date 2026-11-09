@@ -284,11 +284,27 @@ The iPhone app has none of these (D8). Each reaction lists its trigger and what 
 | Event | Reaction |
 |---|---|
 | No mouse/keyboard input for 2 min | Mischief becomes possible (§9) |
-| No input for 10 min | rest, then asleep |
-| Input resumes after ≥ 10 min | Wakes: `poke` frames 1–2, `curious`, faces the cursor |
+| No input for the Sleepiness threshold (Night owl 10 / Normal 5 / Sleepy 2 min) | Drowsy, then asleep (see **Sleep** below) |
+| Your first input after being away | Wakes on its own after a few seconds (but not before 90 s of sleep) with a stretch and yawn |
 | **Heavy typing** (≥ 3 key-downs/s sustained 5 s) | Goes quiet: no autonomous move, signature or mischief until 10 s after typing stops. Stays out of the typing window (§6.4) |
 | File drag starts | `curious`; file ride if the drag passes within 24 pt (§6.3) |
 | File dropped onto the **Trash** in the Dock | **Trash signature:** the Pixl, if within one hop of the Dock, plays `signature` aimed at the Trash (Frogg's tongue "eats" it, visually only). Otherwise `proud` (D2) |
+
+**Sleep** (PixlzCore `SleepCycle`, tested):
+
+- **Stages:** drowsy (~20 s, easy to rouse) → asleep (Frogg under in its pond, Boo upright and floating, the others in their rest pose) → deep after ~10 min.
+- **Naps:** besides sleeping when you're away, it takes short naps every ~45–90 min of activity. These are paced by the energy need (§2) and scaled by Sleepiness.
+- **Typing:** while you type, it rests quietly and never falls asleep.
+- **Minimum sleep:** ~90 s, unless it's deliberately woken.
+- **Wake rules:**
+  - a cursor passing close: at most a stir;
+  - the mouse resting on it for 2 s: one eye opens, then closes again. With "Let me wake them by hovering" on, a longer hover wakes it;
+  - a poke: startled, then grumpy, then awake;
+  - double-click or right-click: it wakes and the menu opens;
+  - grabbed: it stays asleep while dangling;
+  - window switches and notifications: at most an ear twitch;
+  - ⌃⌥Space or Focus ending: it wakes.
+- **No hopping while asleep.** After waking, it catches up to the active window.
 
 Heavy typing comes from the opt-in Input Monitoring count (D12), which never reads key identities. Without it, "typing" = the focused UI element is a text field (AX check on focus change).
 
@@ -622,9 +638,26 @@ Opened from More ▸ Pixl settings or ⌃⌥P, on the shared surface (§11.2).
 
 Name field · Pixl card (Frogg only in v1) · Behavior toggles (file ride, perch, mischief level) · Size · FX (particles & aura on/off) · Hotkey chips · Distracting apps list (for Focus) · "Talk to Frogg" prompt, disabled, "coming soon". Styling follows the design tokens (`design/tokens/colors.css`): ink `#1B2A1A`, paper `#FFFBF2`, accent `#7CD93A`, 3 pt ink borders, hard 8 pt offset shadow.
 
-### 11.6 Speech bubble
+### 11.6 Text: voice, status and notices
 
-On the shared surface (§11.2), tail toward the Pixl's head, bold monospace text, shows for 3 s. In v1 used only by the chat stub and the "…" travel bubble.
+A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift` (Kit). Tests: `TextChannelTests`.
+
+1. **Voice.** Speech bubbles hold only the species' own sounds.
+   - The sounds are defined per Pixl in `pixl.json` `ui.sounds`, by event: greet, happy, curious, annoyed, startled, sleepy, sad, idle.
+   - Examples: Frogg says "ribbit", "rrbt?", "RIBBIT!". Nox says "meow", "mrrp?", "hss". Mochi says "wan!", "awoo". Silk says "tk tk". Boo says "…" or "boo".
+   - Lines are picked so the same one is never said twice in a row (`VoicePicker`).
+   - The bubble sits on the shared surface (§11.2), with its tail toward the head, in bold monospace.
+   - Boo is shy (`ui.shy`): its sounds float by its head without a bubble.
+   - The app's only speech bubble is `speak(_ event)`. A test checks that no other code builds one.
+2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing his croak.", "Nox is judging you.", "Silk is climbing the walls.".
+   - It comes from the current activity: its own `ui.status` lines when idle; otherwise asleep, a Roam outing, a game, thinking, visiting another device, Focus, or resizing.
+   - The pronoun is set per Pixl in Settings (he, she, they, it, or the name). The default is `ui.pronoun`.
+   - It shows in the Settings header, in a tooltip after the mouse rests on the Pixl for ~1 s, and in the menu bar (the first row and the icon's tooltip).
+   - It never appears in a speech bubble.
+3. **Notices.** Every functional message goes on a small notice card in the Menus & Bubbles material (§11.2), with a pixel icon (info, done, warning) and plain English.
+   - Examples: selection needed, Accessibility, service stopped, wallet changes, Focus, hand-off, travel, errors.
+   - A notice can be led by one voice line (for example "ribbit!" above "Replaced your text.").
+   - The full catalogue is `Notice` (Kit). A test checks that every notice is a plain sentence with no emoji.
 
 ---
 

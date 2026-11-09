@@ -30,8 +30,13 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
 
     public let look: SurfaceView.Look
 
-    public init(settings: PixlSettings, status: ServiceStatus, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1)) {
+    /// The Pixl's status line ("Frogg is practicing his croak."), shown under its name.
+    let statusLine: String?
+
+    public init(settings: PixlSettings, status: ServiceStatus, look: SurfaceView.Look = .init(glass: false, variant: .light, dim: 1),
+                statusLine: String? = nil) {
         self.settings = settings
+        self.statusLine = statusLine
         self.look = look
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 400))
         appearance = look.appearance  // light or dark text, per the legibility pick
@@ -79,7 +84,24 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         nameField.placeholderString = "Name"
         nameField.widthAnchor.constraint(equalToConstant: 180).isActive = true
         let species = label(PixlData.manifest.species, Theme.mono(10), Theme.textMuted)
-        let nameCol = NSStackView(views: [nameField, species]); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 4
+        var col: [NSView] = [nameField]
+        if let statusLine {
+            let st = NSTextField(wrappingLabelWithString: statusLine)
+            st.font = .systemFont(ofSize: 12, weight: .medium)
+            st.textColor = Theme.text
+            st.preferredMaxLayoutWidth = 220
+            st.setAccessibilityLabel("Status: \(statusLine)")
+            col.append(st)
+        }
+        col.append(species)
+        // how its status refers to it
+        let current = settings.pronouns?[settings.skinID] ?? PixlData.ui.pronoun ?? "they"
+        let pron = NSSegmentedControl(labels: PixlPronoun.allCases.map(\.rawValue), trackingMode: .selectOne, target: self, action: #selector(pronounChanged(_:)))
+        pron.selectedSegment = PixlPronoun.allCases.firstIndex { $0.rawValue == current } ?? 2
+        pron.controlSize = .small
+        pron.setToolTip("How \(settings.name)'s status refers to it", forSegment: 0)
+        col.append(pron)
+        let nameCol = NSStackView(views: col); nameCol.orientation = .vertical; nameCol.alignment = .leading; nameCol.spacing = 4
         let close = PixelButton(title: "✕", primary: false) { [weak self] in self?.onClose?() }
         closeButton = close
         let card = NSStackView(views: [img, nameCol, NSView(), close]); card.orientation = .horizontal; card.spacing = 10
@@ -191,6 +213,12 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     }
 
     @objc private func sizeChanged(_ s: NSSegmentedControl) { settings.scale = PixlScale.presets[max(0, s.selectedSegment)]; changed() }
+    @objc private func pronounChanged(_ c: NSSegmentedControl) {
+        var p = settings.pronouns ?? [:]
+        p[settings.skinID] = PixlPronoun.allCases[max(0, c.selectedSegment)].rawValue
+        settings.pronouns = p
+        changed()
+    }
     @objc private func sleepinessChanged(_ c: NSSegmentedControl) { settings.sleepiness = ["nightOwl", "normal", "sleepy"][max(0, c.selectedSegment)]; changed() }
     @objc private func hoverWakesChanged(_ b: NSButton) { settings.hoverWakes = b.state == .on; changed() }
     @objc private func behaviorChanged(_ c: NSSegmentedControl) { settings.roams = c.selectedSegment == 1; changed() }

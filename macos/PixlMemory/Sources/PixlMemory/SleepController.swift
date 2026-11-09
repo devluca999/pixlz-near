@@ -58,7 +58,28 @@ final class SleepController {
         let energy = needs.energy.value(at: now)
         apply(cycle.tick(at: t, sinceInput: sinceInput, typing: sinceKey < Presence.typingWindow, energy: energy))
         if cycle.stage.sleeping { watchCursor(t) }
+        watchHover(t)
         if cycle.stage.sleeping, t - lastZ > (cycle.stage == .deep ? 3.6 : 2.2) { lastZ = t; app.puffZ() }
+    }
+
+    var hoverSince: TimeInterval?
+    var lastStatus = ""
+
+    /// Rest the mouse on the Pixl for ~1 s: its status, as a tooltip. Also keeps the menu bar's
+    /// tooltip current.
+    func watchHover(_ t: TimeInterval) {
+        guard let foot = app.foot else { return }
+        let s = app.spriteSize
+        let body = CGRect(x: foot.x - s.width / 2, y: foot.y - s.height, width: s.width, height: s.height)
+        if body.insetBy(dx: s.width * 0.12, dy: s.height * 0.12).contains(app.mouseTopLeft) {
+            if hoverSince == nil { hoverSince = t }
+            if t - (hoverSince ?? t) >= 1 { app.showStatusTip(true) }
+        } else {
+            hoverSince = nil
+            app.showStatusTip(false)
+        }
+        let line = app.statusLine
+        if line != lastStatus { lastStatus = line; app.statusItem?.button?.toolTip = line }
     }
 
     /// Asleep: a cursor passing close stirs it; resting on it for 2 s opens an eye.
@@ -148,9 +169,10 @@ final class SleepController {
             f.frameName = "emotion_startled"
         case .grumpy:
             f.frameName = "emotion_annoyed"
-            app.voice(PixlVoice.chatter("Mmf. I was sleeping.", ui: app.ui), for: 1.6)
+            app.speak(.annoyed)
         case .stretchYawn:
             app.stopSleep()
+            app.later(0.9) { [weak self] in self?.app.speak(.sleepy) }
             f.frameName = "rest_0"                      // the yawn
             app.later(0.8) { if f.frameName == "rest_0" { f.frameName = "idle_2" } }   // the stretch
         case .wakeAndMenu, .wake:
