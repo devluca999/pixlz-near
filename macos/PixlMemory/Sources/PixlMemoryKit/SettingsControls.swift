@@ -116,17 +116,20 @@ public final class ChoiceCard: PixelControl {
 }
 
 /// One of a Pixl's frames, animated through its own idle slot (holds from its manifest, 12 fps
-/// ticks). Only a floating Pixl (Boo) bobs.
+/// ticks). Only a floating Pixl (Boo) bobs. `animated: false` holds idle_0 (the pet picker, so
+/// Settings stays calm; only the header preview moves).
 @MainActor
 public final class PetPreview: NSView {
     let skin: PixlSkins.Skin
     let scale: CGFloat
+    let animated: Bool
     var tick = 0
     var timer: Timer?
     var frame0 = "idle_0"
-    public init(skin: PixlSkins.Skin, scale: CGFloat, size: NSSize) {
+    public init(skin: PixlSkins.Skin, scale: CGFloat, size: NSSize, animated: Bool = true) {
         self.skin = skin
         self.scale = scale
+        self.animated = animated
         super.init(frame: NSRect(origin: .zero, size: size))
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: size.width).isActive = true
@@ -136,7 +139,7 @@ public final class PetPreview: NSView {
     public override var isFlipped: Bool { false }
     public override func viewDidMoveToWindow() {
         timer?.invalidate()
-        guard window != nil else { return }
+        guard window != nil, animated else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 12, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.step() } }
     }
     /// The frame for tick `t`: idle_0…2 with the slot's holds (in 12 fps ticks), then a blink.
@@ -162,7 +165,7 @@ public final class PetPreview: NSView {
     }
 }
 
-/// A Pixl card in the picker: its own idle animation, its name, its accent; a check when picked.
+/// A Pixl card in the picker: a still of its idle pose, its name, its accent; a check when picked.
 @MainActor
 public final class PetCard: PixelControl {
     public let skin: PixlSkins.Skin
@@ -173,7 +176,7 @@ public final class PetCard: PixelControl {
         super.init(look: look, size: NSSize(width: 58, height: 70))
         let art = skin.art.size("idle_0")
         let s = max(0.5, min(1, 46 / max(art.width, art.height) * 1))
-        let pv = PetPreview(skin: skin, scale: s, size: NSSize(width: 54, height: 50))
+        let pv = PetPreview(skin: skin, scale: s, size: NSSize(width: 54, height: 50), animated: false)
         addSubview(pv)
         pv.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2).isActive = true
         pv.topAnchor.constraint(equalTo: topAnchor, constant: 2).isActive = true
