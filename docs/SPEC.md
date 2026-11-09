@@ -652,7 +652,7 @@ A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift
 2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing a croak.", "Kiti is judging you.", "Silky is climbing the walls.".
    - It comes from the current activity: its own `ui.status` lines when idle; otherwise asleep, a Roam outing, a game, thinking, visiting another device, Focus, or resizing.
    - No pronouns: status lines are written so they never need one ("taking a dip in the pond").
-   - It shows in the Settings header, in a tooltip after the mouse rests on the Pixl for ~1 s, and in the menu bar (the first row and the icon's tooltip).
+   - It shows in the Settings header, in a tooltip after the mouse rests on the Pixl for 4.5 s (a click starts the wait over, so it never covers a double-click to the menu), and in the menu bar (the first row and the icon's tooltip).
    - It never appears in a speech bubble.
 3. **Notices.** Every functional message goes on a small notice card in the Menus & Bubbles material (§11.2), with a pixel icon (info, done, warning) and plain English.
    - Examples: selection needed, Accessibility, service stopped, wallet changes, Focus, hand-off, travel, errors.

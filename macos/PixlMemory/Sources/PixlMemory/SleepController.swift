@@ -72,15 +72,21 @@ final class SleepController {
     var hoverSince: TimeInterval?
     var lastStatus = ""
 
-    /// Rest the mouse on the Pixl for ~1 s: its status, as a tooltip. Also keeps the menu bar's
-    /// tooltip current.
+    /// How long the mouse rests on the Pixl before its status shows: long enough that pointing at
+    /// it to double-click (the menu) never brings the tooltip up in the way.
+    static let statusHoverDelay: TimeInterval = 4.5
+
+    /// Rest the mouse on the Pixl for 4.5 s: its status, as a tooltip. A click starts the wait
+    /// over. Also keeps the menu bar's tooltip current.
     func watchHover(_ t: TimeInterval) {
         guard let foot = app.foot else { return }
         let s = app.spriteSize
         let body = CGRect(x: foot.x - s.width / 2, y: foot.y - s.height, width: s.width, height: s.height)
         if body.insetBy(dx: s.width * 0.12, dy: s.height * 0.12).contains(app.mouseTopLeft) {
+            // a click (or a held button) on it: you're using it, not reading it
+            if NSEvent.pressedMouseButtons != 0 || app.menu.isOpen { hoverSince = t; app.showStatusTip(false) }
             if hoverSince == nil { hoverSince = t }
-            if t - (hoverSince ?? t) >= 1 { app.showStatusTip(true) }
+            if t - (hoverSince ?? t) >= Self.statusHoverDelay { app.showStatusTip(true) }
         } else {
             hoverSince = nil
             app.showStatusTip(false)
