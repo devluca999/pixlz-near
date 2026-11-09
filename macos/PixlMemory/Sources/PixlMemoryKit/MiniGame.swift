@@ -1,7 +1,7 @@
 import AppKit
 import PixlzCore
 
-/// Mischief ▸ Catch: for 20 s, things pop up around the Pixl (flies for Frogg, yarn for Katt…);
+/// Mischief ▸ Catch: for 20 s, things pop up around the Pixl (flies for Frogg, yarn for Kiti…);
 /// click one before it vanishes and the Pixl snaps it. Pure rules here (seeded, testable);
 /// the app draws targets and reacts.
 public struct CatchGame: Sendable {
@@ -125,8 +125,8 @@ public enum GameArt {
     public static var names: [String] { grids.keys.sorted() }
 }
 
-/// Katt's game: a laser dot follows your mouse and Katt chases it, creeping when close and
-/// pouncing; keep it moving. 20 s, counts how often Katt catches it. Pure and seeded-free:
+/// Kiti's game: a laser dot follows your mouse and Kiti chases it, creeping when close and
+/// pouncing; keep it moving. 20 s, counts how often Kiti catches it. Pure and seeded-free:
 /// the app feeds the dot (the mouse) and time, and draws `cat` with `phase`.
 public struct LaserChase: Sendable {
     public enum Phase: Equatable, Sendable { case run, stalk, pounce, caught }

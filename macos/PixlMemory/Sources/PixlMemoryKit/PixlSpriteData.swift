@@ -234,7 +234,7 @@ let pixlManifestJSON: [String: String] = [
     "cat": ##"""
 {
   "id": "cat",
-  "name": "Katt",
+  "name": "Kiti",
   "species": "Black cat",
   "canvas": {
     "w": 101,
@@ -350,7 +350,7 @@ let pixlManifestJSON: [String: String] = [
     "menuFace": "emotion_curious",
     "glassBody": false,
     "signature": "Slow blink",
-    "askPlaceholder": "Ask Katt anything…",
+    "askPlaceholder": "Ask Kiti anything…",
     "personality": "an aloof black cat who judges first, then helps anyway, in very few words",
     "detail": "A tuna on the bottom edge",
     "decal": {

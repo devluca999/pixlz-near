@@ -40,7 +40,7 @@ public enum Surface: String, Equatable, Sendable {
 /// How each Pixl roams (from its id and movement in pixl.json).
 public enum RoamStyle: String, CaseIterable, Sendable {
     case hopper    // Frogg: folders, window tops, reading along above your caret
-    case prowler   // Katt: walks the edge it's on, naps, hops up high
+    case prowler   // Kiti: walks the edge it's on, naps, hops up high
     case trotter   // Mochi: trots after the mouse, sniffs around folders
     case drifter   // Boo: drifts about, half see-through, haunts folders
     case crawler   // Silky: walks to the screen's side, climbs, crawls the ceiling, drops on silk
@@ -102,7 +102,7 @@ public enum Outing: Equatable, Sendable {
     case glance(at: CGPoint, lookLeft: Bool)                  // read along: above your caret
     case nap(TimeInterval)
     case pond(TimeInterval)                                   // Frogg dives into a little pond, eyes peeking
-    case stalk(to: CGPoint)                                   // Katt creeps low, then arches its back
+    case stalk(to: CGPoint)                                   // Kiti creeps low, then arches its back
 
     public var name: String {
         switch self {

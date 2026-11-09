@@ -82,7 +82,7 @@ struct SkinTests {
 @MainActor
 @Suite struct PixlCatalogTests {
     @Test func everyPixlHasANameDescriptionIdlePreviewAndASkin() throws {
-        let expected = ["frogg": ("Frogg", "Tree frog, the red-eyed kind"), "cat": ("Katt", "Friendly feline"),
+        let expected = ["frogg": ("Frogg", "Tree frog, the red-eyed kind"), "cat": ("Kiti", "Friendly feline"),
                         "shiba": ("Mochi", "Shiba Inu, professional zoomer"), "ghost": ("Boo", "Sheety ghost"),
                         "widow": ("Silky", "Black widow, mostly harmless"), "slugg": ("Slugg", "Definitely a slug")]
         for skin in PixlSkins.all {

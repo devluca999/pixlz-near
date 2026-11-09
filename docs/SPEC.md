@@ -505,7 +505,7 @@ enum StoredPet {
 **Built (Mac, 2026-11-08):** `PixlTravel` (macos/PixlMemory).
 - **Bonjour.** `_pixlz._tcp`, advertised with a TXT record of device id and name. Every device browses, so nearby devices show up like AirDrop targets. The app declares `NSBonjourServices` and asks for Local Network once; until that's allowed, More ▸ Send to device says "allow Local Network".
 - **Trips.** PixlzCore's `TravelNode` runs over TCP with length-prefixed envelopes. `TripRunner` persists every `.saved` before any later `.send`, so at least one complete copy of the Pixl always exists.
-- **Consent.** The first offer from an unknown device asks the user ("Catch Katt from Laptop?"). After a yes, that device is trusted.
+- **Consent.** The first offer from an unknown device asks the user ("Catch Kiti from Laptop?"). After a yes, that device is trusted.
 - **What travels.** Only PetState: name, species, needs, stats. Never memory, highlights or wallet keys.
 - **UI:**
   - a "Send to <device>" bubble when one is nearby;
@@ -644,12 +644,12 @@ A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift
 
 1. **Voice.** Speech bubbles hold only the species' own sounds.
    - The sounds are defined per Pixl in `pixl.json` `ui.sounds`, by event: greet, happy, curious, annoyed, startled, sleepy, sad, idle.
-   - Examples: Frogg says "ribbit", "rrbt?", "RIBBIT!". Katt says "meow", "mrrp?", "hss". Mochi says "wan!", "awoo". Silky says "tk tk". Boo says "…" or "boo".
+   - Examples: Frogg says "ribbit", "rrbt?", "RIBBIT!". Kiti says "meow", "mrrp?", "hss". Mochi says "wan!", "awoo". Silky says "tk tk". Boo says "…" or "boo".
    - Lines are picked so the same one is never said twice in a row (`VoicePicker`).
    - The bubble sits on the shared surface (§11.2), with its tail toward the head, in bold monospace.
    - Boo is shy (`ui.shy`): its sounds float by its head without a bubble.
    - The app's only speech bubble is `speak(_ event)`. A test checks that no other code builds one.
-2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing his croak.", "Katt is judging you.", "Silky is climbing the walls.".
+2. **Status.** Third-person narration of what the Pixl is doing right now, for example "Frogg is practicing his croak.", "Kiti is judging you.", "Silky is climbing the walls.".
    - It comes from the current activity: its own `ui.status` lines when idle; otherwise asleep, a Roam outing, a game, thinking, visiting another device, Focus, or resizing.
    - The pronoun is set per Pixl in Settings (he, she, they, it, or the name). The default is `ui.pronoun`.
    - It shows in the Settings header, in a tooltip after the mouse rests on the Pixl for ~1 s, and in the menu bar (the first row and the icon's tooltip).

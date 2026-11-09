@@ -295,7 +295,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// This Pixl's locomotion loop (C13), at its ground speed in points (design px × scale):
-    /// Katt walks at 24 px/s, Mochi trots at 70 with a 1 px bob, Slugg crawls at 18.
+    /// Kiti walks at 24 px/s, Mochi trots at 70 with a 1 px bob, Slugg crawls at 18.
     var gait: Gait? {
         let art = FroggArt.shared
         func loop(_ base: String, _ n: Int) -> [String]? {
@@ -2244,7 +2244,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pill = NSApp.windows.first { $0.isVisible && $0.contentView is CoinPill }
         check("coin pop shows the payment, above the Pixl", pill.map { $0.frame.minY >= froggBox.maxY - 8 } == true)
 
-        // Katt: Laser chase. The dot follows the mouse and Katt runs after it.
+        // Kiti: Laser chase. The dot follows the mouse and Kiti runs after it.
         if game.info.target == "laser" {
             let before = foot
             game.start()
