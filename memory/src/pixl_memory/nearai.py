@@ -2,7 +2,8 @@
 
 Order per request (docs.near.ai/cloud/verification):
   1. attestation preflight with a fresh nonce — if it fails, nothing is sent;
-  2. non-streaming chat completion, keeping the exact request and response bytes;
+  2. chat completion, keeping the exact request and response bytes (non-streaming; streamed
+     only for web search, which NEAR AI runs server-side and requires streaming for);
   3. response signature, checked against those bytes and the attested signer.
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 import json
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import httpx
@@ -76,6 +77,41 @@ class VerifiedCompletion:
     model: str
     usage: dict[str, Any]
     verification: Verification
+    # web_context_search results NEAR AI fed to the model (one per search), if it searched
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
+
+
+WEB_SEARCH = {"type": "web_context_search"}
+
+
+def parse_stream(raw: bytes) -> dict[str, Any]:
+    """Folds a streamed (SSE) chat completion into its id, model, answer text, usage and the
+    server-side tool results. The signature covers `raw` itself, so nothing here is trusted
+    more than the bytes are."""
+    out: dict[str, Any] = {"id": None, "model": None, "content": "", "usage": {}, "tool_results": []}
+    parts: list[str] = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            chunk = json.loads(data)
+        except ValueError:
+            continue
+        out["id"] = out["id"] or chunk.get("id")
+        out["model"] = out["model"] or chunk.get("model")
+        if chunk.get("usage"):
+            out["usage"] = chunk["usage"]
+        for choice in chunk.get("choices") or []:
+            delta = choice.get("delta") or {}
+            if delta.get("content"):
+                parts.append(delta["content"])
+            if isinstance(delta.get("nearai_tool_result"), dict):
+                out["tool_results"].append(delta["nearai_tool_result"])
+    out["content"] = "".join(parts)
+    return out
 
 
 def encode_body(body: dict[str, Any]) -> bytes:
@@ -156,7 +192,10 @@ class NearAIClient:
 
     # -- inference --
 
-    def chat(self, messages: list[dict[str, Any]], model: str, **params: Any) -> VerifiedCompletion:
+    def chat(self, messages: list[dict[str, Any]], model: str, *, web: bool = False, **params: Any) -> VerifiedCompletion:
+        """One verified completion. `web=True` lets the model search the web (NEAR AI's
+        web_context_search, run server-side); that reply streams, and the streamed bytes are what
+        the signature covers."""
         self._headers(auth=True)  # fail fast without a key, before any network call
         self.require_private(model)
 
@@ -164,7 +203,9 @@ class NearAIClient:
         if not attestation.attestation_ok or not attestation.model_signing_address:
             raise AttestationFailed(attestation)
 
-        body = {"model": model, "messages": messages, "stream": False, **params}
+        body = {"model": model, "messages": messages, "stream": web, **params}
+        if web:
+            body["tools"] = [WEB_SEARCH]
         req_bytes = encode_body(body)
         headers = self._headers(auth=True) | {"Content-Type": "application/json"}
         try:
@@ -181,19 +222,28 @@ class NearAIClient:
         if r.status_code != 200:
             raise UpstreamError(f"completion returned {r.status_code}: {r.text[:300]}")
         resp_bytes = r.content
-        data = json.loads(resp_bytes)
-        chat_id = data["id"]
+        if web:
+            folded = parse_stream(resp_bytes)
+            if not folded["id"]:
+                raise UpstreamError("streamed completion had no id")
+            content, chat_id, usage, tools = folded["content"], folded["id"], folded["usage"], folded["tool_results"]
+            got_model = folded["model"] or model
+        else:
+            data = json.loads(resp_bytes)
+            chat_id = data["id"]
+            content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            usage, tools, got_model = data.get("usage") or {}, [], data.get("model", model)
 
         sig = self._fetch_signature(chat_id, model)
         sig_checks, kind = verify_signature(sig, model, req_bytes, resp_bytes, attestation)
-        message = (data.get("choices") or [{}])[0].get("message") or {}
         return VerifiedCompletion(
-            content=message.get("content") or "",
+            content=content,
             chat_id=chat_id,
             inference_id=r.headers.get("inference-id"),
-            model=data.get("model", model),
-            usage=data.get("usage") or {},
+            model=got_model,
+            usage=usage,
             verification=combine(attestation, sig_checks, kind),
+            tool_results=tools,
         )
 
     def _fetch_signature(self, chat_id: str, model: str) -> dict[str, Any] | None:

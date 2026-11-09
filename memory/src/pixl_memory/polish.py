@@ -80,11 +80,37 @@ ASK_SYSTEM = (
     "questions briefly: at most a few sentences unless asked for more. If the user's saved "
     "highlights below are relevant, use them and say so; otherwise ignore them. Never invent facts."
 )
+ASK_WEB = (
+    " You can search the web: do it for anything current or factual you aren't sure of (news, "
+    "weather, prices, scores, people, places), and for a fresh joke when asked for one. Don't search "
+    "for what the highlights already answer. When you used a search, say what you found in your own "
+    "words; don't paste links, the app lists the sources."
+)
+
+
+_SOURCE = re.compile(r"^\[(\d+)\]\s*(.+?)\s*\n(https?://\S+)", re.M)
+
+
+def web_sources(tool_results: list[dict], k: int = 5) -> list[dict[str, str]]:
+    """The pages a web search returned ("[n] Title\\nURL ..." blocks), first k, no repeats."""
+    out, seen = [], set()
+    for t in tool_results:
+        if t.get("name") != "web_context_search" or t.get("status", "ok") != "ok":
+            continue
+        for m in _SOURCE.finditer(str(t.get("output") or "")):
+            title, url = m.group(2).strip(), m.group(3).rstrip(").,")
+            if url in seen:
+                continue
+            seen.add(url)
+            out.append({"title": title[:120], "url": url})
+            if len(out) >= k:
+                return out
+    return out
 
 
 def ask_messages(question: str, name: str = "Frogg", personality: str = "a friendly pixel frog",
-                 highlights: list[str] | None = None) -> list[dict[str, str]]:
-    system = ASK_SYSTEM.format(name=name, personality=personality)
+                 highlights: list[str] | None = None, web: bool = False) -> list[dict[str, str]]:
+    system = ASK_SYSTEM.format(name=name, personality=personality) + (ASK_WEB if web else "")
     if highlights:
         notes = "\n".join(f"- {h[:400]}" for h in highlights[:5])
         system += f"\n\nThe user's recent highlights:\n{notes}"

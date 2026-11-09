@@ -41,6 +41,7 @@ class AskIn(BaseModel):
     name: str = Field(default="Frogg", max_length=40)
     personality: str = Field(default="a friendly pixel frog", max_length=300)
     use_highlights: bool = True
+    web: bool = False  # let the model search the web (NEAR AI web_context_search, billed per search)
     model: str | None = None
 
 
@@ -188,8 +189,8 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         picked, matched = polish.rank_highlights(a.question, store.list_highlights(limit=500)) if a.use_highlights else ([], False)
         notes = [h.text for h in picked]
         try:
-            comp = client.chat(polish.ask_messages(a.question, a.name, a.personality, notes), model,
-                               temperature=0.5, max_tokens=1024)
+            comp = client.chat(polish.ask_messages(a.question, a.name, a.personality, notes, web=a.web), model,
+                               web=a.web, temperature=0.5, max_tokens=1024)
         except NoApiKey as e:
             return JSONResponse({"error": "no_api_key", "message": str(e)}, status_code=412)
         except NotPrivateModel as e:
@@ -218,12 +219,15 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         if wallet:
             cost = client.request_cost_nano_usd(comp.inference_id) if comp.inference_id else None
             receipt = wallet.pay(cost, {"kind": "ask", "model": comp.model, "verdict": verification["verdict"],
+                                        "searched": bool(comp.tool_results),
                                         "inference_id": comp.inference_id})
         # The ones that matched the question come back as sources, each with its backlink.
         sources = [{"id": h.id, "text": h.text[:280], "title": h.title, "url": h.url, "fragment_url": h.fragment_url}
                    for h in picked] if matched else []
+        web = polish.web_sources(comp.tool_results)
         return JSONResponse({"answer": answer, "verification": verification, "receipt": receipt,
-                             "used_highlights": len(notes), "highlights": sources, "inference_id": comp.inference_id})
+                             "used_highlights": len(notes), "highlights": sources, "inference_id": comp.inference_id,
+                             "searched": bool(comp.tool_results), "web_sources": web})
 
     # -- Frogg's wallet --
 

@@ -55,7 +55,13 @@ class FakeNear:
                                                            "type": "no_limit_configured"}})
             assert request.headers["authorization"] == "Bearer sk-test"
             body = json.loads(request.content)
-            assert body["stream"] is False and body["model"] == MODEL
+            assert body["model"] == MODEL
+            self.last_body = body
+            if body["stream"]:
+                assert body["tools"] == [{"type": "web_context_search"}]
+                resp = sse_reply(self.reply)
+                self.completions["chat-s1"] = (request.content, resp)
+                return httpx.Response(200, content=resp, headers={"inference-id": "inf-2", "content-type": "text/event-stream"})
             resp = json.dumps({"id": "chat123", "object": "chat.completion", "model": MODEL,
                                "choices": [{"index": 0, "message": {"role": "assistant", "content": self.reply},
                                             "finish_reason": "stop"}],
@@ -72,6 +78,28 @@ class FakeNear:
                                              "signing_address": key.address, "signing_algo": "ecdsa",
                                              "signature_kind": self.kind})
         return httpx.Response(404)
+
+
+SEARCH_OUTPUT = ("[1] Tree frog - Wikipedia\nhttps://en.wikipedia.org/wiki/Tree_frog\nTree frogs are...\n\n"
+                 "[2] Glass frogs, explained\nhttps://example.org/glass-frogs\nGlass frogs have...")
+
+
+def sse_reply(text: str) -> bytes:
+    """A streamed completion the way NEAR AI sends it with web search: the model's tool call, the
+    search result NEAR AI injected, then the answer in pieces."""
+    def ev(delta, **extra):
+        return "data: " + json.dumps({"id": "chat-s1", "object": "chat.completion.chunk", "model": MODEL,
+                                      "choices": [{"index": 0, "delta": delta}], **extra}) + "\n\n"
+    out = ev({"role": "assistant"})
+    out += ev({"tool_calls": [{"id": "call_1", "type": "function", "index": 0,
+                               "function": {"name": "web_context_search", "arguments": "{\"query\": \"tree frogs\"}"}}]})
+    out += ev({"nearai_tool_result": {"tool_call_id": "call_1", "name": "web_context_search", "status": "ok",
+                                      "output": SEARCH_OUTPUT}})
+    out += ev({"reasoning_content": "thinking"})
+    half = len(text) // 2
+    out += ev({"content": text[:half]}) + ev({"content": text[half:]})
+    out += ev({}, usage={"prompt_tokens": 50, "completion_tokens": 9, "total_tokens": 59})
+    return (out + "data: [DONE]\n\n").encode()
 
 
 def make(tmp_path, fake, api_key="sk-test", wallet=None, gpu_ok=True):
@@ -286,3 +314,43 @@ def test_offline_ask_still_finds_what_you_saved(tmp_path):
     # nothing matched: a plain offline error
     r = tc.post("/ask", json={"question": "weather tomorrow"})
     assert r.status_code == 503 and r.json()["error"] == "offline"
+
+
+def test_ask_with_web_search_streams_verifies_and_lists_its_sources(tmp_path, captured):
+    fake = FakeNear(captured, reply="Tree frogs climb with sticky toe pads.")
+    tc, _ = make(tmp_path, fake)
+    r = tc.post("/ask", json={"question": "how do tree frogs climb?", "web": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["answer"] == "Tree frogs climb with sticky toe pads."
+    assert body["verification"]["verdict"] == "verified", [c for c in body["verification"]["checks"] if c["status"] != "pass"]
+    assert body["searched"] is True
+    assert body["web_sources"] == [{"title": "Tree frog - Wikipedia", "url": "https://en.wikipedia.org/wiki/Tree_frog"},
+                                   {"title": "Glass frogs, explained", "url": "https://example.org/glass-frogs"}]
+    assert "search the web" in fake.last_body["messages"][0]["content"]
+    assert fake.calls.index("/attestation/report") < fake.calls.index("/chat/completions")
+
+
+def test_a_tampered_stream_fails_its_signature(tmp_path, captured):
+    fake = FakeNear(captured, reply="Tree frogs climb with sticky toe pads.")
+    tc, _ = make(tmp_path, fake)
+    real = fake.handler
+
+    def tamper(request):
+        resp = real(request)
+        if request.url.path.endswith("/chat/completions"):
+            req, raw = fake.completions["chat-s1"]
+            fake.completions["chat-s1"] = (req, raw + b"data: [DONE]\n\n")  # what was signed differs from what we got
+        return resp
+    fake.handler = tamper
+    tc, _ = make(tmp_path, fake)
+    body = tc.post("/ask", json={"question": "how do tree frogs climb?", "web": True}).json()
+    assert body["verification"]["verdict"] != "verified"
+
+
+def test_ask_without_web_does_not_offer_the_search_tool(tmp_path, captured):
+    fake = FakeNear(captured)
+    tc, _ = make(tmp_path, fake)
+    body = tc.post("/ask", json={"question": "hi"}).json()
+    assert "tools" not in fake.last_body and fake.last_body["stream"] is False
+    assert body["searched"] is False and body["web_sources"] == []
