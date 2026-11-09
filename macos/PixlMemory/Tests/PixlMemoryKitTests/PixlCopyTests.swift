@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import Testing
 @testable import PixlMemoryKit
 
@@ -38,5 +39,29 @@ import Testing
         let hints = list.rowViews.flatMap { $0.subviews.compactMap { $0 as? NSTextField } }.filter { $0.font?.isFixedPitch == true }
         #expect(hints.count == 2)
         for h in hints { #expect(!h.isHidden && h.frame.width >= h.fittingSize.width - 0.5, "\(h.stringValue) cut to \(h.frame.width)") }
+    }
+}
+
+@MainActor
+@Suite struct PixlNameTests {
+    @Test func eachPixlKeepsItsOwnName() {
+        var s = PixlSettings()
+        s.switchSkin(to: "widow", default: "Silk")
+        s.name = "Charlotte"; s.rememberName(default: "Silk")
+        s.switchSkin(to: "cat", default: "Nox")
+        #expect(s.name == "Nox")                         // not Charlotte
+        s.switchSkin(to: "widow", default: "Silk")
+        #expect(s.name == "Charlotte")                   // she gets her name back
+        s.name = "Silk"; s.rememberName(default: "Silk")
+        #expect(s.names == nil)                          // back to the default: nothing to remember
+    }
+
+    @Test func oldSettingsKeepTheirCustomNameOnThePixlTheyWereSavedWith() throws {
+        let d = try #require(UserDefaults(suiteName: "pixl-test-\(UUID())"))
+        d.set(Data(#"{"scale":2,"mischief":"normal","distractingApps":[],"hideInFullscreen":true,"perchOnWindows":true,"skin":"widow","name":"Charlotte"}"#.utf8), forKey: PixlSettings.key)
+        var s = PixlSettings.load(d)
+        #expect(s.name == "Charlotte" && s.names == ["widow": "Charlotte"])
+        s.switchSkin(to: "ghost", default: "Boo")
+        #expect(s.name == "Boo")
     }
 }

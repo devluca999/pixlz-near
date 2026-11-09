@@ -73,10 +73,10 @@ struct MenuTests {
     @Test func settingsRoundTripAndSanitise() throws {
         let d = try #require(UserDefaults(suiteName: "pixl-test-\(UUID())"))
         var s = PixlSettings()
-        s.name = "Sir Hops"; s.scale = 3; s.distractingApps = ["Slack"]
+        s.name = "Sir Hops"; s.scale = 3; s.distractingApps = ["Slack"]; s.rememberName(default: "Frogg")
         s.save(d)
         #expect(PixlSettings.load(d) == s)
-        s.scale = 7; s.name = "   "
+        s.scale = 7; s.name = "   "; s.names = nil
         s.save(d)
         let loaded = PixlSettings.load(d)
         #expect(loaded.scale == 6 && loaded.name == "Frogg")   // clamped to the largest size

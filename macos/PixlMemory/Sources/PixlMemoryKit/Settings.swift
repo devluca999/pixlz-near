@@ -2,7 +2,11 @@ import Foundation
 
 /// Per-device settings (SPEC §10.1: not part of PetState). Stored in UserDefaults.
 public struct PixlSettings: Codable, Equatable, Sendable {
+    /// The current Pixl's name (what's shown). Each Pixl keeps its own: see `names`.
     public var name = "Frogg"
+    /// Names you gave each Pixl, by skin id (only the ones you changed). Optional so older
+    /// settings still load.
+    public var names: [String: String]?
     public var scale: Double = 2      // 1× to 6× in half steps (PixlScale); drag a corner or pick a preset
     public var perchOnWindows = true  // off: Frogg stays on the ground
     public var hideInFullscreen = true
@@ -20,13 +24,30 @@ public struct PixlSettings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    /// Remember `name` as the current Pixl's own (or forget it when it's back to the default).
+    public mutating func rememberName(default d: String) {
+        var n = names ?? [:]
+        n[skinID] = name == d ? nil : name
+        names = n.isEmpty ? nil : n
+    }
+
+    /// Switch to Pixl `id`: its own name if you gave it one, else its default.
+    public mutating func switchSkin(to id: String, default d: String) {
+        skin = id
+        name = names?[id] ?? d
+    }
+
     public static let key = "PixlMemory.settings"
 
     @MainActor public static func load(_ defaults: UserDefaults = .standard) -> PixlSettings {
         guard let data = defaults.data(forKey: key), var s = try? JSONDecoder().decode(PixlSettings.self, from: data)
         else { return PixlSettings() }
         s.scale = PixlScale.snap(s.scale)
-        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (PixlSkins.skin(s.skinID) ?? PixlSkins.current).manifest.name : String(s.name.prefix(24))
+        let fallback = (PixlSkins.skin(s.skinID) ?? PixlSkins.current).manifest.name
+        if let own = s.names?[s.skinID] { s.name = own }   // each Pixl's own name wins
+        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : String(s.name.prefix(24))
+        // settings from before per-Pixl names: a custom name belongs to the Pixl it was saved with
+        if s.names == nil, !PixlSkins.all.contains(where: { $0.manifest.name == s.name }) { s.rememberName(default: fallback) }
         return s
     }
 

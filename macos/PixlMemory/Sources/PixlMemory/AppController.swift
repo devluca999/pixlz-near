@@ -1200,6 +1200,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func apply(_ new: PixlSettings) {
         let old = settings
         settings = new
+        // a rename belongs to the Pixl it was made on
+        if new.name != old.name, new.skinID == old.skinID { settings.rememberName(default: PixlSkins.current.manifest.name) }
         if new.skinID != old.skinID { settings.skin = old.skin; setSkin(new.skinID); return }
         if new.scale != old.scale { setSize(new.scale) }
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
@@ -1212,7 +1214,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// follows the skin unless the user renamed their Pixl.
     func setSkin(_ id: String) {
         guard let next = PixlSkins.skin(id), id != PixlSkins.currentID else { return }
-        let oldName = PixlSkins.current.manifest.name, nextName = next.manifest.name
+        let nextName = next.manifest.name
         Debug.log("skin \(PixlSkins.currentID) → \(id)")
         let reopenSettings = miniPanel?.isVisible == true
         if reopenSettings { toggleMiniMenu() }
@@ -1226,8 +1228,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 PixlSkins.currentID = id
-                self.settings.skin = id
-                if self.settings.name == oldName { self.settings.name = nextName }
+                self.settings.switchSkin(to: id, default: nextName)   // each Pixl keeps its own name
                 self.settings.save()
                 let at = self.foot
                 self.buildFrogg()  // new canvas size, same feet
