@@ -171,14 +171,16 @@ Frogg's own NEAR key isn't an API key. It's stored outside the repo, in `~/Libra
 
 Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR integration on top of it.
 
+**This repository holds only what the hackathon entry needs to build, run and test.** It is extracted from the private Pixlz repository with its history kept, so every commit keeps its original date. Left out, because the entry doesn't need them: the Claude Design source (`design/`), the iOS and Windows plans, and the product research notes. The pixel art is already exported into `assets/` and embedded in the app, so nothing here depends on them; `scripts/render-pixls.mjs`, which re-exports the art, needs the design source and only runs in the private repository.
+
 | | Commits | Dates |
 |---|---|---|
-| **Baseline**, tag [`pre-hackathon`](https://github.com/devluca999/pixlz/tree/pre-hackathon) (`8f546ec`) | 14 | 2026-10-15 22:40 CT → 2026-10-16 02:48 CT, all before the 2026-10-19 announcement |
-| **Hackathon work**, branch `near-hackathon`, tag `hackathon-submission` | everything after | started 2026-11-08 |
+| **Baseline**, tag [`pre-hackathon`](https://github.com/devluca999/pixlz-near/tree/pre-hackathon) | every commit up to the tag | 2026-10-15 22:40 CT → 2026-10-16 02:48 CT, all before the 2026-10-19 announcement |
+| **Hackathon work**, tag `hackathon-submission` | everything after | started 2026-11-08 |
 
-**Diff of all hackathon work:** https://github.com/devluca999/pixlz/compare/pre-hackathon...hackathon-submission
+**Diff of all hackathon work:** https://github.com/devluca999/pixlz-near/compare/pre-hackathon...hackathon-submission
 
-- **Baseline:** `PixlzCore/` (pet needs, behavior, world map, physics, PetState, Mac↔iPhone travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`, `assets/`.
+- **Baseline:** `PixlzCore/` (pet needs, behavior, world map, physics, PetState, Mac↔iPhone travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `assets/` (later re-exported during the hackathon).
 - **New in the hackathon:** `memory/`, `macos/PixlMemory/` (including the generated `FroggSpriteData.swift`), `extension/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
 
 Pixlz also plans a **Solana** layer. It is not part of this submission.
@@ -210,13 +212,13 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 **Wallet:** no new Python libraries: ed25519 comes from `cryptography`, and Borsh and base58 are written in `near.py`. The setup page loads [`@near-wallet-selector/core` and `meteor-wallet`](https://github.com/near/wallet-selector) 10.1.4 and `@near-js/transactions` / `@near-js/crypto` 2.5.1 from esm.sh. The encoding test vector was generated with `@near-js/transactions` 2.x.
 
-**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. Frogg's frames are exported from the baseline Claude Design engine (`design/explorations/c3`) by `scripts/render-pixls.mjs` and embedded as text: no PNGs.
+**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. The Pixls' frames are exported from the owner's Claude Design engine (private, not in this repository) by `scripts/render-pixls.mjs` and embedded as text: no PNGs.
 
 The wallet code will list its libraries here when it lands.
 
 **AI-generated content:**
 - The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
-- `design/` is a snapshot of a Claude Design project.
+- The pixel art was designed in Claude Design and exported by a script; the design source stays in the private repository.
 - The test fixture `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response, captured 2026-11-08.
 
 ## Repository layout
@@ -226,8 +228,8 @@ memory/      Hackathon: local service, NEAR AI private inference + verification
 macos/       macOS app; PixlMemory/ overlay is hackathon work
 extension/   Hackathon: Chrome extension (highlight → save → backlink)
 PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)
-docs/        SPEC.md, DECISIONS.md, RESEARCH.md (baseline); PLAN-pixl-memory.md (hackathon)
-design/ assets/ ios/ windows/   Baseline
+docs/        SPEC.md, DECISIONS.md (baseline); PLAN-pixl-memory.md, screenshots (hackathon)
+assets/      The Pixls' manifests and exported frames
 ```
 
 Baseline core tests: `swift test --package-path PixlzCore`.

@@ -12,7 +12,7 @@ Pixl Memory forks Pixlz. Frogg sits on the window you're working in, keeps the p
 |---|---|
 | Baseline | 14 commits, 2026-10-15 22:40 CT → 2026-10-16 02:48 CT, all before the 2026-10-19 announcement. Tag `pre-hackathon` = `8f546ec`. |
 | Hackathon | Started 2026-11-08 on branch `near-hackathon`. Tag `hackathon-submission` at the end. |
-| Diff | `https://github.com/devluca999/pixlz/compare/pre-hackathon...hackathon-submission` |
+| Diff | `https://github.com/devluca999/pixlz-near/compare/pre-hackathon...hackathon-submission` |
 
 Baseline = `PixlzCore/` (needs, behavior, world map, physics, PetState, travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`, `design/`. Everything under `memory/`, `macos/PixlMemory/`, `extension/`, `scripts/`, `.githooks/`, `.env.example` and this file is new.
 
