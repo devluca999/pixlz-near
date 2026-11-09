@@ -304,6 +304,41 @@ enum Story {
             PixlSkins.currentID = "frogg"
             try png(v, "\(out)/10-hover.png")
         }
+
+        // Roam: Silk's route (up the wall, along the top, down on silk); Frogg reads along in a code app
+        do {
+            let caretX: CGFloat = 330
+            let v = desktop { r in
+                window(NSRect(x: 60, y: 250, width: 560, height: 270), title: "claude — ~/pixlz-near", lines: [
+                    "> make the frog hop to folders", "  ⏺ Editing Roam.swift…", "  ⏺ 95 tests passed", "> |"], dark: true)
+                // Silk's route: right wall up, ceiling left, then the thread down
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: 935, y: 545)); path.line(to: NSPoint(x: 935, y: 40)); path.line(to: NSPoint(x: 760, y: 40))
+                path.lineWidth = 2
+                path.setLineDash([5, 5], count: 2, phase: 0)
+                NSColor(srgbRed: 0.90, green: 0.14, blue: 0.18, alpha: 0.55).setStroke()
+                path.stroke()
+                NSColor(srgbRed: 0.86, green: 0.88, blue: 0.93, alpha: 1).setFill()
+                NSRect(x: 759, y: 26, width: 1.5, height: 150).fill()
+                label("Roam: each Pixl explores in its own way. Never while you type.", Theme.mono(11, .bold),
+                      NSColor(white: 0.25, alpha: 1), at: NSPoint(x: 60, y: 540))
+                _ = caretX
+            }
+            PixlSkins.currentID = "widow"
+            let climbing = FroggView(scale: 1.4, frameName: "move_0")
+            climbing.surface = .rightWall
+            let c1 = Surface.rightWall.bodyCenter(foot: CGPoint(x: 950, y: 330), height: climbing.frame.height / FroggView.headroom * 0.9)
+            climbing.frame.origin = NSPoint(x: c1.x - climbing.frame.width / 2, y: c1.y - climbing.frame.height / 2)
+            v.addSubview(climbing)
+            let hanging = FroggView(scale: 1.4, frameName: "idle_0")
+            hanging.surface = .ceiling
+            let c2 = Surface.ceiling.bodyCenter(foot: CGPoint(x: 760, y: 146), height: hanging.frame.height / FroggView.headroom * 0.9)
+            hanging.frame.origin = NSPoint(x: c2.x - hanging.frame.width / 2, y: c2.y - hanging.frame.height / 2)
+            v.addSubview(hanging)
+            pet("frogg", "emotion_curious", feet: CGPoint(x: 230, y: 251), in: v, mirrored: false)
+            PixlSkins.currentID = "frogg"
+            try png(v, "\(out)/11-roam.png")
+        }
         PixlSkins.currentID = "frogg"
     }
 }
