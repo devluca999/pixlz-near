@@ -396,7 +396,16 @@ MainActor.assumeIsolated {
                 let saved = parts.count >= 4 ? HighlightItem(id: "", text: parts[3], url: parts[2], title: parts[1], fragmentUrl: nil) : nil
                 card.showLocal(parts[0], saved: saved, note: saved != nil ? "saved on this Mac · no model" : "done on this Mac · nothing sent")
             } else {
-                card.show(try JSONDecoder().decode(AskResult.self, from: Data(contentsOf: URL(fileURLWithPath: a[4]))))
+                let r = try JSONDecoder().decode(AskResult.self, from: Data(contentsOf: URL(fileURLWithPath: a[4])))
+                card.show(r)
+                // pictures (real Wikipedia lookups): wait for them and their thumbnails
+                var pics: [AnswerPicture]?
+                Task { @MainActor in pics = await AnswerPictures.find(for: r.answer) }
+                let until = Date().addingTimeInterval(12)
+                while pics == nil, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+                card.showPictures(pics ?? []) {}
+                RunLoop.main.run(until: Date().addingTimeInterval(10))
+                if let open = ProcessInfo.processInfo.environment["PIXL_SNAP_OPEN"].flatMap(Int.init) { card.openPicture(open) }
             }
             card.fit()
             let c = SurfaceView.card(card, look: look)

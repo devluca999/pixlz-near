@@ -529,6 +529,8 @@ public final class AskCard: PixlCard {
     /// Hand the answer to another app's text field (the app shows a list of apps).
     public var onHandOff: ((String) -> Void)?
     var lastQuestion = ""
+    /// The answer on show (pictures that arrive late only attach to the answer they belong to).
+    public private(set) var lastAnswer = ""
 
     /// The model's light markdown (bold, italics, code, links) as styled text; the rest stays as written.
     static func styled(_ text: String, font: NSFont, color: NSColor) -> NSAttributedString {
@@ -551,6 +553,7 @@ public final class AskCard: PixlCard {
     }
 
     public func show(_ r: AskResult) {
+        lastAnswer = r.answer
         answer.attributedStringValue = Self.styled(r.answer, font: answer.font ?? .systemFont(ofSize: 13.5), color: tokens.text)
         answer.isHidden = false
         let saveB = PixelButton(title: "Save answer", style: .secondary) { [weak self] in
@@ -605,6 +608,28 @@ public final class AskCard: PixlCard {
     /// the page): no model, nothing sent. `saved` shows what went into memory, with its backlink.
     public func showLocal(_ text: String, saved: HighlightItem? = nil, note: String = "answered on this Mac · nothing sent") {
         showLocal(text, saved: saved.map { [$0] } ?? [], note: note)
+    }
+
+    /// Pictures of what the answer lists, in a row of squares under the answer (click to enlarge).
+    /// `onResize` refits the card's panel when a picture opens or closes.
+    public func showPictures(_ pictures: [AnswerPicture], onResize: @escaping () -> Void) {
+        guard !pictures.isEmpty, !answer.isHidden else { return }
+        let cap = caption("PICTURES · WIKIPEDIA", look: look)
+        let strip = PictureStrip(pictures: pictures, look: look, width: inner)
+        strip.onOpenURL = { [weak self] u in Debug.log("ask: open picture page"); self?.onOpenURL?(u) }
+        strip.onResize = { [weak self] in self?.fit(); onResize() }
+        // right under the verdict line, above the sources
+        let at = sources.first.flatMap { stack.arrangedSubviews.firstIndex(of: $0) }.map { $0 + 1 } ?? stack.arrangedSubviews.count
+        stack.insertArrangedSubview(strip, at: min(at, stack.arrangedSubviews.count))
+        stack.insertArrangedSubview(cap, at: min(at, stack.arrangedSubviews.count))
+        sources.append(contentsOf: [cap, strip])
+        fit()
+        onResize()
+    }
+
+    /// Opens the `i`th picture large (as a click on it would).
+    public func openPicture(_ i: Int) {
+        (sources.first { $0 is PictureStrip } as? PictureStrip)?.toggle(i)
     }
 
     /// While a request takes a moment: a status line in the hint.

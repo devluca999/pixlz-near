@@ -378,7 +378,15 @@ final class BubbleMenu {
             }
             self.app.ask(q) { result in
                 switch result {
-                case .success(let r): card.show(r)
+                case .success(let r):
+                    card.show(r)
+                    // an answer that lists places or things: their pictures, looked up by name on Wikipedia
+                    Task { @MainActor [weak self, weak card] in
+                        let pics = await AnswerPictures.find(for: r.answer)
+                        Debug.log("ask: \(pics.count) pictures")
+                        guard let self, let card, card.lastAnswer == r.answer else { return }
+                        card.showPictures(pics) { [weak self, weak card] in if let card { self?.resizeCard(card) } }
+                    }
                 case .failure(let e): card.show(error: e)
                 }
                 self.resizeCard(card)
