@@ -69,11 +69,12 @@ func run() throws {
     }
     PixlSkins.currentID = "frogg"
 
-    // 1b. Skins grid (C15): every Pixl × Default and its two alternates, idle and move at 3×, accents.
+    // 1b. Skins grid (C15): every Pixl × Default and its alternates, idle and move, accents.
     do {
         let cellW: CGFloat = 330, cellH: CGFloat = 250, pets = PixlSkins.all
-        let grid = Canvas(NSSize(width: 150 + cellW * 3 + 24, height: 64 + cellH * CGFloat(pets.count) + 16), fill: NSColor(srgbRed: 0.043, green: 0.043, blue: 0.055, alpha: 1)) { _ in
-            label("Alternate skins · Default + two per Pixl · idle and move", Theme.mono(18, .bold), .white, at: NSPoint(x: 24, y: 20))
+        let cols = CGFloat(pets.map { $0.manifest.ui?.skins?.count ?? 1 }.max() ?? 3)
+        let grid = Canvas(NSSize(width: 150 + cellW * cols + 24, height: 64 + cellH * CGFloat(pets.count) + 16), fill: NSColor(srgbRed: 0.043, green: 0.043, blue: 0.055, alpha: 1)) { _ in
+            label("Alternate skins · Default + two per Pixl (three for Kiti) · idle and move", Theme.mono(18, .bold), .white, at: NSPoint(x: 24, y: 20))
         }
         for (r, pet) in pets.enumerated() {
             let y = 60 + CGFloat(r) * cellH

@@ -205,6 +205,12 @@
         "name": "Siamese",
         "accent": "#5B8FD8",
         "frames": "sprites_siamese.json"
+      },
+      {
+        "id": "sphynx",
+        "name": "Sphynx",
+        "accent": "#E8A090",
+        "frames": "sprites_sphynx.json"
       }
     ]
   }

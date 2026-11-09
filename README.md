@@ -20,7 +20,7 @@ Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (p
 Six Pixls: Frogg (tree frog, the red-eyed kind), Kiti (friendly feline), Mochi (Shiba Inu, professional zoomer), Boo (sheety ghost), Silky (black widow, mostly harmless) and Slugg (definitely a slug). Each has its own accent, menu detail, trick, sounds and walk. Switch in Settings or under More ▸ Change Pixl; memory, wallet and position carry over. Rendered from the Claude Design pixel engine (C7–C15).
 
 ![Every Pixl with its Default and two alternate skins](docs/screenshots/skins-grid.png)
-Alternate skins (C15), two per Pixl, each with its own accent: Frogg Toad and Poison Dart, Kiti Orange Tabby and Siamese, Mochi Wolf and Black & Tan, Boo Veil (a lace veil with a lantern) and Glitch (a starry body that glitches), Silky Tarantula and Jumper, Slugg Dapper and Racer. Pick one under Settings ▸ Alternate skins; each Pixl remembers its own.
+Alternate skins (C15), two per Pixl (three for Kiti), each with its own accent: Frogg Toad and Poison Dart, Kiti Orange Tabby, Siamese and Sphynx, Mochi Wolf and Black & Tan, Boo Veil (a lace veil with a lantern) and Glitch (a starry body that glitches), Silky Tarantula and Jumper, Slugg Dapper and Racer. Pick one under Settings ▸ Alternate skins; each Pixl remembers its own.
 
 ![Ask, Memory, Wallet and Change Pixl cards, light](docs/screenshots/cards-light.png)
 ![The same cards, dark](docs/screenshots/cards-dark.png)

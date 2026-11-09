@@ -393,7 +393,7 @@ function compose(pet, key, o) {
     post: (r, pal) => { stars.post(r, pal); glitch.post(r, pal); } }));
 }
 export const FINAL_SKINS = {
-  frogg: ["frogg_toad", "frogg_dart"], cat: ["cat_tabby", "cat_siamese"], shiba: ["shiba_wolf", "shiba_bt"],
+  frogg: ["frogg_toad", "frogg_dart"], cat: ["cat_tabby", "cat_siamese", "cat_sphynx"], shiba: ["shiba_wolf", "shiba_bt"],
   ghost: ["ghost_veil", "ghost_glitchstars"], widow: ["widow_tarantula", "widow_jumper"], slugg: ["slugg_dapper", "slugg_racer"],
 };
 const skinID = (pet, key) => ({ ghost_glitchstars: "glitch" }[key] || key.slice(pet.length + 1));

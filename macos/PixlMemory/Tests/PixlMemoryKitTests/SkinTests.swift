@@ -98,7 +98,7 @@ struct SkinTests {
         }
         let names = Dictionary(uniqueKeysWithValues: PixlSkins.all.map { ($0.id, ($0.manifest.ui?.skins ?? []).map(\.name)) })
         #expect(names["frogg"] == ["Default", "Toad", "Poison Dart"])
-        #expect(names["cat"] == ["Default", "Orange Tabby", "Siamese"])
+        #expect(names["cat"] == ["Default", "Orange Tabby", "Siamese", "Sphynx"])
         #expect(names["shiba"] == ["Default", "Wolf", "Black & Tan"])
         #expect(names["ghost"] == ["Default", "Veil", "Glitch"])
         #expect(names["widow"] == ["Default", "Tarantula", "Jumper"])
@@ -107,12 +107,12 @@ struct SkinTests {
 
     /// C15: Default plus one or two alternates, each with its own accent, and every alternate draws
     /// every frame the Pixl has (slots, emotions, blink, locomotion loops and layers).
-    @Test func everyPixlHasTwoOrThreeSkinsAndEverySkinCoversEveryFrame() throws {
+    @Test func everyPixlHasTwoOrThreeAlternatesAndEverySkinCoversEveryFrame() throws {
         let before = PixlSkins.looks
         defer { PixlSkins.looks = before }
         for pet in PixlSkins.all {
             let skins = try #require(pet.manifest.ui?.skins)
-            #expect((2...3).contains(skins.count), "\(pet.id): \(skins.count) skins")
+            #expect((3...4).contains(skins.count), "\(pet.id): \(skins.count) skins")
             #expect(Set(skins.compactMap(\.accent)).count == skins.count, "\(pet.id): each skin has its own accent")
             for option in skins.dropFirst() {
                 #expect(option.frames != nil || option.palette != nil, "\(pet.id) \(option.id) has no art")
