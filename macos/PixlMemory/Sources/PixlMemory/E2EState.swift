@@ -35,6 +35,8 @@ enum E2EState {
                 case "game": app.game.start()
                 case "adjust": app.resizer.beginAdjust()
                 case "voice": app.chatter(info["text"] ?? "Hello!")
+                case "sleep": app.startSleep()
+                case "wake": app.stopSleep(); app.backToIdle()
                 case "finish": app.resizer.finish()
                 default: break
                 }
@@ -89,6 +91,7 @@ enum E2EState {
             "deviceId": app.travel.me.deviceId,
             "surface": app.frogg.surface.rawValue,
             "hanging": app.roamHanging != nil,
+            "handles": app.resizer.panel.map { tl($0.frame) } ?? NSNull(),
             "peers": app.travel.peers.map(\.deviceName),
             "awayOn": app.awayOn ?? NSNull(),
             "owns": app.travel.runner?.owned?.name ?? NSNull(),

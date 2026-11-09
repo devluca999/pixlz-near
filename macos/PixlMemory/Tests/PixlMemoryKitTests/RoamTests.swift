@@ -152,3 +152,15 @@ import PixlzCore
         #expect(RoamStyle.of(id: "frogg", movement: "hop") == .hopper)
     }
 }
+
+@Suite struct GlideTests {
+    @Test func aGhostGlidesStraightEasingInAndOutAndFadesMidway() {
+        let c = Choreography.glide(from: CGPoint(x: 0, y: 100), to: CGPoint(x: 480, y: 100))
+        #expect(abs(c.duration - 2) < 0.01)                                   // 240 pt/s
+        let start = c.pose(at: 0.2).pose.foot.x, mid = c.pose(at: 1).pose.foot.x
+        #expect(start < 480 * 0.1 && abs(mid - 240) < 1)                      // slow start, half way at half time
+        #expect((0..<20).allSatisfy { c.pose(at: Double($0) / 10).pose.foot.y == 100 })   // no hop arc
+        #expect(c.pose(at: 1).pose.alpha < 0.7 && c.pose(at: 2).pose.alpha > 0.99)
+        #expect(Choreography.glide(from: .zero, to: .zero).segments.isEmpty)
+    }
+}

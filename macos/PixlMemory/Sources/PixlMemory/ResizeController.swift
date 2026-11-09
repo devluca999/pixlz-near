@@ -50,10 +50,13 @@ final class ResizeController {
             if e.keyCode == 53 { MainActor.assumeIsolated { self?.finish() }; return nil }
             return e
         }) { monitors.append(m) }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        // follows the Pixl wherever it goes (grabbed, thrown, landing), 30 times a second
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.drag == nil else { return }
-                if Date().timeIntervalSince(self.lastTouch) > 30 { self.finish() }
+                guard let self else { return }
+                if self.drag == nil { self.refit() }
+                if self.app.mode != .perched || self.app.moving { self.lastTouch = Date() }
+                if self.drag == nil, Date().timeIntervalSince(self.lastTouch) > 30 { self.finish() }
             }
         }
     }

@@ -104,7 +104,7 @@ final class RoamController {
         planner = p
         Debug.log("roam: \(o.name) (\(planner.style.rawValue)\(w.codeContext ? ", code app" : ""))")
         let c = RoamPlanner.choreography(o, from: w.foot, style: planner.style, hanging: app.roamHanging) { [unowned self] a, b in
-            Choreography.hop(self.app.route(from: a, to: b))
+            self.app.move(from: a, to: b)
         }
         guard c.duration > 0 else { schedule(); return }
         outingSince = Date()

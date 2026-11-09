@@ -190,7 +190,7 @@ final class TravelController {
         guard let foot = app.foot else { return "I can't move right now." }
         if vis.contains(CGPoint(x: foot.x, y: foot.y - 1)) { return "I'm already on \(screen.localizedName)." }
         app.userPlaced = true   // stay there until the next window switch
-        app.run(Choreography.hop(app.route(from: foot, to: spot)), target: spot)
+        app.run(app.move(from: foot, to: spot), target: spot)
         return "Hopping to \(screen.localizedName)!"
     }
 }

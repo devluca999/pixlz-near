@@ -35,9 +35,9 @@ final class PresenceController {
             Debug.log("presence: \(before) → \(mood)")
             switch mood {
             case .napping where calm:
-                app.cancelAnimations()
-                app.frogg.frameName = "rest_1"   // asleep
+                app.startSleep()                  // asleep: z's, and Boo floats
             case .waking:
+                app.stopSleep()
                 app.frogg.frameName = "rest_0"   // the yawn
                 app.later(Presence.wakeTime) { [weak self] in self?.app.backToIdle() }
             default: break

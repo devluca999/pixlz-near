@@ -151,6 +151,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reposition(force: true)
         updateCardLimit()
         if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
+        updateHover()
         froggPanel.orderFrontRegardless()
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
@@ -258,6 +259,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced,
               let spot = target() else { return }
         guard let current = foot else { place(at: spot.foot); return }
+        if let m = motion, floats {
+            // a ghost just changes course from wherever it is
+            if let end = motionTarget, hypot(end.x - spot.foot.x, end.y - spot.foot.y) < 1 { return }
+            run(Choreography.glide(from: m.pose(at: now - motionStart).pose.foot, to: spot.foot), target: spot.foot)
+            return
+        }
         if let m = motion {
             if let end = motionTarget, hypot(end.x - spot.foot.x, end.y - spot.foot.y) < 1 { return }
             let t = now - motionStart
@@ -271,7 +278,80 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let d = hypot(spot.foot.x - current.x, spot.foot.y - current.y)
         if d < 1 { return }
         if !force && d < 60 { place(at: spot.foot); return }
-        run(Choreography.hop(route(from: current, to: spot.foot)), target: spot.foot)
+        run(move(from: current, to: spot.foot), target: spot.foot)
+    }
+
+    /// A ghost floats (Boo, pixl.json movement "float"): it hovers and glides, never hops.
+    var floats: Bool { PixlSkins.current.manifest.movement.rawValue == "float" }
+
+    /// Getting from a to b in this Pixl's way: a hop, or a ghost's glide.
+    func move(from a: CGPoint, to b: CGPoint) -> Choreography {
+        floats ? Choreography.glide(from: a, to: b) : Choreography.hop(route(from: a, to: b))
+    }
+
+    // MARK: hovering (Boo)
+
+    var hoverLift: CGFloat = 0
+    var hoverTimer: Timer?
+    var shadowPanel: PropPanel?
+
+    /// Boo floats a little above whatever it's on, drifting slowly up and down, with a dithered
+    /// shadow on the surface below that shrinks as it rises. Runs only for a floating Pixl.
+    func updateHover() {
+        hoverTimer?.invalidate(); hoverTimer = nil
+        guard floats else {
+            hoverLift = 0
+            shadowPanel?.orderOut(nil); shadowPanel = nil
+            return
+        }
+        let t0 = now
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let held = self.mode == .held || self.flight != nil
+                let t = self.now - t0
+                let lift = held ? 0 : (16 + 5 * sin(t * 2 * .pi / 3.4)).rounded()   // whole points: crisp
+                if lift != self.hoverLift {
+                    self.hoverLift = lift
+                    if !self.moving, let f = self.foot { self.place(at: f) }
+                } else {
+                    self.placeShadow()   // follows fades and hiding too
+                }
+            }
+        }
+        hoverTimer?.tolerance = 0.005
+        RunLoop.main.add(hoverTimer!, forMode: .common)
+    }
+
+    /// The dithered shadow under a hovering ghost, on the surface at its feet.
+    func placeShadow() {
+        guard floats, let foot, frogg.surface == .floor, froggPanel.isVisible, froggPanel.alphaValue > 0.05, !userHidden, !fullscreenHidden, hoverLift > 0 else {
+            shadowPanel?.orderOut(nil); return
+        }
+        let w = (spriteSize.width * 0.7).rounded(), h: CGFloat = 10
+        let p = shadowPanel ?? PropPanel(size: NSSize(width: w, height: h)) { r in
+            // an ellipse of dark pixels: solid in the middle, checkered dither toward the edge
+            let u: CGFloat = 2
+            for y in stride(from: 0, to: r.height, by: u) {
+                for x in stride(from: 0, to: r.width, by: u) {
+                    let nx = (x + u / 2 - r.midX) / (r.width / 2), ny = (y + u / 2 - r.midY) / (r.height / 2)
+                    let d = nx * nx + ny * ny
+                    guard d <= 1 else { continue }
+                    let checker = Int(x / u + y / u) % 2 == 0
+                    guard d < 0.35 || checker else { continue }
+                    NSColor(srgbRed: 0.05, green: 0.06, blue: 0.12, alpha: d < 0.35 ? 0.5 : 0.38).setFill()
+                    NSRect(x: x, y: y, width: u, height: u).fill()
+                }
+            }
+        }
+        shadowPanel = p
+        // higher up, a smaller and fainter shadow
+        let k = max(0.6, 1 - hoverLift / 60)
+        let r = NSRect(x: (foot.x - w * k / 2).rounded(), y: (primaryHeight - foot.y - h / 2).rounded(), width: (w * k).rounded(), height: h)
+        if p.frame != r { p.setFrame(r, display: true) }
+        p.alphaValue = froggPanel.alphaValue * k
+        if !p.isVisible { p.orderFrontRegardless() }
+        p.order(.below, relativeTo: froggPanel.windowNumber)
     }
 
     /// A shaped route (PixlzCore HopRoute): distance-scaled arc, chained when long, kept under
@@ -524,6 +604,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func place(at p: CGPoint) {
         foot = p
         var f = Perch.panelFrame(foot: p, canvas: frogg.frame.size, primaryHeight: primaryHeight)
+        if hoverLift != 0, frogg.surface == .floor { f.origin.y += hoverLift }   // Boo floats above its spot
         if frogg.surface != .floor {   // turned on a wall or the ceiling: centre the view on the body
             let c = frogg.surface.bodyCenter(foot: p, height: spriteSize.height)
             let size = frogg.frame.size
@@ -532,6 +613,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let s = froggPanel.backingScaleFactor
         f.origin = NSPoint(x: (f.origin.x * s).rounded() / s, y: (f.origin.y * s).rounded() / s)
         if froggPanel.frame != f { froggPanel.setFrame(f, display: true) }
+        placeShadow()
         positionBubble()
     }
 
@@ -606,6 +688,77 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         animTimers.forEach { $0.invalidate() }
         animTimers.removeAll()
         idleTimer?.invalidate()
+        stopSleep()
+    }
+
+    // MARK: sleeping (you've been away a while)
+
+    var sleepTimer: Timer?
+    var sleepBase: NSRect?
+    var lastZ: TimeInterval = 0
+
+    /// Asleep: rising pixel "z"s for every Pixl. Boo floats instead of squashing: eyes closed,
+    /// bobbing slowly, fading softly in and out like breathing.
+    func startSleep() {
+        cancelAnimations()
+        let floats = PixlSkins.current.manifest.movement.rawValue == "float"
+        frogg.frameName = floats ? "emotion_sleepy" : "rest_1"
+        if let f = foot { place(at: f) }
+        sleepBase = froggPanel.frame
+        let t0 = now
+        lastZ = t0 - 1.2
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let base = self.sleepBase else { return }
+                let t = self.now - t0
+                _ = base
+                if floats { self.froggPanel.alphaValue = 0.72 + 0.2 * sin(t * 2 * .pi / 3.6) }   // it breathes, faintly
+                if self.now - self.lastZ > 2.2 { self.lastZ = self.now; self.puffZ() }
+            }
+        }
+        sleepTimer?.tolerance = 0.01
+    }
+
+    func stopSleep() {
+        guard let timer = sleepTimer else { return }
+        timer.invalidate()
+        sleepTimer = nil
+        sleepBase = nil
+        froggPanel.alphaValue = 1
+        if let f = foot { place(at: f) }
+    }
+
+    /// One pixel "z" rising from beside its head and fading.
+    func puffZ() {
+        guard let frogg, let froggPanel, !userHidden else { return }
+        let u: CGFloat = 2
+        let z = PropPanel(size: NSSize(width: 5 * u + 3, height: 5 * u + 3)) { r in
+            let rows = ["xxxxx", "...x.", "..x..", ".x...", "xxxxx"]
+            for (y, row) in rows.enumerated() {
+                for (x, c) in row.enumerated() where c == "x" {
+                    let p = NSRect(x: 1 + CGFloat(x) * u, y: r.maxY - 2 - CGFloat(y + 1) * u, width: u, height: u)
+                    NSColor(white: 0.1, alpha: 0.5).setFill(); p.offsetBy(dx: 1, dy: -1).fill()
+                    NSColor(srgbRed: 0.93, green: 0.95, blue: 1, alpha: 1).setFill(); p.fill()
+                }
+            }
+        }
+        let f = froggPanel.frame
+        let headTop = f.minY + FroggArt.shared.size(frogg.frameName).height * scale
+        let start = NSPoint(x: f.midX + 18 + CGFloat.random(in: -4...6), y: headTop - 4)
+        z.setFrameOrigin(start)
+        z.alphaValue = 0
+        z.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.4
+            z.animator().alphaValue = 1
+        })
+        later(0.4) {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 1.6
+                z.animator().alphaValue = 0
+                z.animator().setFrameOrigin(NSPoint(x: start.x + 14, y: start.y + 34))
+            }, completionHandler: { MainActor.assumeIsolated { z.orderOut(nil) } })
+        }
     }
 
     func play(_ anim: SlotAnimation, then next: (@MainActor () -> Void)? = nil) {
@@ -1293,6 +1446,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 self.chatter("Hi, I'm \(self.settings.name)!")
                 self.roam.refresh()   // each Pixl roams its own way
+                self.updateHover()    // a ghost floats
                 if reopenSettings { self.toggleMiniMenu() }
             }
         })
@@ -1432,7 +1586,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         place(at: start)
         showFrogg()
         let hang = Choreography([.hold(at: start, frame: MotionFrames.hang, mirrored: false, duration: 0.14)])
-        run(Choreography(hang.segments + Choreography.hop(route(from: start, to: spot.foot), notice: false).segments), target: spot.foot)
+        run(Choreography(hang.segments + (floats ? Choreography.glide(from: start, to: spot.foot) : Choreography.hop(route(from: start, to: spot.foot), notice: false)).segments), target: spot.foot)
         puff(at: start)
         chatter("Hi! I'm here.", for: 1.8)
     }

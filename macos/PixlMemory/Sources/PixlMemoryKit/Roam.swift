@@ -434,6 +434,12 @@ extension RoamPlanner {
                 .hold(at: to, frame: "mischief_2", mirrored: left, duration: 1.0),       // the arch
                 .settle(at: to, duration: 0.2),
             ])
+        case .nap(let t) where style == .drifter:
+            // Boo doesn't squash into a puddle: it dozes upright, floating and fading softly
+            return Choreography([
+                .travel(from: foot, to: foot, frames: ["emotion_sleepy"], fps: 1, surface: .floor, mirrored: false, bob: 5, alpha: 0.8, duration: t),
+                .settle(at: foot, duration: 0.2),
+            ])
         case .nap(let t):
             return Choreography([
                 .hold(at: foot, frame: "rest_0", mirrored: false, duration: 0.5),

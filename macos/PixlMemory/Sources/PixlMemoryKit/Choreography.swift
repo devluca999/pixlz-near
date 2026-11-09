@@ -51,6 +51,8 @@ public struct Choreography: Sendable {
         /// `bob` floats it up and down (Boo); `alpha` fades it while moving.
         case travel(from: CGPoint, to: CGPoint, frames: [String], fps: Double, surface: Surface, mirrored: Bool,
                     bob: CGFloat, alpha: CGFloat, duration: TimeInterval)
+        /// A ghost's move: no hop, a smooth drift that eases in and out, fading a little mid-way.
+        case glide(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
         /// Silk on its thread, tied at `anchor`, going from one depth below it to another.
         case dangle(anchor: CGPoint, from: CGFloat, to: CGFloat, duration: TimeInterval)
 
@@ -58,7 +60,7 @@ public struct Choreography: Sendable {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
                  .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d),
-                 .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d): d
+                 .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d), .glide(_, _, _, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -120,6 +122,13 @@ public struct Choreography: Sendable {
 
     /// The Space changed under the Pixl: a startle with a wobble where it stands, then a
     /// springy hop to the new perch (no notice beat: the startle is the notice).
+    /// A ghost moves by gliding, not hopping (about 240 pt/s, at least half a second).
+    public static func glide(from a: CGPoint, to b: CGPoint) -> Choreography {
+        let d = Double(hypot(b.x - a.x, b.y - a.y))
+        guard d >= 1 else { return Choreography([]) }
+        return Choreography([.glide(from: a, to: b, mirrored: b.x < a.x, duration: max(0.5, d / 240))])
+    }
+
     public static func whoa(at p: CGPoint, then route: HopRoute?) -> Choreography {
         let toLeft = route.map { $0.end.x < p.x } ?? false
         var segs: [Segment] = [.whoa(at: p, mirrored: toLeft, duration: whoaTime)]
@@ -241,6 +250,10 @@ public struct Choreography: Sendable {
             var pose = Pose(foot: p, frame: frame, mirrored: m, alpha: 1 - (1 - alpha) * fade)
             pose.surface = surface
             return pose
+        case .glide(let a, let b, let m, _):
+            let e = CGFloat(f * f * (3 - 2 * f))   // smoothstep
+            return Pose(foot: CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e), frame: f < 0.5 ? "idle_1" : "idle_0",
+                        mirrored: m, alpha: 1 - 0.35 * CGFloat(sin(Double.pi * f)))
         case .dangle(let anchor, let d0, let d1, _):
             let e = CGFloat(f * f * (3 - 2 * f))   // smoothstep: eases off and onto the thread's end
             // its own hanging art, swaying between two frames
@@ -278,7 +291,7 @@ public struct Choreography: Sendable {
             return Choreography.hop(route(b), notice: false)
         case .exit(let p, _, _), .whoa(let p, _, _), .pivot(let p, _, _, _):
             return Choreography.hop(route(p), notice: false)
-        case .travel, .dangle:
+        case .travel, .dangle, .glide:
             // off a wall, the ceiling or a thread: hop on from where it is, upright
             return Choreography.hop(route(pose(at: t).pose.foot), notice: false)
         case .pop(let a, let b, _, _):
