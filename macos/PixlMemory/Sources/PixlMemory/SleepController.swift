@@ -63,7 +63,8 @@ final class SleepController {
         apply(cycle.tick(at: t, sinceInput: sinceInput, typing: typing, energy: energy))
         if cycle.stage.sleeping { watchCursor(t) }
         watchHover(t)
-        if cycle.stage.sleeping, t - lastZ > (cycle.stage == .deep ? 3.6 : 2.2) { lastZ = t; app.puffZ() }
+        // z's (Frogg's pond makes its own bubble-z)
+        if cycle.stage.sleeping, !app.pond.active, t - lastZ > (cycle.stage == .deep ? 3.6 : 2.2) { lastZ = t; app.puffZ() }
     }
 
     var hoverSince: TimeInterval?

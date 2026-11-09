@@ -51,6 +51,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
     lazy var sleep = SleepController(app: self)
+    lazy var pond = PondController(app: self)
     /// Silky hangs on a thread tied here (Roam); nil when on its feet.
     var roamHanging: CGPoint?
     var threadPanel: ThreadPanel?
@@ -267,7 +268,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Hop to the perch. Mid-motion, the current flight is retargeted (never snaps back).
     func reposition(force: Bool = false) {
-        guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced, !sleep.dozing,
+        guard !paused, !userHidden, !fullscreenHidden, !spaceTransition, mode == .perched, !userPlaced, !sleep.dozing, !pond.active,
               let spot = target() else { return }
         guard let current = foot else { place(at: spot.foot); return }
         if let m = motion, floats {
@@ -758,11 +759,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         animTimers.removeAll()
         idleTimer?.invalidate()
         sleepTimer?.invalidate()
-        frogg.frameName = sleepFrame(deep: deep)
-        if let f = foot {
-            place(at: f)
-            if PixlSkins.currentID == "frogg", mode == .perched { roam.showPond(at: f) }
+        // Frogg sleeps in his pond (C14): it forms beside him and he slides in
+        if pond.available, mode == .perched {
+            if !pond.active { pond.enter() }
+            return
         }
+        frogg.frameName = sleepFrame(deep: deep)
+        if let f = foot { place(at: f) }
         let t0 = now
         let floats = self.floats
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
@@ -776,6 +779,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func stopSleep() {
         roam.hidePond()
+        if pond.active, !moving {   // out of the pond: launch, splash, step out, then himself again
+            pond.leave { [weak self] in self?.backToIdle() }
+        }
         guard let timer = sleepTimer else { return }
         timer.invalidate()
         sleepTimer = nil
@@ -1006,6 +1012,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bubblePanel.orderOut(nil)
         if sleep.handle(.grab) {
             roam.hidePond()
+            pond.cancel()
             frogg.frameName = sleepFrame(deep: false)   // dangling, still asleep
             moveHeld()
             return

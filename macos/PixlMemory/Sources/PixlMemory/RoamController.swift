@@ -108,6 +108,19 @@ final class RoamController {
             self.app.move(from: a, to: b)
         }
         guard c.duration > 0 else { schedule(); return }
+        // Frogg's dip: his pond forms, he slides in for a few breaths and hops back out (C14)
+        if case .pond(let t) = o, app.pond.available {
+            outingName = o.name
+            app.busy = true
+            app.pond.dip(t) { [weak self] in
+                guard let self else { return }
+                self.app.busy = false
+                self.lastOutingEnd = Date()
+                self.app.backToIdle()
+                self.schedule()
+            }
+            return
+        }
         outingSince = Date()
         outingName = o.name
         let end = c.pose(at: c.duration).pose

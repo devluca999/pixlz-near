@@ -79,17 +79,26 @@ public final class PondArt {
         return img
     }
 
-    /// The waterline mask of frame `i`: opaque where Frogg shows normally.
+    /// The waterline mask of frame `i` (grey: white where Frogg shows normally), for clipping.
     public func mask(_ i: Int) -> CGImage? {
         let key = "\(i).mask"
         if let c = cache[key] { return c }
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        var bytes = [UInt8](repeating: 0, count: width * height)
         for (y, row) in frames[i].mask.enumerated() {
-            for (x, ch) in row.enumerated() where ch == "#" { bytes[(y * width + x) * 4 + 3] = 255 }
+            for (x, ch) in row.enumerated() where ch == "#" { bytes[y * width + x] = 255 }
         }
-        let img = Self.cgImage(bytes, width, height)
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let img = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: width,
+                                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
         cache[key] = img
         return img
+    }
+
+    /// Where Frogg's feet are in frame `i` (pond pixels), from his sprite's box.
+    public func feet(_ i: Int) -> CGPoint? {
+        guard let s = frames[i].sprite, let f = FroggArt.shared.frames[s.frame] else { return nil }
+        return CGPoint(x: CGFloat(s.x) + CGFloat(f.w) / 2, y: CGFloat(s.y + f.h))
     }
 
     static func cgImage(_ bytes: [UInt8], _ w: Int, _ h: Int) -> CGImage? {
@@ -97,5 +106,41 @@ public final class PondArt {
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil,
                        shouldInterpolate: false, intent: .defaultIntent)
+    }
+}
+
+/// Draws one pond frame: behind → Frogg's pose clipped by the waterline mask → over.
+@MainActor
+public final class PondView: NSView {
+    public let pond: PondArt
+    public let scale: CGFloat
+    public var index = 0 { didSet { if index != oldValue { needsDisplay = true } } }
+    /// A click on Frogg in his pond: (click count, right button).
+    public var onClick: ((Int, Bool) -> Void)?
+
+    public init(pond: PondArt, scale: CGFloat) {
+        self.pond = pond
+        self.scale = scale
+        super.init(frame: NSRect(x: 0, y: 0, width: CGFloat(pond.width) * scale, height: CGFloat(pond.height) * scale))
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+    public override var isOpaque: Bool { false }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    public override func mouseDown(with event: NSEvent) { onClick?(event.clickCount, false) }
+    public override func rightMouseDown(with event: NSEvent) { onClick?(1, true) }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext, pond.frames.indices.contains(index) else { return }
+        ctx.interpolationQuality = .none
+        let all = bounds
+        if let b = pond.image(index, "behind") { ctx.draw(b, in: all) }
+        if let s = pond.frames[index].sprite, let img = FroggArt.shared.image(s.frame), let mask = pond.mask(index) {
+            ctx.saveGState()
+            ctx.clip(to: all, mask: mask)   // the waterline: Frogg shows only above it
+            let w = CGFloat(img.width) * scale, h = CGFloat(img.height) * scale
+            ctx.draw(img, in: CGRect(x: CGFloat(s.x) * scale, y: all.height - CGFloat(s.y) * scale - h, width: w, height: h))
+            ctx.restoreGState()
+        }
+        if let o = pond.image(index, "over") { ctx.draw(o, in: all) }
     }
 }
