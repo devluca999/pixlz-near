@@ -109,38 +109,58 @@ public final class PondArt {
     }
 }
 
-/// Draws one pond frame: behind → Frogg's pose clipped by the waterline mask → over.
+/// Draws one pond frame: behind → Frogg's pose clipped by the waterline mask → over. Each frame
+/// is composited once at 1× and cached; the view's layer shows it scaled up nearest-neighbour, so a
+/// breath of the sleep loop is just a swap of layer contents (no redraw).
 @MainActor
 public final class PondView: NSView {
     public let pond: PondArt
     public let scale: CGFloat
-    public var index = 0 { didSet { if index != oldValue { needsDisplay = true } } }
+    public var index = 0 { didSet { if index != oldValue { show() } } }
     /// A click on Frogg in his pond: (click count, right button).
     public var onClick: ((Int, Bool) -> Void)?
+    var composites: [Int: CGImage] = [:]
 
     public init(pond: PondArt, scale: CGFloat) {
         self.pond = pond
         self.scale = scale
         super.init(frame: NSRect(x: 0, y: 0, width: CGFloat(pond.width) * scale, height: CGFloat(pond.height) * scale))
+        wantsLayer = true
+        layer?.magnificationFilter = .nearest
+        layer?.contentsGravity = .resize
+        show()
     }
     required init?(coder: NSCoder) { fatalError("not used") }
     public override var isOpaque: Bool { false }
+    public override var wantsUpdateLayer: Bool { true }
+    public override func updateLayer() { show() }
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     public override func mouseDown(with event: NSEvent) { onClick?(event.clickCount, false) }
     public override func rightMouseDown(with event: NSEvent) { onClick?(1, true) }
 
-    public override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext, pond.frames.indices.contains(index) else { return }
+    func show() {
+        guard pond.frames.indices.contains(index) else { return }
+        layer?.contents = composite(index)
+    }
+
+    /// Frame `i` at 1× (pond pixels): behind, Frogg under the waterline mask, over.
+    public func composite(_ i: Int) -> CGImage? {
+        if let c = composites[i] { return c }
+        let w = pond.width, h = pond.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         ctx.interpolationQuality = .none
-        let all = bounds
-        if let b = pond.image(index, "behind") { ctx.draw(b, in: all) }
-        if let s = pond.frames[index].sprite, let img = FroggArt.shared.image(s.frame), let mask = pond.mask(index) {
+        let all = CGRect(x: 0, y: 0, width: w, height: h)
+        if let b = pond.image(i, "behind") { ctx.draw(b, in: all) }
+        if let s = pond.frames[i].sprite, let img = FroggArt.shared.image(s.frame), let mask = pond.mask(i) {
             ctx.saveGState()
             ctx.clip(to: all, mask: mask)   // the waterline: Frogg shows only above it
-            let w = CGFloat(img.width) * scale, h = CGFloat(img.height) * scale
-            ctx.draw(img, in: CGRect(x: CGFloat(s.x) * scale, y: all.height - CGFloat(s.y) * scale - h, width: w, height: h))
+            ctx.draw(img, in: CGRect(x: CGFloat(s.x), y: CGFloat(h - s.y - img.height), width: CGFloat(img.width), height: CGFloat(img.height)))
             ctx.restoreGState()
         }
-        if let o = pond.image(index, "over") { ctx.draw(o, in: all) }
+        if let o = pond.image(i, "over") { ctx.draw(o, in: all) }
+        let img = ctx.makeImage()
+        composites[i] = img
+        return img
     }
 }

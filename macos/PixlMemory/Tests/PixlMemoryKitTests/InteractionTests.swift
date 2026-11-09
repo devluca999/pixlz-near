@@ -132,7 +132,7 @@ struct AppearanceTests {
         for s in ["Settings", "PET", "SIZE", "BEHAVIOR"] { #expect(labels.contains(s), "\(s)") }
         #expect(labels.contains("Frogg is practicing his croak.") && labels.contains("Tree frog, the red-eyed kind"))
         let rows = v.descendants(of: DisclosureRow.self).map { $0.accessibilityLabel() ?? "" }
-        #expect(rows == ["Focus", "Shortcuts", "Privacy & Memory", "Wallet"])
+        #expect(rows == ["Focus", "Shortcuts", "Privacy & Memory", "Energy", "Wallet"])
         #expect(v.descendants(of: DisclosureRow.self).allSatisfy { !$0.open })   // collapsed by default
         #expect(v.descendants(of: ChoiceCard.self).map { $0.accessibilityLabel()?.components(separatedBy: ":").first ?? "" } == ["Calm", "Roam", "Chaos"])
         #expect(v.descendants(of: SizeCard.self).map(\.value) == [2, 3, 4, 5])

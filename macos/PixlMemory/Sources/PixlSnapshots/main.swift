@@ -179,6 +179,22 @@ func run() throws {
     miniBG.addSubview(miniCard)
     try png(miniBG, "\(out)/mini-menu.png")
 
+    // Settings ▸ Energy, open, with ten minutes shaped like the measured app (scripts/bench-energy.swift):
+    // ~0.13 % idle, a few outings
+    let energyView = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running", model: "z-ai/glm-5.3-flash", lastVerdict: "Verified in TEE · 17/17"),
+                                  look: paper, open: .energy)
+    var hist = EnergyHistory()
+    for i in 0..<200 {
+        let outing = [41, 42, 97, 150, 151].contains(i)
+        hist.add(EnergySample(cpu: outing ? 4.8 : 0.13 + Double((i * 7) % 5) * 0.02, memoryMB: 61, milliwatts: 3, at: Double(i) * 3))
+    }
+    energyView.update(energy: hist, sinceLaunch: 0.2)
+    let energyCard = SurfaceView.card(energyView, look: paper)
+    let energyBG = Canvas(NSSize(width: energyCard.frame.width + 48, height: energyCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+    energyCard.frame.origin = NSPoint(x: 24, y: 24)
+    energyBG.addSubview(energyCard)
+    try png(energyBG, "\(out)/settings-energy.png")
+
     // 3c. The C10 cards (Solid material), light and dark, over a desktop-ish backdrop.
     let sampleHighlights = [
         HighlightItem(id: "1", text: "While a glass frog sleeps, it hides almost all of its red blood cells inside its liver, which makes its body nearly transparent.",

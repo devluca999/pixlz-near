@@ -7,7 +7,7 @@ import PixlzCore
 /// moves between controls, Space/Return acts, Esc closes. On the shared card material.
 @MainActor
 public final class MiniMenuView: NSView, NSTextFieldDelegate {
-    public enum Section: String { case focus, shortcuts, privacy, wallet }
+    public enum Section: String { case focus, shortcuts, privacy, energy, wallet }
 
     public var onChange: ((PixlSettings) -> Void)?
     public var onClose: (() -> Void)?
@@ -28,6 +28,10 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     private var walletRow: DisclosureRow!
     private var privacyBody: NSStackView!
     private var walletBody: NSStackView!
+    private var energyRow: DisclosureRow!
+    private var energyLine: NSTextField!
+    private var energyDetail: NSTextField!
+    private var sparkline: EnergySparkline!
     private var petCards: [PetCard] = []
     private var sizeCards: [SizeCard] = []
     private var choice: [ChoiceCard] = []
@@ -229,6 +233,12 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         privacyBody = bodyStack([])
         privacyRow = addRow("Privacy & Memory", icon: "memory", summary: "", body: privacyBody, open: openSection == .privacy)
 
+        // Energy (collapsed): how little the app uses, live while Settings is open
+        energyLine = label("Measuring…", .systemFont(ofSize: 12, weight: .medium), t.text, width: inner - 24)
+        sparkline = EnergySparkline(look: look)
+        energyDetail = label("", .systemFont(ofSize: 11), t.text2, width: inner - 24)
+        energyRow = addRow("Energy", icon: "energy", summary: "Measuring…", body: bodyStack([energyLine, sparkline, energyDetail]), open: openSection == .energy)
+
         // Wallet (collapsed)
         walletBody = bodyStack([])
         walletRow = addRow("Wallet", icon: "wallet", summary: "", body: walletBody, open: openSection == .wallet)
@@ -264,6 +274,21 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
             walletRow.setSummary("Not set up")
         }
         fit()
+    }
+
+    /// The Energy section from the latest samples (EnergyMonitor), and the long-run average.
+    public func update(energy h: EnergyHistory, sinceLaunch: Double?) {
+        guard let s = h.latest else { return }
+        energyLine.stringValue = EnergyHistory.sentence(cpu: s.cpu)
+        sparkline.bars = h.sparkline(bars: EnergySparkline.barCount, height: EnergySparkline.maxHeight)
+        var parts = [String(format: "Memory %.0f MB", s.memoryMB)]
+        if let mw = s.milliwatts { parts.append(mw < 1 ? "Power under 1 mW" : String(format: "Power %.0f mW", mw)) }
+        if let a = sinceLaunch { parts.append(String(format: "Average %.1f%% since launch", a)) }
+        energyDetail.stringValue = parts.joined(separator: " · ") + "\nLast 10 minutes, full height = 2% of one core."
+        energyRow.setSummary(String(format: "%.1f%% CPU", sinceLaunch ?? s.cpu))
+        let h0 = frame.height
+        fit()
+        if frame.height != h0 { onResize?() }
     }
 
     // MARK: pieces

@@ -66,7 +66,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var ticks = 0
     var watchdog: Timer?
     var chosenInSelfTest: Int?
-    var miniPanel: KeyPanel?
+    /// Settings' panel. While it's open the Energy section samples every few seconds.
+    var miniPanel: KeyPanel? {
+        didSet { if (miniPanel == nil) != (oldValue == nil) { EnergyMonitor.shared.setLive(miniPanel != nil) } }
+    }
     var statusItem: NSStatusItem?
 
     var mode = Mode.perched
@@ -109,6 +112,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EnergyMonitor.shared.start()
         Debug.log("launch pid=\(ProcessInfo.processInfo.processIdentifier) accessibility=\(AX.trusted) debug=\(Debug.enabled)")
         bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
         PixlSkins.currentID = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
@@ -1577,6 +1581,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.autorecalculatesKeyViewLoop = true   // Tab walks the controls
         panel.makeKeyAndOrderFront(nil)
         if let f = view.initialFocus { panel.makeFirstResponder(f) }
+        let energy = EnergyMonitor.shared
+        energy.onSample = { [weak view, weak energy] h in view?.update(energy: h, sinceLaunch: energy?.sinceLaunch) }
+        view.update(energy: energy.history, sinceLaunch: energy.sinceLaunch)
         miniPanel = panel
         Debug.log("mini menu shown")
         Task { @MainActor [weak self, weak view, weak panel, weak card] in

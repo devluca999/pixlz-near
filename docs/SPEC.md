@@ -19,7 +19,7 @@ These override everything else in this document. A behavior that would break one
 | R3 | Never cover the window with keyboard focus (§6.4). |
 | R4 | Never move the real cursor, windows or files, and never send clicks or keystrokes (D13). |
 | R5 | Never steal focus. The Pixl's windows can't become key or main. |
-| R6 | macOS: < 1% CPU idle, render only while something changes, load sprite sheets lazily (D7). |
+| R6 | macOS: < 1% CPU idle, render only while something changes, load sprite sheets lazily (D7). Checked by `scripts/bench-energy.swift` (measured Nov 2026: 0.1% idle, 0.2% asleep, 1–5% while moving); shown live in Settings ▸ Energy. |
 | R7 | iOS: no background work, no polling loops. |
 | R8 | Never lose the Pixl. At every moment at least one device holds a complete PetState (§10.5). |
 
