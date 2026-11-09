@@ -172,6 +172,20 @@ public struct RoamPlanner: Sendable {
         return nil
     }
 
+    /// A named outing, for the debug build's e2e commands ("crawlTour", "overWindow", …).
+    public mutating func outing(named n: String, _ w: RoamWorld) -> Outing? {
+        let k: Kind? = switch n {
+        case "crawlTour": .crawlTour
+        case "overWindow": .overWindow
+        case "offWindow": .offWindow
+        case "ceilingHome": .ceilingHome
+        case "climbDown": .climbDown
+        case "walk": .walk
+        default: nil
+        }
+        return k.flatMap { make($0, w) }
+    }
+
     /// Reading along right now (after a stretch of typing in a code app).
     public mutating func glanceNow(_ w: RoamWorld) -> Outing? { glance(w) }
 
@@ -473,7 +487,7 @@ extension RoamPlanner {
     /// A timeline for `outing` starting at `foot`. `hop` builds a hop (the app's route planner).
     /// `wrap` gives the corner loop between two crawl legs (Slugg), or nil: an instant turn.
     public static func choreography(_ outing: Outing, from foot: CGPoint, style: RoamStyle, hanging: CGPoint?, gait: Gait? = nil,
-                                    wrap: ((CrawlLeg, CrawlLeg) -> CornerWrap?)? = nil,
+                                    surface: Surface = .floor, wrap: ((CrawlLeg, CrawlLeg) -> CornerWrap?)? = nil,
                                     hop: (CGPoint, CGPoint) -> Choreography) -> Choreography {
         let speed = gait?.speed ?? style.speed
         let frames = gait?.frames ?? moveFrames(style)
@@ -524,6 +538,9 @@ extension RoamPlanner {
                 .travel(from: foot, to: foot, frames: ["emotion_sleepy"], fps: 1, surface: .floor, mirrored: false, bob: 5, alpha: 0.8, duration: t),
                 .settle(at: foot, duration: 0.2),
             ])
+        case .nap(let t) where surface != .floor:
+            // on a wall or upside down: it naps where it is, still on that surface
+            return Choreography([.travel(from: foot, to: foot, frames: ["rest_1"], fps: 1, surface: surface, mirrored: false, bob: 0, alpha: 1, duration: t)])
         case .nap(let t):
             return Choreography([
                 .hold(at: foot, frame: "rest_0", mirrored: false, duration: 0.5),

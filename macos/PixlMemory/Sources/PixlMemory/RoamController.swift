@@ -109,7 +109,7 @@ final class RoamController {
         Debug.log("roam: \(o.name) (\(planner.style.rawValue)\(w.codeContext ? ", code app" : ""))")
         let art = FroggArt.shared, scale = app.scale
         let c = RoamPlanner.choreography(o, from: w.foot, style: planner.style, hanging: app.roamHanging, gait: app.gait,
-                                         wrap: { a, b in SluggMotion.wrap(a, b, art: art, scale: scale) }) { [unowned self] a, b in
+                                         surface: w.surface, wrap: { a, b in SluggMotion.wrap(a, b, art: art, scale: scale) }) { [unowned self] a, b in
             self.app.move(from: a, to: b)
         }
         guard c.duration > 0 else { schedule(); return }
@@ -131,8 +131,8 @@ final class RoamController {
         let end = c.pose(at: c.duration).pose
         if case .pond = o { showPond(at: w.foot) }
         let webCorners: [CGPoint]
-        // a cobweb in the top corner of any wall it climbs
-        if case .crawl(let legs, _) = o, let wall = legs.first(where: { $0.surface == .rightWall || $0.surface == .leftWall }), wall.to.y < wall.from.y {
+        // a cobweb in the top corner of any wall Silky climbs (only spiders spin webs)
+        if planner.style == .crawler, case .crawl(let legs, _) = o, let wall = legs.first(where: { $0.surface == .rightWall || $0.surface == .leftWall }), wall.to.y < wall.from.y {
             webCorners = [wall.to]
         } else { webCorners = [] }
         app.run(c, target: nil, roam: true) { [weak self] in

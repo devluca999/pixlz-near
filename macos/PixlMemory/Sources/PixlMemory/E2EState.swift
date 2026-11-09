@@ -32,12 +32,21 @@ enum E2EState {
                 case "callback": app.travel.callBack()
                 case "behavior": var s = app.settings; s.roams = info["value"] == "roam"; app.apply(s)
                 case "skin": var s = app.settings; s.skin = info["id"]; app.apply(s)
-                case "roam": app.roam.quietUntil = .distantPast; app.roam.go(info["kind"] == "pond" ? .pond(5) : nil, debug: true)
+                case "roam":
+                    app.roam.quietUntil = .distantPast
+                    if let k = info["kind"], k != "pond" {
+                        var p = app.roam.planner
+                        let o = p.outing(named: k, app.roam.world())
+                        Debug.log("e2e: roam \(k) → \(o.map { "\($0)" } ?? "doesn't fit now")")
+                        if let o { app.roam.go(o, debug: true) }
+                    } else { app.roam.go(info["kind"] == "pond" ? .pond(5) : nil, debug: true) }
                 case "game": app.game.start()
                 case "adjust": app.resizer.beginAdjust()
                 case "voice": app.speak(SoundEvent(rawValue: info["event"] ?? "greet") ?? .greet)
                 case "notice": app.notify(.copied, voice: .happy)
                 case "sleep": app.sleep.debugSleepNow()
+                case "awake": app.sleep.debugStayAwake(Double(info["s"] ?? "300") ?? 300)
+                case "shell": info["out"] == "1" ? app.shellOut(info["kind"] ?? "vault") : app.shellIn(info["kind"] ?? "vault")
                 case "ff": app.sleep.debugFastForward(Double(info["s"] ?? "60") ?? 60)
                 case "nap": app.sleep.debugNap()
                 case "sleepInput": SleepCycle.Input(rawValue: info["input"] ?? "").map { app.sleep.handle($0) }

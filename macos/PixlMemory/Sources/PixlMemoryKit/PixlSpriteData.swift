@@ -1225,8 +1225,8 @@ let pixlManifestJSON: [String: String] = [
         ".kkkkkk."
       ],
       "colors": {
-        "a": "#C9A93A",
-        "b": "#F2E6A8"
+        "a": "#9AB45A",
+        "b": "#E2F2B4"
       },
       "pos": {
         "bottom": 8,

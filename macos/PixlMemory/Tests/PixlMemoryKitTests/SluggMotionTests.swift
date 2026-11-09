@@ -85,3 +85,14 @@ import CoreGraphics
         #expect(!c.segments.contains { if case .flight = $0 { true } else { false } })
     }
 }
+
+@Suite struct NapOnAWallTests {
+    @Test func aNapOnAWallStaysOnTheWall() {
+        let c = RoamPlanner.choreography(.nap(5), from: CGPoint(x: 1680, y: 200), style: .slider, hanging: nil, surface: .rightWall,
+                                         hop: { a, _ in Choreography([.settle(at: a, duration: 0.1)]) })
+        for t in stride(from: 0.0, through: c.duration, by: 0.5) {
+            let p = c.pose(at: t).pose
+            #expect(p.surface == .rightWall && p.foot == CGPoint(x: 1680, y: 200))
+        }
+    }
+}

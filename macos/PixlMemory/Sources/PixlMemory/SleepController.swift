@@ -20,6 +20,8 @@ final class SleepController {
     /// PIXL_DEBUG: pretend you've been away this much longer than you have.
     var debugAway: TimeInterval = 0
     var debugAwaySetAt: TimeInterval = 0
+    /// Debug builds only (e2e "awake"): treat you as present until then, to watch outings while away.
+    var debugAwakeUntil: TimeInterval = 0
 
     var stage: SleepCycle.Stage { cycle.stage }
     var dozing: Bool { cycle.stage.dozing }
@@ -51,7 +53,7 @@ final class SleepController {
         let realAway = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
         // you touched something after the debug key (not the key press itself): back to real time
         if debugAway > 0, realAway < max(0, t - debugAwaySetAt - 0.8) { debugAway = 0 }
-        let sinceInput = realAway + debugAway
+        let sinceInput = t < debugAwakeUntil ? 0 : realAway + debugAway
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
         // the energy need: resting while asleep, spent faster while moving
         let now = Date()
@@ -200,6 +202,14 @@ final class SleepController {
     func debugFastForward(_ seconds: TimeInterval) {
         Debug.log("sleep debug: fast-forward \(Int(seconds)) s")
         cycle.debugFastForward(by: seconds)
+        tick()
+    }
+
+    func debugStayAwake(_ seconds: TimeInterval) {
+        debugAwakeUntil = app.now + seconds
+        debugAway = 0
+        Debug.log("sleep debug: treating you as present for \(Int(seconds)) s")
+        if dozing { handle(.hotkey) }
         tick()
     }
 
