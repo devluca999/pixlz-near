@@ -182,6 +182,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         froggPanel?.orderOut(nil)
         frogg = FroggView(scale: scale)
         frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
+        frogg.onContactChange = { [weak self] in if let self, let f = self.foot { self.place(at: f) } }
         froggPanel = OverlayPanel(size: frogg.frame.size)
         froggPanel.contentView = frogg
         if let current { place(at: current) }
@@ -309,7 +310,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch PixlSkins.currentID {
         case "cat": return loop("walk", 8).map { Gait(frames: $0, fps: 8, speed: 24 * scale) }
         case "shiba": return loop("trot", 6).map { Gait(frames: $0, fps: 12, speed: 70 * scale, bob: scale) }
-        case "slugg": return loop("crawl", 8).map { Gait(frames: $0, fps: 6, speed: 18 * scale) }
+        case "slugg": return loop("crawl", 8).map { Gait(frames: $0, fps: 7, speed: 18 * scale) }
         default: return nil
         }
     }
@@ -321,15 +322,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func stepShell(dt: TimeInterval) {
         guard FroggArt.shared.frames["crawl_0_shell"] != nil, let f = foot, dt > 0 else { return }
-        let vx = lastShellFoot.map { (f.x - $0.x) / CGFloat(dt) } ?? 0
+        // the shell trails the way it's going (any direction: floor, wall, ceiling) and settles
+        // as the back catches up; while it wraps a corner it holds still, so the shell catches up
+        let v = lastShellFoot.map { CGPoint(x: (f.x - $0.x) / CGFloat(dt), y: (f.y - $0.y) / CGFloat(dt)) } ?? .zero
         lastShellFoot = f
-        let target = max(-1.5, min(1.5, -vx / 30 / scale))          // art pixels, behind the way it's going
-        let a = 180 * (target - shellLag) - 14 * shellLagV
-        shellLagV += a * CGFloat(dt)
-        shellLag += shellLagV * CGFloat(dt)
-        let px = (shellLag * (frogg.mirrored ? -1 : 1)).rounded()   // whole art pixels: crisp
-        if frogg.shellOffset.x != px { frogg.shellOffset = CGPoint(x: px, y: 0) }
+        let target = CGPoint(x: max(-1.5, min(1.5, -v.x / 30 / scale)), y: max(-1.5, min(1.5, -v.y / 30 / scale)))   // art px, y down
+        let ax = 180 * (target.x - shellLag) - 14 * shellLagV
+        let ay = 180 * (target.y - shellLagY) - 14 * shellLagVY
+        shellLagV += ax * CGFloat(dt); shellLag += shellLagV * CGFloat(dt)
+        shellLagVY += ay * CGFloat(dt); shellLagY += shellLagVY * CGFloat(dt)
+        let px = CGPoint(x: shellLag.rounded(), y: -shellLagY.rounded())   // whole art pixels, view y up
+        if frogg.shellOffset != px { frogg.shellOffset = px }
     }
+    var shellLagY: CGFloat = 0, shellLagVY: CGFloat = 0
 
     /// A ghost floats (Boo, pixl.json movement "float"): it hovers and glides, never hops.
     var floats: Bool { PixlSkins.current.manifest.movement.rawValue == "float" }
@@ -545,7 +550,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func stopClockIfIdle() {
         guard link != nil, !moving, dust?.pool.isEmpty ?? true, !riding, abs(frogg.lean) < 0.001, menu.view == nil,
-              abs(shellLag) < 0.05, abs(shellLagV) < 0.05 else { return }
+              abs(shellLag) < 0.05, abs(shellLagV) < 0.05, abs(shellLagY) < 0.05, abs(shellLagVY) < 0.05 else { return }
         link?.invalidate()
         link = nil
         dustPanel?.orderOut(nil)
@@ -617,6 +622,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if frogg.frameName != pose.frame { frogg.frameName = pose.frame }
         frogg.squash = pose.squash
         frogg.mirrored = pose.mirrored
+        frogg.turns = pose.turns
         frogg.surface = pose.surface
         froggPanel.alphaValue = pose.alpha
         place(at: pose.foot)
@@ -655,13 +661,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Feet in top-left coordinates → panel origin snapped to device pixels.
     func place(at p: CGPoint) {
         foot = p
-        var f = Perch.panelFrame(foot: p, canvas: frogg.frame.size, primaryHeight: primaryHeight)
+        // the view's contact point (feet bottom-centre, a turned body's edge, or an anchored
+        // frame's anchor) goes on the spot
+        let c = frogg.contactInView, size = frogg.frame.size
+        var f = NSRect(x: p.x - c.x, y: primaryHeight - p.y - c.y, width: size.width, height: size.height)
         if hoverLift != 0, frogg.surface == .floor { f.origin.y += hoverLift }   // Boo floats above its spot
-        if frogg.surface != .floor {   // turned on a wall or the ceiling: centre the view on the body
-            let c = frogg.surface.bodyCenter(foot: p, height: spriteSize.height)
-            let size = frogg.frame.size
-            f = NSRect(x: c.x - size.width / 2, y: primaryHeight - c.y - size.height / 2, width: size.width, height: size.height)
-        }
         let s = froggPanel.backingScaleFactor
         f.origin = NSPoint(x: (f.origin.x * s).rounded() / s, y: (f.origin.y * s).rounded() / s)
         if froggPanel.frame != f { froggPanel.setFrame(f, display: true) }

@@ -5,14 +5,20 @@ import AppKit
 /// below (SPEC R2: only the Pixl's opaque pixels catch the mouse).
 @MainActor
 public final class FroggView: NSView {
-    public var frameName: String { didSet { if frameName != oldValue { needsDisplay = true } } }
+    public var frameName: String { didSet { if frameName != oldValue { needsDisplay = true; contactMaybeMoved() } } }
     public var squash = CGSize(width: 1, height: 1) { didSet { if squash != oldValue { needsDisplay = true } } }
     public var mirrored = false { didSet { if mirrored != oldValue { needsDisplay = true } } }
     public var lean: CGFloat = 0 { didSet { if lean != oldValue { needsDisplay = true } } }
     /// On a wall or the ceiling (Roam), the art is turned about the view's centre.
-    public var surface: Surface = .floor { didSet { if surface != oldValue { needsDisplay = true } } }
-    /// Slugg's shell, drawn as its own layer this many art pixels behind the body (shell lag).
+    public var surface: Surface = .floor { didSet { if surface != oldValue { needsDisplay = true; contactMaybeMoved() } } }
+    /// Slugg's shell, drawn as its own layer this many art pixels behind the body (shell lag), in
+    /// view directions (x right, y up).
     public var shellOffset: CGPoint = .zero { didSet { if shellOffset != oldValue { needsDisplay = true } } }
+    /// Slugg around a corner: quarter turns of its corner loop (`mirrored` is the flip).
+    public var turns = 0 { didSet { if turns != oldValue { needsDisplay = true } } }
+    /// The point that touches the Pixl's spot moved inside the view (an anchored frame came or
+    /// went, or the surface changed): the app places the panel again.
+    public var onContactChange: (() -> Void)?
     public let scale: CGFloat
     /// Room around the canvas so a stretch or squash never clips (transparent, click-through).
     public static let headroom: CGFloat = 1.3
@@ -23,9 +29,54 @@ public final class FroggView: NSView {
     public init(scale: CGFloat = 2, frameName: String = "idle_0") {
         self.scale = scale
         self.frameName = frameName
-        let c = FroggArt.shared.canvas
-        super.init(frame: NSRect(x: 0, y: 0, width: (c.width * scale * Self.headroom).rounded(),
-                                 height: (c.height * scale * Self.headroom).rounded()))
+        let c = FroggArt.shared.canvas, reach = FroggArt.shared.anchorReach
+        // room for every frame, and for an anchored loop drawn about the middle any way round
+        let side = reach > 0 ? (reach + 6) * 2 : 0
+        super.init(frame: NSRect(x: 0, y: 0, width: (max(c.width * Self.headroom, side) * scale).rounded(),
+                                 height: (max(c.height * Self.headroom, side) * scale).rounded()))
+        lastContact = contactInView
+    }
+
+    // MARK: Slugg's own poses (anchored frames)
+
+    /// What is drawn now: the frame itself, or Slugg's native pose for this surface and corner.
+    public var drawn: (name: String, turn: ArtTurn, anchored: Bool) {
+        if let n = SluggMotion.native(frame: frameName, surface: surface, mirrored: mirrored, turns: turns, has: { art.frames[$0]?.anchor != nil }) {
+            return (n.name, n.turn, true)
+        }
+        return (frameName, .none, false)
+    }
+
+    /// Where the Pixl touches its spot, in view coordinates: an anchored frame's anchor sits in the
+    /// middle; a floor frame's feet are bottom-centre; a turned one's are half a body from the middle.
+    public var contactInView: CGPoint {
+        if drawn.anchored { return CGPoint(x: bounds.midX.rounded(), y: bounds.midY.rounded()) }
+        let half = art.size("idle_0").height * scale / 2
+        switch surface {
+        case .floor: return CGPoint(x: bounds.midX, y: 0)
+        case .rightWall: return CGPoint(x: bounds.midX + half, y: bounds.midY)
+        case .leftWall: return CGPoint(x: bounds.midX - half, y: bounds.midY)
+        case .ceiling, .hanging: return CGPoint(x: bounds.midX, y: bounds.midY + half)
+        }
+    }
+    private var lastContact = CGPoint.zero
+    private func contactMaybeMoved() {
+        let c = contactInView
+        if c != lastContact { lastContact = c; onContactChange?() }
+    }
+
+    /// Draws an anchored frame with its anchor on `at`, turned (flip first, then quarter turns CCW).
+    private func drawAnchored(_ name: String, turn: ArtTurn, at: CGPoint, in ctx: CGContext) {
+        guard let img = art.image(name), let f = art.frames[name], let a = f.anchor, a.count == 2 else { return }
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.translateBy(x: at.x, y: at.y)
+        ctx.rotate(by: CGFloat(turn.turns) * .pi / 2)
+        if turn.flip { ctx.scaleBy(x: -1, y: 1) }
+        // anchor (from the top-left, y down) to the origin, in a y-up context
+        ctx.draw(img, in: CGRect(x: -CGFloat(a[0]) * scale, y: -(CGFloat(f.h) - CGFloat(a[1])) * scale,
+                                 width: CGFloat(f.w) * scale, height: CGFloat(f.h) * scale))
+        ctx.restoreGState()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -34,6 +85,18 @@ public final class FroggView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let d = drawn
+        if d.anchored {
+            let c = contactInView
+            if art.frames[d.name + "_shell"] != nil {
+                // body, then the shell layer behind it by its lag (it catches up and settles)
+                drawAnchored(d.name + "_body", turn: d.turn, at: c, in: ctx)
+                drawAnchored(d.name + "_shell", turn: d.turn, at: CGPoint(x: c.x + shellOffset.x * scale, y: c.y + shellOffset.y * scale), in: ctx)
+            } else {
+                drawAnchored(d.name, turn: d.turn, at: c, in: ctx)
+            }
+            return
+        }
         if surface != .floor, let img = art.image(frameName) {
             let w = CGFloat(img.width) * scale, h = CGFloat(img.height) * scale
             ctx.saveGState()
@@ -59,6 +122,15 @@ public final class FroggView: NSView {
 
     /// The art pixel under a point in view coordinates is opaque.
     public func hitsArt(at p: NSPoint) -> Bool {
+        let d = drawn
+        if d.anchored, let f = art.frames[d.name], let a = f.anchor, a.count == 2 {
+            // undo the turn: view point → art pixel
+            let c = contactInView
+            var v = CGPoint(x: (p.x - c.x) / scale, y: -(p.y - c.y) / scale)   // y down
+            for _ in 0..<((4 - d.turn.turns) % 4) { v = CGPoint(x: v.y, y: -v.x) }
+            if d.turn.flip { v.x = -v.x }
+            return art.isOpaque(d.name, x: Int((v.x + CGFloat(a[0])).rounded(.down)), y: Int((v.y + CGFloat(a[1])).rounded(.down)))
+        }
         let s = art.size(frameName)
         if surface != .floor {   // turned: anywhere on its body counts
             return hypot(p.x - bounds.midX, p.y - bounds.midY) < min(s.width, s.height) * scale * 0.45

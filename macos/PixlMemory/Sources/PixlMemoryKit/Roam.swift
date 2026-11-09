@@ -135,7 +135,8 @@ public struct RoamPlanner: Sendable {
     /// How long to wait before the next outing.
     public mutating func pause() -> TimeInterval { Double.random(in: 5...12, using: &rng) }
 
-    enum Kind { case folderHop, windowHop, glance, nap, walk, trot, drift, folderDrift, crawlTour, moveHanging, pond, stalk, climbDown }
+    enum Kind { case folderHop, windowHop, glance, nap, walk, trot, drift, folderDrift, crawlTour, moveHanging, pond, stalk, climbDown,
+                overWindow, offWindow, ceilingHome }
 
     /// Picks the next outing, or nil when nothing fits right now.
     public mutating func next(_ w: RoamWorld) -> Outing? {
@@ -151,7 +152,13 @@ public struct RoamPlanner: Sendable {
             else if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .climbDown), (1, .nap)] }
             else { options = [(3, .crawlTour), (g, .glance), (0.3, .nap)] }
         case .slider:
-            options = w.surface == .rightWall || w.surface == .leftWall ? [(3, .climbDown), (1, .nap)] : [(3, .walk), (2, .crawlTour), (0.5, .nap)]
+            // Slugg crawls: along the floor, up a wall (inside corner), up a window's side and over its
+            // top (outside corner), back down off it, and now and then across the top upside down
+            let sc = w.screen
+            if w.surface == .rightWall || w.surface == .leftWall { options = [(3, .climbDown), (1, .nap)] }
+            else if w.surface == .ceiling { options = [(3, .ceilingHome)] }
+            else if w.foot.y < sc.maxY - 8 { options = [(2, .walk), (3, .offWindow), (0.5, .nap)] }   // on a window top
+            else { options = [(3, .walk), (2, .crawlTour), (2, .overWindow), (0.5, .nap)] }
         }
         // weighted draw; if the pick doesn't fit right now, try the others
         while !options.isEmpty {
@@ -182,6 +189,9 @@ public struct RoamPlanner: Sendable {
         case .moveHanging: moveWhileHanging(w)
         case .pond: Self.fine(w.foot, w) || w.avoid.isEmpty ? .pond(Double.random(in: 4...9, using: &rng)) : nil
         case .climbDown: climbDown(w)
+        case .overWindow: overWindow(w)
+        case .offWindow: offWindow(w)
+        case .ceilingHome: ceilingHome(w)
         case .stalk: { () -> Outing? in if case .walk(let to)? = walkAlong(w) { return .stalk(to: to) }; return nil }()
         }
     }
@@ -321,6 +331,14 @@ public struct RoamPlanner: Sendable {
             let legs = crawlToCeiling(w, x: x)
             return legs.isEmpty ? nil : .crawl(legs: legs, dangle: d)
         }
+        // Slugg, now and then: up the wall and across the top, upside down
+        if style == .slider, Int.random(in: 0..<3, using: &rng) == 0 {
+            for _ in 0..<6 {
+                let x = CGFloat.random(in: (sc.minX + half * 3)...(sc.maxX - half * 3), using: &rng)
+                let legs = crawlToCeiling(w, x: x)
+                if legs.count == 3, Self.fine(legs[2].to, w, surface: .ceiling) { return .crawl(legs: legs, dangle: nil) }
+            }
+        }
         // a window fills the top of the screen: climb the wall and rest high up on it instead
         let legs = crawlToCeiling(w, x: sc.midX)
         guard legs.count >= 2 else { return nil }
@@ -345,6 +363,52 @@ public struct RoamPlanner: Sendable {
             }
         }
         return nil
+    }
+
+    /// Slugg: along the floor to a window that stands on it, up its side and over the top (an
+    /// outside corner), then a little way along its top.
+    mutating func overWindow(_ w: RoamWorld) -> Outing? {
+        let sc = w.screen, floorY = sc.maxY, half = w.sprite.width / 2, h = w.sprite.height
+        let windows = ((w.active.map { [$0] } ?? []) + w.others).filter { $0.maxY >= floorY - 12 && $0.minY > sc.minY + h * 2 && $0.width > w.sprite.width * 2 }
+        for r in windows.shuffled(using: &rng) {
+            let fromLeft = w.foot.x < r.minX
+            guard fromLeft || w.foot.x > r.maxX else { continue }   // behind it: no side to climb
+            let side = fromLeft ? r.minX : r.maxX
+            let along = CGFloat.random(in: min(60, r.width / 3)...max(61, min(240, r.width - half)), using: &rng)
+            let end = CGPoint(x: fromLeft ? side + along : side - along, y: r.minY)
+            guard Self.fine(end, w) else { continue }
+            return .crawl(legs: [CrawlLeg(from: w.foot, to: CGPoint(x: side, y: floorY), surface: .floor),
+                                 CrawlLeg(from: CGPoint(x: side, y: floorY), to: CGPoint(x: side, y: r.minY), surface: fromLeft ? .rightWall : .leftWall),
+                                 CrawlLeg(from: CGPoint(x: side, y: r.minY), to: end, surface: .floor)], dangle: nil)
+        }
+        return nil
+    }
+
+    /// Slugg on a window top that stands on the floor: to its nearer end, over the edge and down
+    /// its side, and off along the floor.
+    mutating func offWindow(_ w: RoamWorld) -> Outing? {
+        let sc = w.screen, floorY = sc.maxY
+        let windows = (w.active.map { [$0] } ?? []) + w.others
+        guard let r = windows.first(where: { abs($0.minY - w.foot.y) < 6 && $0.minX <= w.foot.x && w.foot.x <= $0.maxX && $0.maxY >= floorY - 12 }) else { return nil }
+        let left = w.foot.x - r.minX < r.maxX - w.foot.x
+        let side = left ? r.minX : r.maxX
+        guard left ? side - sc.minX > 140 : sc.maxX - side > 140 else { return nil }
+        let end = CGPoint(x: left ? side - CGFloat.random(in: 80...140, using: &rng) : side + CGFloat.random(in: 80...140, using: &rng), y: floorY)
+        guard Self.fine(end, w) else { return nil }
+        return .crawl(legs: [CrawlLeg(from: w.foot, to: CGPoint(x: side, y: r.minY), surface: .floor),
+                             CrawlLeg(from: CGPoint(x: side, y: r.minY), to: CGPoint(x: side, y: floorY), surface: left ? .rightWall : .leftWall),
+                             CrawlLeg(from: CGPoint(x: side, y: floorY), to: end, surface: .floor)], dangle: nil)
+    }
+
+    /// Slugg upside down at the top: back along to the nearer side, down the wall, onto the floor.
+    mutating func ceilingHome(_ w: RoamWorld) -> Outing? {
+        let sc = w.screen, h = w.sprite.height
+        let right = w.foot.x > sc.midX
+        let wallX = right ? sc.maxX : sc.minX
+        let end = CGPoint(x: right ? sc.maxX - CGFloat.random(in: 140...320, using: &rng) : sc.minX + CGFloat.random(in: 140...320, using: &rng), y: sc.maxY)
+        return .crawl(legs: [CrawlLeg(from: w.foot, to: CGPoint(x: wallX, y: sc.minY), surface: .ceiling),
+                             CrawlLeg(from: CGPoint(x: wallX, y: sc.minY + h / 2), to: CGPoint(x: wallX, y: sc.maxY - h / 2), surface: right ? .rightWall : .leftWall),
+                             CrawlLeg(from: CGPoint(x: wallX, y: sc.maxY), to: end, surface: .floor)], dangle: nil)
     }
 
     /// From the floor: along to the nearer side, up the wall, along the ceiling to `x`.
@@ -407,7 +471,9 @@ extension RoamPlanner {
     }
 
     /// A timeline for `outing` starting at `foot`. `hop` builds a hop (the app's route planner).
+    /// `wrap` gives the corner loop between two crawl legs (Slugg), or nil: an instant turn.
     public static func choreography(_ outing: Outing, from foot: CGPoint, style: RoamStyle, hanging: CGPoint?, gait: Gait? = nil,
+                                    wrap: ((CrawlLeg, CrawlLeg) -> CornerWrap?)? = nil,
                                     hop: (CGPoint, CGPoint) -> Choreography) -> Choreography {
         let speed = gait?.speed ?? style.speed
         let frames = gait?.frames ?? moveFrames(style)
@@ -464,12 +530,25 @@ extension RoamPlanner {
                 .hold(at: foot, frame: "rest_1", mirrored: false, duration: t),
                 .hold(at: foot, frame: "rest_0", mirrored: false, duration: 0.4),
             ])
-        case .crawl(let legs, let dangle):
+        case .crawl(let legs0, let dangle):
+            // corners: Slugg wraps round them (the legs end and start where its corner loop does);
+            // anyone else turns at once
+            var legs = legs0
+            var wraps: [Int: CornerWrap] = [:]   // before leg i
+            if let wrap {
+                for i in 1..<max(1, legs.count) {
+                    guard let w = wrap(legs[i - 1], legs[i]) else { continue }
+                    legs[i - 1].to = w.start
+                    legs[i].from = w.end
+                    wraps[i] = w
+                }
+            }
             var segs: [Choreography.Segment] = []
             var from = foot
-            for leg in legs {
+            for (i, leg) in legs.enumerated() {
+                if let w = wraps[i] { segs.append(.wrap(w, duration: Double(w.frames.count) / w.fps)) }
                 // step onto the leg's surface (a wall or ceiling turn is instant at the corner)
-                if leg.surface == .floor, abs(from.y - leg.from.y) > 4 {
+                else if leg.surface == .floor, abs(from.y - leg.from.y) > 4 {
                     segs += hop(from, leg.from).segments
                 }
                 segs.append(.travel(from: leg.from, to: leg.to, frames: frames, fps: gait?.fps ?? 8, surface: leg.surface,

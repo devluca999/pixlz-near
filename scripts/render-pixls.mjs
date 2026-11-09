@@ -140,9 +140,34 @@ function posesFor(pet) {
   }
   if (pet === "shiba") for (let i = 0; i < 6; i++) out[`trot_${i}`] = { pose: { v: "trot", t: i / 6 } };
   if (pet === "slugg") {
-    const crawl = (i, n, ex) => { const t = i / n, s = Math.sin(2 * Math.PI * t); return Object.assign({ v: "side", ph: i * 8 / n, reach: 2.6 * Math.max(0, s), tailX: -2.2 * Math.max(0, -s), bob: 0.9 * Math.sin(2 * Math.PI * (t - 0.15)), sa: [24, 8], noShadow: 1 }, ex || {}); };
-    for (let i = 0; i < 8; i++) out[`crawl_${i}`] = { pose: crawl(i, 8), layers: true };
-    for (let i = 0; i < 6; i++) out[`ceiling_${i}`] = { pose: crawl(i, 6, { sa: [6, -6], bend: [1.2, 1.2], st: 1.1, hang: 0.6 }), layers: true };
+    // C11/C13 soft body (slugg-flex.js): each loop is built along a contact path and cropped to
+    // one box for the whole loop (so the foot never jitters), with the point where it touches:
+    // crawl 8 (two-step: the front stretches, then the back catches up), climb 8 (up a wall on
+    // its right), under 6 (upside down beneath an edge), wrapin 8 (floor → wall, the head finds
+    // the wall first), wrapout 8 (up a side and over the top: the head wraps first, the tail last).
+    const F = X.sluggFlex, mkPath = X.sluggPath.mkPath, K = 1.05, KD = [12, 8], CX = 40, GB = 66;
+    const fromC = ([x, y]) => [CX + (x - KD[0] - CX) / K, GB + (y - KD[1] - GB) / K];
+    const flex = (kind, i) => {
+      const c = F.SC[kind], q = Object.assign({ v: "side", cw: c.W, ch: c.H, s0: c.s0(i, c.n), D: c.D, corner: c.corner }, c.pose(i, c.n));
+      if (c.fn) {   // the underside: the body sags between its two contact points
+        const y0 = 26.5, sag = 5.5;
+        q.path = (sT, sH) => { const pts = []; for (let s = 0; s <= 400; s += 1) { const f = (s - sT) / (sH - sT || 1), d = f > 0 && f < 1 ? Math.sin(Math.PI * f) * sag : 0; pts.push(fromC([300 - s * K, y0 + d * K])); } return mkPath(pts); };
+      } else { const pts = c.path(); q.path = c.maxH ? mkPath(pts, { maxH: c.maxH() }) : pts; }
+      return q;
+    };
+    // where it touches, in scene pixels (the edges drawn in slugg-flex.js): x or y may be null = the box's middle
+    const touch = { crawl: [null, 85], climb: [87, null], under: [null, 27], inside: [161, 161], outside: [105, 79] };
+    const loops = { crawl: "crawl", climb: "climb", under: "under", inside: "wrapin", outside: "wrapout" };
+    for (const [kind, name] of Object.entries(loops)) {
+      const c = F.SC[kind];
+      for (let i = 0; i < c.n; i++) out[`${name}_${i}`] = { pose: flex(kind, i), layers: true, group: name, touch: touch[kind] };
+    }
+    // the Memory bubble: the shell swings open like a vault; Focus and hidden: tucks in and seals
+    const sd = (o) => Object.assign({ v: "side" }, o);
+    [[0, { sa: [20, 4] }], [0.5, { sa: [30, 20] }], [1, { sa: [8, -6], eyes: "happy", mouth: "grin" }]]
+      .forEach(([v, ex], i) => { out[`vault_${i}`] = { pose: sd(Object.assign({ vault: v }, ex)) }; });
+    [sd({ out: 0.26, st: 0.6, sa: [30, 16], eyes: "half" }), sd({ out: 0, st: 0, seal: 0.5 }), sd({ out: 0, st: 0, seal: 1 })]
+      .forEach((q, i) => { out[`seal_${i}`] = { pose: q }; });
   }
   // blink: the exact idle pose with the eyes shut (spiders don't blink: half-lidded), so a
   // blink never shifts the body
@@ -154,14 +179,52 @@ function posesFor(pet) {
 
 const CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&()*+,-/:;<=>?@[]^_{|}~";
 
+/// The opaque box of a render, [x0, y0, x1, y1] inclusive.
+function opaqueBox(r) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (let i = 0; i < r.G.length; i++) if (r.G[i]) { const x = i % r.W, y = (i / r.W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
+}
+
 function renderPet(pet, variant) {
   const p = X.pets[variant || pet];
   const palette = [], index = new Map(), frames = {};
-  for (const [name, entry] of Object.entries(posesFor(pet))) {
+  const poses = posesFor(pet);
+  const draw = (entry) => {
     const spr = Object.assign(p.build(entry.pose), { shadow: null });
     // auras are an FX-layer effect (SPEC §8), not sprite pixels: the design draws them over dark scenes
     if (Array.isArray(spr.parts)) spr.parts = spr.parts.filter((q) => q.m !== "aura");
-    const r = X.render(spr, p.pal, { rim: p.rim, rimTop: p.rimTop });
+    return { spr, r: X.render(spr, p.pal, { rim: p.rim, rimTop: p.rimTop }) };
+  };
+  // a loop shares one box: the union of its frames' pixels
+  const groups = {};
+  for (const entry of Object.values(poses)) {
+    if (!entry.group) continue;
+    const b = opaqueBox(draw(entry).r), g = groups[entry.group] || [1e9, 1e9, -1, -1];
+    groups[entry.group] = [Math.min(g[0], b[0]), Math.min(g[1], b[1]), Math.max(g[2], b[2]), Math.max(g[3], b[3])];
+  }
+  for (const [name, entry] of Object.entries(poses)) {
+    const { spr, r } = draw(entry);
+    if (entry.group) {
+      const [gx0, gy0, gx1, gy1] = groups[entry.group];
+      const rows = [], lrows = { _body: [], _shell: [] };
+      const pick = (G, x, y) => { const g = G[y * r.W + x]; if (!g) return "."; if (!index.has(g.c)) { if (palette.length >= CHARS.length) throw new Error(`${pet}: palette too large`); index.set(g.c, CHARS[palette.length]); palette.push(g.c); } return index.get(g.c); };
+      const SHELL = new Set(["shell", "cave", "band", "lip", "seal", "hat", "gold", "tip", "visor", "stripe", "wing", "decal"]);
+      const layers = entry.layers ? { _body: X.render(Object.assign({}, spr, { parts: spr.parts.filter((q) => !SHELL.has(q.m)) }), p.pal, { rim: p.rim, rimTop: p.rimTop }),
+                                      _shell: X.render(Object.assign({}, spr, { parts: spr.parts.filter((q) => SHELL.has(q.m)) }), p.pal, { rim: p.rim, rimTop: p.rimTop }) } : {};
+      for (let y = gy0; y <= gy1; y++) {
+        let row = ""; for (let x = gx0; x <= gx1; x++) row += pick(r.G, x, y); rows.push(row);
+        for (const k of Object.keys(layers)) { let lr = ""; for (let x = gx0; x <= gx1; x++) lr += pick(layers[k].G, x, y); lrows[k].push(lr); }
+      }
+      const w = gx1 - gx0 + 1, h = gy1 - gy0 + 1;
+      // the touch point in frame pixels (edges: x = 0 is the left edge, y = h the bottom)
+      const [tx, ty] = entry.touch || [null, null];
+      const clamp = (v, hi) => Math.max(0, Math.min(hi, v));   // flush with the body when the line is a pixel past it
+      const f = { w, h, rows, anchor: [tx == null ? w / 2 : clamp(tx - gx0, w), ty == null ? h / 2 : clamp(ty - gy0, h)] };
+      frames[name] = f;
+      for (const k of Object.keys(layers)) frames[name + k] = { w, h, rows: lrows[k], anchor: f.anchor };
+      continue;
+    }
     const [x0, y0, x1, y1] = X.cropBox(r, spr);
     const rows = [];
     for (let y = y0; y <= y1; y++) {

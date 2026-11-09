@@ -106,7 +106,9 @@ final class RoamController {
         guard let o = forced ?? p.next(w) else { planner = p; schedule(); return }
         planner = p
         Debug.log("roam: \(o.name) (\(planner.style.rawValue)\(w.codeContext ? ", code app" : ""))")
-        let c = RoamPlanner.choreography(o, from: w.foot, style: planner.style, hanging: app.roamHanging, gait: app.gait) { [unowned self] a, b in
+        let art = FroggArt.shared, scale = app.scale
+        let c = RoamPlanner.choreography(o, from: w.foot, style: planner.style, hanging: app.roamHanging, gait: app.gait,
+                                         wrap: { a, b in SluggMotion.wrap(a, b, art: art, scale: scale) }) { [unowned self] a, b in
             self.app.move(from: a, to: b)
         }
         guard c.duration > 0 else { schedule(); return }

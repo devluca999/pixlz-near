@@ -13,6 +13,9 @@ public final class FroggArt {
         public let rows: [String]
         /// For hanging frames: the art pixel (x, y from top-left) held by the cursor.
         public let pin: [Int]?
+        /// Slugg's soft-body loops: where the frame touches its surface (art pixels from the
+        /// top-left, edges: y = h is the bottom). Drawn with this point on the Pixl's spot.
+        public let anchor: [Double]?
     }
 
     struct File: Decodable {
@@ -49,7 +52,16 @@ public final class FroggArt {
         self.frames = file.frames
         self.colors = colors
         canvas = CGSize(width: file.frames.values.map(\.w).max() ?? 0, height: file.frames.values.map(\.h).max() ?? 0)
+        // how far an anchored frame reaches from its anchor, any way it may be turned
+        var reach: CGFloat = 0
+        for f in file.frames.values { if let a = f.anchor, a.count == 2 {
+            reach = max(reach, CGFloat(max(a[0], Double(f.w) - a[0], a[1], Double(f.h) - a[1])))
+        } }
+        anchorReach = reach
     }
+
+    /// The farthest an anchored frame reaches from its anchor (art pixels); 0 without any.
+    public let anchorReach: CGFloat
 
     public enum ArtError: Error { case palette, color(String), shape(String), unknownPixel(String, Character) }
 

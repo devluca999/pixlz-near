@@ -29,6 +29,8 @@ public struct Pose: Equatable, Sendable {
     public var surface: Surface = .floor
     /// Silky's thread: where it's tied (top-left global coordinates), or nil.
     public var thread: CGPoint? = nil
+    /// Slugg around a corner: quarter turns of its corner loop (with `mirrored` as the flip).
+    public var turns = 0
 }
 
 /// A timeline of motion beats: sample it at any time since it started.
@@ -55,12 +57,14 @@ public struct Choreography: Sendable {
         case glide(from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)
         /// Silky on its thread, tied at `anchor`, going from one depth below it to another.
         case dangle(anchor: CGPoint, from: CGFloat, to: CGFloat, duration: TimeInterval)
+        /// Slugg wrapping around a corner at `at`: its corner loop once through, turned to fit.
+        case wrap(CornerWrap, duration: TimeInterval)
 
         var duration: TimeInterval {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
                  .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d),
-                 .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d), .glide(_, _, _, let d): d
+                 .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d), .glide(_, _, _, let d), .wrap(_, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -255,6 +259,11 @@ public struct Choreography: Sendable {
             var pose = Pose(foot: p, frame: frame, mirrored: m, alpha: 1 - (1 - alpha) * fade)
             pose.surface = surface
             return pose
+        case .wrap(let w, _):
+            let i = min(w.frames.count - 1, Int(f * Double(w.frames.count)))
+            var pose = Pose(foot: w.at, frame: w.frames[i], mirrored: w.turn.flip)
+            pose.turns = w.turn.turns
+            return pose
         case .glide(let a, let b, let m, _):
             let e = CGFloat(f * f * (3 - 2 * f))   // smoothstep
             return Pose(foot: CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e), frame: f < 0.5 ? "idle_1" : "idle_0",
@@ -296,7 +305,7 @@ public struct Choreography: Sendable {
             return Choreography.hop(route(b), notice: false)
         case .exit(let p, _, _), .whoa(let p, _, _), .pivot(let p, _, _, _):
             return Choreography.hop(route(p), notice: false)
-        case .travel, .dangle, .glide:
+        case .travel, .dangle, .glide, .wrap:
             // off a wall, the ceiling or a thread: hop on from where it is, upright
             return Choreography.hop(route(pose(at: t).pose.foot), notice: false)
         case .pop(let a, let b, _, _):
