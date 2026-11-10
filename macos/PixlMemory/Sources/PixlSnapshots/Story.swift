@@ -181,10 +181,10 @@ enum Story {
             let v = desktop { _ in window(NSRect(x: 40, y: 250, width: 400, height: 240), title: "Mail — Draft", lines: ["Hi Sam,", "Thanks for the call today. Here's the", "summary we agreed on…"]) }
             pet("frogg", "emotion_proud", feet: CGPoint(x: 330, y: 251), in: v)
             v.addSubview(Painting(frame: v.bounds) { _ in pill("−0.0021 Ⓝ", at: NSPoint(x: 330, y: 150), accent: "#7CD93A") })
-            let walletJSON = #"{"network":"testnet","account":"frogg.sylversurferr.testnet","balance_near":"0.4821","spent_today_near":"0.0042","caps":{"per_request_near":"0.01","per_day_near":"0.1","per_week_near":"0.25","reserve_near":"0.05"},"ceilings":{"per_day_near":"0.1","per_week_near":"0.5"},"spent_week_near":"0.0631","week_resets":"2026-11-15","paused":false,"ready":true,"explorer":"https://testnet.nearblocks.io/address/frogg.sylversurferr.testnet"}"#
+            let walletJSON = #"{"network":"testnet","account":"frogg.pixlz-petz.testnet","balance_near":"0.4821","spent_today_near":"0.0042","caps":{"per_request_near":"0.01","per_day_near":"0.1","per_week_near":"0.25","reserve_near":"0.05"},"ceilings":{"per_day_near":"0.1","per_week_near":"0.5"},"spent_week_near":"0.0631","week_resets":"2026-11-15","paused":false,"ready":true,"explorer":"https://testnet.nearblocks.io/address/frogg.pixlz-petz.testnet"}"#
             PixlSkins.currentID = "frogg"
             let info = try JSONDecoder().decode(WalletInfo.self, from: Data(walletJSON.utf8))
-            let paid = Receipt(status: "paid", amountNear: "0.0021", to: "sylversurferr.testnet", txHash: "x", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil)
+            let paid = Receipt(status: "paid", amountNear: "0.0021", to: "pixlz-petz.testnet", txHash: "x", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil)
             card(WalletCard(info: info, payments: [paid, paid], look: solid), at: NSPoint(x: 520, y: 40), in: v)
             try png(v, "\(out)/04-wallet.png")
         }

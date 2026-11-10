@@ -108,13 +108,13 @@ Full details: [`memory/README.md`](memory/README.md).
                 ▼
         NEAR AI Cloud  ── gateway TEE ── model TEE (z-ai/glm-5.3-flash)
                 │
-        Frogg's wallet  frogg.sylversurferr.testnet  ── transfer(cost) ─▶ payee (allowlisted)
+        Frogg's wallet  frogg.pixlz-petz.testnet  ── transfer(cost) ─▶ payee (allowlisted)
 ```
 
 | Part | Status |
 |---|---|
 | `memory/`: local service, verification, encrypted store, web search, CLI | **working**, 100 tests |
-| Frogg's wallet: `frogg.sylversurferr.testnet`, funded by `sylversurferr.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
+| Frogg's wallet: `frogg.pixlz-petz.testnet`, funded by `pixlz-petz.testnet`, pays per request | built and tested against a simulated chain (20 tests); waiting for the owner to create the account in Meteor |
 | `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Behavior: Calm, Roam or Chaos (each Pixl explores in its own style with real walk/trot/crawl loops: Kiti walks, Mochi trots, Slugg never hops: he does a two-step crawl (front first, the back catching up), climbs the screen's real edges and window sides, laps over the top upside down (now and then his shell lets go first and he tumbles onto it), wraps head first around corners and over window tops, and leaves a green slime trail that fades in 2 s; his shell lags and settles, opens like a vault for Memory and seals for Focus, Silky climbs walls and hangs on silk, Boo hovers and glides; never while you type, never over your caret; if it's sitting where you're about to type, it moves away). Ask does things: opens apps and sites, saves the page or the part about a topic with a backlink, finds what you saved, searches the web, shows pictures. Play: two mini-games (C16). Sleeps when you're away (Frogg in his pond), wakes by the rules in SPEC §6.2. Text in three channels: sounds in bubbles, status narration, plain-English notices. Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 173 unit/UI tests (+11 UI, +137 in PixlzCore) plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
 | `extension/`: Chrome highlight → save → text-fragment backlink; bridge to the Mac app (native messaging): highlights recalled in Ask with backlinks, Polish → Replace inside web pages and rich editors | built, 15 tests + 11 bridge protocol tests (one runs the real host binary); run in Chrome (see the backlink screenshots above) |
 
@@ -137,10 +137,10 @@ Each step reuses the one before it: the iPhone app gives travel a second endpoin
 
 ## Frogg's wallet: why your funds stay untouchable
 
-**Choice: a plain NEAR sub-account that the owner funds: `frogg.sylversurferr.testnet`, under the owner's testnet account `sylversurferr.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
+**Choice: a plain NEAR sub-account that the owner funds: `frogg.pixlz-petz.testnet`, under the owner's testnet account `pixlz-petz.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
 
 **How it works:**
-- **The owner creates `frogg.sylversurferr.testnet` from their own wallet (Meteor) and sends it a small amount.** The owner approves every transaction from their account in Meteor; the app never asks for a recovery phrase or private key. Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
+- **The owner creates `frogg.pixlz-petz.testnet` from their own wallet (Meteor) and sends it a small amount.** The owner approves every transaction from their account in Meteor; the app never asks for a recovery phrase or private key. Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
 - **The app holds only Frogg's own key, for Frogg's account.** The most a stolen key can spend is the balance you chose to give Frogg. That balance is the hard cap, enforced by NEAR itself.
 - **Frogg pays per request with a plain NEAR transfer.** The recipient is the account that holds the NEAR AI credits (you, or whoever runs the service). There is no documented way to buy NEAR AI credits on-chain; they're bought in its dashboard. The amount is the request's real cost from `/v1/billing/costs`, converted at a rate you set. The app refuses to pay any other recipient.
 - **Your balance and receipts appear in Frogg's thought bubble.** On chain is only the amount and transaction. The receipt itself (model, cost, verification verdict) stays in the local encrypted store.
@@ -167,9 +167,9 @@ Both keep your main funds untouchable. The sub-account does it with far less cod
 - **What's on chain is a plain NEAR transfer:** sender, receiver, amount and time. No text, model or verdict is attached. The full receipt is stored only in the local encrypted database.
 
 **Owner setup** (testnet only; the owner never shares a recovery phrase or key):
-1. Fund `sylversurferr.testnet` with testnet NEAR from the faucet: https://docs.near.org/getting-started/faucet
+1. Fund `pixlz-petz.testnet` with testnet NEAR from the faucet: https://docs.near.org/getting-started/faucet
 2. `cd memory && uv run pixl-memory wallet init`. This creates Frogg's key and prints its public half.
-3. With `make -C memory serve` running, open http://127.0.0.1:7341/wallet/setup, click **Connect Meteor**, then **Create Frogg**. Meteor shows one transaction from `sylversurferr.testnet` to `frogg.sylversurferr.testnet` with three actions: Create account, Transfer (1 NEAR), Add key (Frogg's public key). Approve it.
+3. With `make -C memory serve` running, open http://127.0.0.1:7341/wallet/setup, click **Connect Meteor**, then **Create Frogg**. Meteor shows one transaction from `pixlz-petz.testnet` to `frogg.pixlz-petz.testnet` with three actions: Create account, Transfer (1 NEAR), Add key (Frogg's public key). Approve it.
 4. `uv run pixl-memory wallet status` should end with READY.
 
 Testnet only: the config refuses mainnet RPCs and anything but `frogg.<owner>.testnet`.

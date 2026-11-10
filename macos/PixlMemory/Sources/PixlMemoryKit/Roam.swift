@@ -465,6 +465,25 @@ public struct RoamPlanner: Sendable {
     public static let bareHang: TimeInterval = 0.5
 
 
+    /// On his back, he rolls the right way up through his own corner frames: from upside down,
+    /// round through sideways, onto his feet (two corner loops played in place, quickly). Without
+    /// those frames, a quick quarter turn.
+    static func rightingRoll(onBack: CGPoint, landing: CGPoint, left: Bool, flip: CGPoint,
+                             wrap: ((CrawlLeg, CrawlLeg) -> CornerWrap?)?) -> [Choreography.Segment] {
+        let dir: CGFloat = left ? -1 : 1
+        let side: Surface = left ? .leftWall : .rightWall
+        // upside down heading his way, round a corner onto a "wall" going down, round onto the floor
+        let under = CrawlLeg(from: CGPoint(x: onBack.x - dir * 40, y: onBack.y), to: onBack, surface: .ceiling)
+        let down = CrawlLeg(from: onBack, to: CGPoint(x: onBack.x, y: landing.y), surface: side)
+        let floor = CrawlLeg(from: CGPoint(x: onBack.x, y: landing.y), to: CGPoint(x: landing.x + dir * 40, y: landing.y), surface: .floor)
+        if let wrap, var a = wrap(under, down), var b = wrap(down, floor) {
+            a.at = onBack; b.at = landing
+            a.fps = 14; b.fps = 14
+            return [.wrap(a, duration: Double(a.frames.count) / a.fps), .wrap(b, duration: Double(b.frames.count) / b.fps)]
+        }
+        return [.travel(from: flip, to: flip, frames: ["crawl_2"], fps: 1, surface: left ? .rightWall : .leftWall, mirrored: false, bob: 0, alpha: 1, duration: 0.12)]
+    }
+
     /// Chance that Slugg loses his grip on a lap (he's no spider).
     public static let lapFallChance = 0.35
 
@@ -689,8 +708,7 @@ extension RoamPlanner {
                 // then he falls too, on his back, onto it
                 .tumble(from: grip, to: onBack, frame: Self.bareBody, mirrored: left, duration: fall(onBack.y - grip.y)),
                 .travel(from: onBack, to: onBack, frames: ["crawl_0"], fps: 1, surface: .ceiling, mirrored: left, bob: 0, alpha: 1, duration: 0.5),
-                // flips the right way up
-                .travel(from: flip, to: flip, frames: ["crawl_2"], fps: 1, surface: left ? .rightWall : .leftWall, mirrored: false, bob: 0, alpha: 1, duration: 0.12),
+            ] + Self.rightingRoll(onBack: onBack, landing: landing, left: left, flip: flip, wrap: wrap) + [
                 .land(at: landing, frame: "crawl_0", mirrored: left, duration: 0.3, dust: true),
                 // and keeps going
                 .travel(from: landing, to: end, frames: frames, fps: gait?.fps ?? 8, surface: .floor, mirrored: left, bob: 0, alpha: 1,

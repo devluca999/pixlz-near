@@ -792,6 +792,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func sleepFrame(deep: Bool) -> String {
         if PixlSkins.currentID == "frogg" { return mode == .perched ? "mischief_2" : "rest_1" }
         if floats { return "emotion_sleepy" }
+        if crawls { return "rest_2" }   // Slugg sleeps all the way inside his shell
         return deep ? "rest_2" : "rest_1"
     }
 
@@ -808,6 +809,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         frogg.frameName = sleepFrame(deep: deep)
+        if crawls, frogg.surface == .floor {
+            // Slugg pulls back into his shell: half in, then gone, the shell left sitting there
+            frogg.frameName = "rest_0"
+            animTimers.append(Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { if self?.sleepTimer != nil { self?.frogg.frameName = "rest_1" } }
+            })
+            animTimers.append(Timer.scheduledTimer(withTimeInterval: 0.65, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { if let self, self.sleepTimer != nil { self.frogg.frameName = self.sleepFrame(deep: deep) } }
+            })
+        }
         if let f = foot { place(at: f) }
         let t0 = now
         let floats = self.floats
@@ -830,6 +841,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sleepTimer = nil
         froggPanel.alphaValue = 1
         if let f = foot { place(at: f) }
+        // Slugg comes back out of his shell: half out, then himself
+        if crawls, frogg.frameName == "rest_2" {
+            frogg.frameName = "rest_1"
+            later(0.3) { [weak self] in if self?.frogg.frameName == "rest_1" { self?.frogg.frameName = "rest_0" } }
+            later(0.6) { [weak self] in if self?.frogg.frameName == "rest_0" { self?.backToIdle() } }
+        }
     }
 
     /// One pixel "z" rising from beside its head and fading.
@@ -848,7 +865,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let f = froggPanel.frame
         let headTop = f.minY + FroggArt.shared.size(frogg.frameName).height * scale
-        let start = NSPoint(x: f.midX + 18 + CGFloat.random(in: -4...6), y: headTop - 4)
+        // Slugg: out of his shell's opening (the front of it, low down); everyone else: beside the head
+        let start = crawls
+            ? NSPoint(x: f.midX + (frogg.mirrored ? -1 : 1) * CGFloat.random(in: 20...26) - (frogg.mirrored ? 12 : 0), y: headTop - FroggArt.shared.size(frogg.frameName).height * scale * 0.5)
+            : NSPoint(x: f.midX + 18 + CGFloat.random(in: -4...6), y: headTop - 4)
         z.setFrameOrigin(start)
         z.alphaValue = 0
         z.orderFrontRegardless()

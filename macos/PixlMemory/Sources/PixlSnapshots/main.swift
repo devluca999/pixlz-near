@@ -216,7 +216,7 @@ func run() throws {
     try png(moreBG, "\(out)/more-list.png")
 
     let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(
-        service: "running", model: "z-ai/glm-5.3-flash", wallet: "frogg.sylversurferr.testnet doesn't exist yet: open /wallet/setup and approve in Meteor",
+        service: "running", model: "z-ai/glm-5.3-flash", wallet: "frogg.pixlz-petz.testnet doesn't exist yet: open /wallet/setup and approve in Meteor",
         lastVerdict: "Verified in TEE · 17/17"), look: paper)
     mini.fit()
     let miniCard = SurfaceView.card(mini, look: paper)
@@ -248,10 +248,10 @@ func run() throws {
         HighlightItem(id: "2", text: "Text fragments let a link point at an exact passage, which the browser scrolls to and highlights.",
                       url: "https://wicg.github.io/scroll-to-text-fragment/", title: "Scroll to Text Fragment", fragmentUrl: nil),
     ]
-    let walletJSON = #"{"network":"testnet","account":"frogg.sylversurferr.testnet","balance_near":"0.4821","spent_today_near":"0.0042","caps":{"per_request_near":"0.01","per_day_near":"0.1","per_week_near":"0.25","reserve_near":"0.05"},"ceilings":{"per_day_near":"0.1","per_week_near":"0.5"},"spent_week_near":"0.0631","week_resets":"2026-11-15","paused":false,"ready":true,"explorer":"https://testnet.nearblocks.io/address/frogg.sylversurferr.testnet"}"#
+    let walletJSON = #"{"network":"testnet","account":"frogg.pixlz-petz.testnet","balance_near":"0.4821","spent_today_near":"0.0042","caps":{"per_request_near":"0.01","per_day_near":"0.1","per_week_near":"0.25","reserve_near":"0.05"},"ceilings":{"per_day_near":"0.1","per_week_near":"0.5"},"spent_week_near":"0.0631","week_resets":"2026-11-15","paused":false,"ready":true,"explorer":"https://testnet.nearblocks.io/address/frogg.pixlz-petz.testnet"}"#
     let wallet = try? JSONDecoder().decode(WalletInfo.self, from: Data(walletJSON.utf8))
-    let receipts = [Receipt(status: "paid", amountNear: "0.0021", to: "sylversurferr.testnet", txHash: "x", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil),
-                    Receipt(status: "paid", amountNear: "0.0021", to: "sylversurferr.testnet", txHash: "y", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil)]
+    let receipts = [Receipt(status: "paid", amountNear: "0.0021", to: "pixlz-petz.testnet", txHash: "x", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil),
+                    Receipt(status: "paid", amountNear: "0.0021", to: "pixlz-petz.testnet", txHash: "y", explorer: "https://testnet.nearblocks.io", balanceAfterNear: nil, reason: nil)]
     for dark in [false, true] {
         let look = SurfaceView.Look.text(designFill: 0.26, prefersDark: dark, glass: false)
         let ask = AskCard(placeholder: PixlData.ui.askPlaceholder, look: look); ask.fit()
