@@ -141,8 +141,7 @@ assets/<pixl>/
     "signature": { "holds": [4, 2, 8], "loop": "none" },
     "mischief":  { "holds": [6, 12, 4], "loop": "none" }
   },
-  "props": { "signature": ["fly"], "mischief": ["pond"] },
-  "scale": { "mosaico": 4 }
+  "props": { "signature": ["fly"], "mischief": ["pond"] }
 }
 ```
 
@@ -153,9 +152,10 @@ assets/<pixl>/
 | `movement` | `hop` · `walk` · `float` (ignores gravity) · `climb` (walls and threads). |
 | `sticky` | Can hang from undersides and cling to window sides (Frogg's toe pads). |
 | `physics.gravity` | apx/s². Multiplied by `scale` on screen. |
+| `physics.hopApex`, `hopDistance`, `walkSpeed` | In apx (sprite pixels) and apx/s. They scale with the pet, so a hop covers the same number of pet-widths at any scale. |
 | `holds` | Ticks each frame stays up. `0` = held for as long as physics needs (the airborne frame of a hop). |
 | `loop` | What repeats while the slot stays active: `none`, `all` (frames 0→2), `middle` (frame 1), `last` (frame 2). |
-| `scale` | Optional. Per-device-kind default scale, whole numbers only. Today only `mosaico` is read; absent → the rule in §12.2. The user's device setting overrides it. |
+| `scale` | Optional. `scale.<device kind>` (`mosaico`, `iphone`, `mac`) replaces the default scale on that kind of device (§12.2), whole numbers only. The user's device setting overrides both. |
 
 **Validation** (PixlzCore unit test, fails the build):
 - Every slot frame (`<slot>_0..2`) and all 6 emotions are present in `sprites.json`.
@@ -255,7 +255,7 @@ Two layers: **reactions** interrupt, **autonomy** fills the gaps.
 
 ### 4.5 Physics
 
-- Units are apx, converted to pt by `scale`. Gravity from `pixl.json` (Frogg 900 apx/s²).
+- Units are apx (sprite pixels), converted to pt or screen pixels by the device's `scale` (§12.2). Gravity, hop apex and distance, and walk/crawl speed are all apx values from `pixl.json`, so motion scales with the pet. Frogg: 900 apx/s².
 - **Hop:** pick a landing point; choose apex height from `hopApex`; solve the parabola. Frame 0 plays (3 ticks), frame 1 holds while airborne, frame 2 on landing. Dust FX on landing.
 - **Fall:** starts at rest, terminal velocity 1500 apx/s. Lands on the first platform below; if none, lands on the screen ground (§7.1).
 - **Throw:** release velocity = cursor velocity over the last 100 ms, capped at 3000 pt/s. Bounces off screen edges and the menu bar with restitution 0.4; ground friction stops it within about 1 s.
@@ -757,7 +757,7 @@ A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift
 |---|---|---|---|---|
 | Pet surface | Borderless non-activating `NSPanel`, `.screenSaver` level, joins all Spaces; CALayer per sprite | SpriteKit scene in the app ("stage") | Full-screen 480×480 stage, Raylib Lite, black background | Layered WPF window, per-pixel hit test |
 | Click-through | Toggle `ignoresMouseEvents` by alpha under the cursor | n/a (in-app) | n/a (whole screen is the stage) | `WS_EX_TRANSPARENT` toggling |
-| World map | CGWindowList + AX observers, `NSScreen.visibleFrame` | Stage edges only | Stage edges only | `EnumWindows` + WinEvent hooks |
+| World map | CGWindowList + AX observers, `NSScreen.visibleFrame` | Stage edges only | Four screen edges: floor, walls, ceiling (§12.3) | `EnumWindows` + WinEvent hooks |
 | System reactions | §6, all | none | power only: unplugged → sleep (§12.1) | §6 equivalents |
 | Typing signal | Opt-in listen-only event tap (count only); AX fallback | n/a | n/a | Raw input count |
 | Hotkeys | Carbon `RegisterEventHotKey` | n/a | n/a (touch only) | `RegisterHotKey` |
@@ -789,10 +789,41 @@ The Mosaico is a travel device like the iPhone: the Pixl can live there, and it 
 
 ### 12.2 Pixl size per device
 
-- Size is a **per-device scale** in that device's settings, never in PetState, so the Pixl can be 2× on the Mac and 4× on the Mosaico.
+- Size is a **per-device scale** in that device's settings, never in PetState, so the Pixl can be a different size on each device.
 - Whole numbers only, nearest-neighbor, everywhere (§3.1).
-- **Mosaico default:** the whole number *n* that puts `n × w` of `idle_0` closest to half the screen (240 px), as long as the canvas still fits (`n × canvas ≤ 480` both ways); ties go to the smaller. Frogg (idle 68 px, canvas 91×75): 3× = 204 px, 4× = 272 px → **4×** (canvas 364×300).
-- A species can override that default with `scale.mosaico` in `pixl.json` (§3.2). The user's setting (default ± 1) overrides both.
+- **Default on stage devices** (the Mosaico and the iPhone stage, where the screen is the Pixl's whole world): the screen is about **4 pet-widths across**:
+  `scale = max(1, round(screenWidth / (4 × w of idle_0)))`, with `screenWidth` in the units the Pixl is drawn in (pt on the iPhone, pixels on the Mosaico).
+- **The Mac** keeps its fixed default of **2×** (D14), with 2×/3×/4× in settings. The rule above would make Frogg 5× (about 340 pt) on a 1440-pt screen.
+- `scale.<device kind>` in `pixl.json` replaces the computed default (§3.2). The user's setting (default ± 1) overrides both.
+- Physics is in apx and scales with the pet (§4.5).
+
+Mosaico (480 px wide) defaults:
+
+| Pixl | idle_0 width | Scale | On screen |
+|---|---|---|---|
+| Frogg | 68 | **2×** | 136 px |
+| Kiti | 45 | 3× | 135 px |
+| Mochi | 39 | 3× | 117 px |
+| Boo | 32 | 4× | 128 px |
+| Slugg | 64 | 2× | 128 px |
+| Silky | 77 | 2× | 154 px |
+
+### 12.3 Mosaico world map
+
+All four screen edges are surfaces: the **floor** (bottom), two **walls** (left, right) and the **ceiling** (top). A Pixl uses the ones its `movement` and `sticky` allow:
+
+| Pixl | Movement | How it uses the edges |
+|---|---|---|
+| Frogg | hop, sticky | Hops along the floor. Sticky, so it can hop to a wall and cling (`perch` frame 1), and hang from the ceiling the way it hangs under the menu bar on the Mac (§7.1). |
+| Slugg | crawl (`walk`), sticky | Crawls the **full perimeter**: floor, up a wall, upside down along the ceiling, down the other wall. Rounds each corner through its corner frames, and leaves its slime trail. |
+| Silky | hop, sticky (climber) | Climbs the walls and walks the ceiling; drops from the ceiling on a thread. |
+| Kiti | hop | Floor only. Jumps toward a wall and lands back on the floor. |
+| Mochi | hop | Floor only. |
+| Boo | float | Ignores surfaces; drifts anywhere inside the four edges, which only bound it. |
+
+- Moving along an edge never starts a trip. Only a fling released past an edge does (§11.1).
+- Burn-in (§12.1): the slime trail fades within a few seconds, and a Pixl clinging to a wall or ceiling still drifts and moves on like one on the floor.
+- A Pixl that loses its surface (grabbed off a wall, Frogg's grip times out) falls to the floor (§4.5).
 
 ---
 
@@ -821,7 +852,8 @@ PixlzCore holds everything testable without a screen:
 - **Physics:** hop parabolas land where planned; fall lands on the first platform below.
 - **World map:** given window rects, the visible platform intervals and reachability are correct; keep-out exclusion works.
 - **Travel:** a two-node simulation with an in-memory transport covers every row of §10.4's failure table, including crashes at each step (process killed between any two messages). The invariant "at least one complete copy, at most one `.owned`" is checked after every step.
-- **Manifests:** §3.2 validation, including `scale.mosaico` being a whole number whose canvas fits 480×480.
+- **Manifests:** §3.2 validation, including any `scale.<kind>` being a whole number ≥ 1 whose canvas fits the device's screen (480×480 on the Mosaico).
+- **Scale rule:** `max(1, round(screenWidth / (4 × idle width)))` gives the §12.2 table for every roster Pixl.
 - **PetState compatibility:** an old file (no `policy`) decodes and re-encodes to the same bytes; the checksum is computed over raw frame bytes on both sides; an offer with a newer `proto` gets `decline(needsUpdate)` and nothing is transferred; `policy` is omitted when both flags are off; a locked Pixl declines `call` with `locked` and refuses to start an offer.
 - **Free roam (v1.1):** the eligibility rules of §10.6 as a pure function, table-tested.
 - **Mosaico protocol module** (C, `mosaico/pixl_trip`): host tests for framing, the hello frame, the receiver and sender halves of the trip, the checksum over raw `payload.state` bytes (matching what PixlzCore's sender computes), and that splicing `epoch`, `owner`, `savedAt` and `stats.trips` keeps the bytes equal to PixlzCore's canonical encoding (fixtures generated by PixlzCore).
