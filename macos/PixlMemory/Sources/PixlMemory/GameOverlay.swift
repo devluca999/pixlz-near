@@ -18,6 +18,8 @@ final class GameOverlay {
     var tongue: (from: CGPoint, to: CGPoint, width: Int, flash: Bool)?
     var throat: (center: CGPoint, amount: Double)?
     var danger = 0.0
+    /// Slugg's slime strand across open desktop (top-left global points).
+    var strand: [CGPoint] = []
     var hud: (time: String, score: String)?
     var debug: [Debug] = []
     var lastAim: CGPoint?
@@ -68,7 +70,7 @@ final class GameOverlay {
         placeHUD()
         if hudRect != oldHUD { view.setNeedsDisplay(oldHUD.insetBy(dx: -12, dy: -12)) }
         let dirty = rects()
-        if !debug.isEmpty || danger > 0 || lastDirty.count > 40 {
+        if !debug.isEmpty || danger > 0 || !strand.isEmpty || lastDirty.count > 40 {
             view.needsDisplay = true
         } else {
             for r in lastDirty + dirty { view.setNeedsDisplay(r.insetBy(dx: -2 * px, dy: -2 * px)) }
@@ -167,6 +169,22 @@ final class GameOverlayView: NSView {
                 for x in 0..<cols {
                     let d = Double(min(x, y, cols - 1 - x, rows - 1 - y))
                     if (bayer[y & 3][x & 3] + 0.5) / 16 < amt * (1 - d / 4) { block(CGPoint(x: CGFloat(x) * k, y: CGFloat(y) * k), c) }
+                }
+            }
+        }
+
+        // Slugg's slime strand: a glossy green line where there's nothing else to crawl on
+        if o.strand.count > 1 {
+            for (a, b) in zip(o.strand, o.strand.dropFirst()) {
+                let p = o.v(a), q = o.v(b)
+                let n = max(1, Int(hypot(q.x - p.x, q.y - p.y) / k))
+                guard n < 40 else { continue }   // a gap: he got onto an edge in between
+                for i in 0...n {
+                    let t = CGFloat(i) / CGFloat(n)
+                    let c = CGPoint(x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t)
+                    block(c, .hex("#5FA83A"))
+                    block(CGPoint(x: c.x, y: c.y + k), .hex("#2E6B22"))
+                    if i % 5 == 0 { block(CGPoint(x: c.x, y: c.y - k), .hex("#B8F08A")) }   // a glint
                 }
             }
         }

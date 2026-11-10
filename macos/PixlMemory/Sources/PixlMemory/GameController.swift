@@ -122,7 +122,9 @@ final class GameController {
         case .inevitable:
             let head = CGPoint(x: foot.x, y: foot.y - app.spriteSize.height * 0.3)
             let round: TimeInterval = app.settings.chaos ? 90 : 60
-            chase = ChaseGame(head: head, heading: app.mouseTopLeft.x < foot.x ? .pi : 0, bounds: screen, scale: scale,
+            let w = app.roam.world()
+            let windows = ((w.active.map { [$0] } ?? []) + w.others).filter { $0.intersects(screen) }
+            chase = ChaseGame(head: head, heading: app.mouseTopLeft.x < foot.x ? .pi : 0, bounds: screen, windows: windows, scale: scale,
                               body: Double(app.spriteSize.width) * 0.9, round: round, invite: invite, now: now)
             app.trail.lengthBodies = 4
             app.exclaim(invite ? "…" : "…", for: 1.6)
@@ -270,15 +272,28 @@ final class GameController {
             app.frogg.mirrored = mouse.x < app.foot?.x ?? 0
             app.frogg.frameName = "emotion_curious"
         case .chase:
-            app.frogg.mirrored = facingLeft
             if g.waiting {
+                app.frogg.surface = .floor
+                app.frogg.mirrored = facingLeft
                 app.frogg.frameName = "emotion_curious"         // eyes up at the menu bar: waits
-            } else {
+            } else if let c = g.contact(at: g.head) {
+                // on a real edge: his own pose for it (floor, wall, upside down), glued to it
+                let surface: Surface = switch c.contact { case .floor: .floor; case .ceiling: .ceiling; case .leftWall: .leftWall; case .rightWall: .rightWall }
+                app.frogg.surface = surface
+                app.frogg.lean = 0
+                app.frogg.mirrored = surface == .leftWall || surface == .rightWall ? dir.y < 0 : facingLeft
                 app.frogg.frameName = "crawl_\(Int(g.stride * 8) % 8)"
-                app.place(at: foot)
+                app.place(at: surface == .floor ? CGPoint(x: foot.x, y: c.on.y) : c.on)
                 app.trail.step(force: true)
+            } else {
+                // open desktop: on his slime strand, tilted the way he's going
+                app.frogg.surface = .floor
+                app.frogg.mirrored = facingLeft
+                app.frogg.frameName = "crawl_\(Int(g.stride * 8) % 8)"
+                app.frogg.lean = max(-0.12, min(0.12, CGFloat(-dir.y) * (facingLeft ? -0.12 : 0.12)))
+                app.place(at: foot)
             }
-            app.frogg.lean = max(-0.12, min(0.12, CGFloat(-dir.y) * (facingLeft ? -0.12 : 0.12)))
+            overlay?.strand = g.strand
         case .shell:
             app.frogg.frameName = "seal_1"
             app.frogg.lean = 0
@@ -479,6 +494,7 @@ final class GameController {
         app.trail.lengthBodies = 1
         app.frogg.squash = CGSize(width: 1, height: 1)
         app.frogg.lean = 0
+        if app.frogg.surface != .floor { app.leaveSurface() }
         app.busy = false
         let o = overlay
         overlay = nil

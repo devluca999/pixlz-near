@@ -26,9 +26,10 @@ import Testing
         let events = run(&g, from: 0, to: 60) { _ in CGPoint(x: 600, y: 600) }
         #expect(events.contains { $0.1 == .gotcha })
         #expect(g.phase == .won)
-        // 300 pt at 14→ px/s × 2, slowed 15 % once parked: roughly 12 s, well inside the round
+        // 300 pt of open desktop on his slime strand (half of 14→ px/s × 2), slowed once parked: ~25 s
         let t = events.first { $0.1 == .gotcha }!.0
-        #expect(t > 8 && t < 16)
+        #expect(t > 16 && t < 34)
+        #expect(g.strand.count > 20)                                     // the strand he laid
     }
 
     @Test func keepingAwaySurvivesTheRound() {
@@ -109,6 +110,21 @@ import Testing
         #expect(g.head.y >= screen.minY + 40)
         #expect(g.unreachable(CGPoint(x: 1590, y: 1020)))               // bottom-right corner
         #expect(!g.unreachable(CGPoint(x: 800, y: 1020)))               // bottom edge, mid: reachable
+    }
+
+    @Test func surfacesAreFasterThanOpenDesktop() {
+        let window = CGRect(x: 400, y: 300, width: 600, height: 400)
+        // along a window's top edge vs. across the open: the same distance, he's there twice as fast
+        var onEdge = ChaseGame(head: CGPoint(x: 420, y: 300), bounds: screen, windows: [window], scale: 2, body: 60, now: 0)
+        var open = ChaseGame(head: CGPoint(x: 420, y: 150), bounds: screen, windows: [window], scale: 2, body: 60, now: 0)
+        #expect(onEdge.contact(at: onEdge.head)?.contact == .floor)
+        #expect(open.contact(at: open.head) == nil)
+        #expect(onEdge.contact(at: CGPoint(x: 400, y: 500))?.contact == .rightWall)   // a window's left side
+        #expect(onEdge.contact(at: CGPoint(x: 700, y: screen.maxY))?.contact == .floor)   // the screen's floor
+        _ = run(&onEdge, from: 0, to: 5) { _ in CGPoint(x: 980, y: 300) }
+        _ = run(&open, from: 0, to: 5) { _ in CGPoint(x: 980, y: 150) }
+        #expect(onEdge.head.x - 420 > (open.head.x - 420) * 1.8)
+        #expect(onEdge.strand.isEmpty && !open.strand.isEmpty)           // slime only where there's nothing
     }
 
     @Test func dangerRisesWithinOneBodyLength() {

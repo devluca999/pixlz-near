@@ -34,6 +34,8 @@ public struct ChaseGame: Sendable {
         public var invite = 2.0, inviteCancel = 200.0          // s; pt the cursor may move away
         public var corner = 48.0                               // pt: a cursor this close to two edges is "parked in a corner"
         public var strideLength = 10.0                         // px per crawl cycle (8 frames)
+        public var openSpeed = 0.5                             // off any surface: on his own slime strand
+        public var surfaceGrip = 8.0                           // px: this close to an edge, he's on it
         public init() {}
     }
 
@@ -49,6 +51,9 @@ public struct ChaseGame: Sendable {
     public enum Event: Equatable, Sendable {
         case started, bonked(Int), cameOut, gotcha, survived, interrupted, declined
     }
+
+    /// What he's crawling on: an edge (the screen's or a window's), or nothing (his slime strand).
+    public enum Contact: Equatable, Sendable { case floor, ceiling, leftWall, rightWall }
 
     public let tuning: Tuning
     public let round: TimeInterval
@@ -72,10 +77,14 @@ public struct ChaseGame: Sendable {
     var cursorStillSince: TimeInterval
     var inviteCursor: CGPoint?
     public private(set) var endedAt: TimeInterval?
+    /// Window frames: their edges are surfaces too.
+    public let windows: [CGRect]
+    /// The slime strand he lays across open desktop (no surface under him), oldest first.
+    public private(set) var strand: [CGPoint] = []
 
-    public init(head: CGPoint, heading: Double = 0, bounds: CGRect, scale: Double, body: Double,
+    public init(head: CGPoint, heading: Double = 0, bounds: CGRect, windows: [CGRect] = [], scale: Double, body: Double,
                 round: TimeInterval = 60, invite: Bool = false, now: TimeInterval, tuning: Tuning = Tuning()) {
-        self.head = head; self.heading = heading; self.bounds = bounds
+        self.head = head; self.heading = heading; self.bounds = bounds; self.windows = windows
         self.scale = scale; self.body = body; self.round = round; self.tuning = tuning
         self.last = now
         self.cursorStillSince = now
@@ -97,6 +106,32 @@ public struct ChaseGame: Sendable {
         if distance(head, cursor) <= tuning.closeBodies * body { v *= 1 + tuning.closeBoost }
         if parked { v *= 1 - tuning.parkedSlow }
         return v
+    }
+
+    /// The surface under `p`: the screen's edges and every window's edges. Nil in open desktop.
+    public func contact(at p: CGPoint) -> (contact: Contact, on: CGPoint)? {
+        let g = tuning.surfaceGrip * scale
+        var best: (Contact, CGPoint, Double)?
+        func consider(_ c: Contact, _ q: CGPoint) {
+            let d = Double(hypot(q.x - p.x, q.y - p.y))
+            if d <= g, best == nil || d < best!.2 { best = (c, q, d) }
+        }
+        let b = bounds
+        consider(.floor, CGPoint(x: p.x, y: b.maxY))
+        consider(.ceiling, CGPoint(x: p.x, y: b.minY))
+        consider(.leftWall, CGPoint(x: b.minX, y: p.y))
+        consider(.rightWall, CGPoint(x: b.maxX, y: p.y))
+        for r in windows {
+            if p.x >= r.minX - g, p.x <= r.maxX + g {
+                consider(.floor, CGPoint(x: p.x, y: r.minY))          // on its top
+                consider(.ceiling, CGPoint(x: p.x, y: r.maxY))        // under its bottom
+            }
+            if p.y >= r.minY - g, p.y <= r.maxY + g {
+                consider(.rightWall, CGPoint(x: r.minX, y: p.y))      // its left side: the wall on his right
+                consider(.leftWall, CGPoint(x: r.maxX, y: p.y))
+            }
+        }
+        return best.map { ($0.0, $0.1) }
     }
 
     /// 0 far away … 1 touching: within one body length, for the edge vignette.
@@ -163,6 +198,9 @@ public struct ChaseGame: Sendable {
         let aligned = abs(diff) * 180 / .pi <= tuning.turnBeforeMove
         waiting = unreachable(cursor) && d < body * 0.25
         var v = crawlSpeed(now, cursor: cursor) * (aligned ? 1 : 0.15)
+        // across open desktop he crawls on a strand of his own slime: half speed
+        let onSurface = contact(at: head) != nil
+        if !onSurface { v *= tuning.openSpeed }
         if waiting { v = 0 }
         // the two-step: two pushes per cycle, averaging `v`
         let push = 1 - 0.6 * cos(4 * .pi * stride)
@@ -171,6 +209,8 @@ public struct ChaseGame: Sendable {
             head.x += cos(heading) * move
             head.y += sin(heading) * move
             stride = (stride + move / (tuning.strideLength * scale)).truncatingRemainder(dividingBy: 1)
+            if !onSurface, strand.last.map({ hypot($0.x - head.x, $0.y - head.y) >= 3 * scale }) ?? true { strand.append(head) }
+            if strand.count > 2000 { strand.removeFirst(strand.count - 2000) }
         }
         speed = v
         if !unreachable(cursor), distance(head, cursor) <= tuning.gotchaRadius * scale {
