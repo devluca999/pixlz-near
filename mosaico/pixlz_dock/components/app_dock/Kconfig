@@ -1,0 +1,10 @@
+menu "Pixlz dock"
+    config PIXLZ_WIFI_SSID
+        string "Wi-Fi SSID (fallback)"
+        default ""
+        help
+            Used only when the Mosaico's own settings (sysmeta, namespace shared) have no Wi-Fi.
+    config PIXLZ_WIFI_PASSWORD
+        string "Wi-Fi password (fallback)"
+        default ""
+endmenu
