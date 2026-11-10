@@ -37,20 +37,24 @@ public enum SluggMotion {
     /// ordinary drawing applies. `mirrored` is the pose's facing (on a wall: true while it heads up).
     public static func native(frame: String, surface: Surface, mirrored: Bool, turns: Int, has: (String) -> Bool) -> (name: String, turn: ArtTurn)? {
         if frame.hasPrefix("wrapin_") || frame.hasPrefix("wrapout_") { return has(frame) ? (frame, ArtTurn(turns, flip: mirrored)) : nil }
-        let travelling = frame.hasPrefix("crawl_")
-        let i = travelling ? Int(frame.dropFirst(6)) ?? 0 : 0
+        // "crawl_3_body": the same pose without its shell (when it has fallen off)
+        let bare = frame.hasSuffix("_body")
+        let core = bare ? String(frame.dropLast(5)) : frame
+        let travelling = core.hasPrefix("crawl_")
+        let i = travelling ? Int(core.dropFirst(6)) ?? 0 : 0
+        let layer = bare ? "_body" : ""
         switch surface {
         case .floor:
             return travelling && has(frame) ? (frame, ArtTurn(0, flip: mirrored)) : nil
         case .rightWall, .leftWall:
-            let name = "climb_\(i % 8)"
+            let name = "climb_\(i % 8)" + layer
             guard has(name) else { return nil }
             let up = !travelling || mirrored            // resting on a wall: head up
             let left = surface == .leftWall
             // the art climbs with the wall on its right, heading up
             return (name, up ? ArtTurn(0, flip: left) : ArtTurn(2, flip: !left))
         case .ceiling:
-            let name = "under_\(i % 6)"
+            let name = "under_\(i % 6)" + layer
             guard has(name) else { return nil }
             return (name, ArtTurn(0, flip: travelling && !mirrored))   // the art heads left
         case .hanging:

@@ -461,8 +461,9 @@ public struct RoamPlanner: Sendable {
 
     /// Slugg's body without its shell (the shell falls on its own a moment later).
     public static let bareBody = "crawl_0_body"
-    /// How long after he lands his shell lands on him.
-    public static let shellLag: TimeInterval = 0.4
+    /// How long he hangs on bare after his shell has hit the floor.
+    public static let bareHang: TimeInterval = 0.5
+
 
     /// Chance that Slugg loses his grip on a lap (he's no spider).
     public static let lapFallChance = 0.35
@@ -671,18 +672,27 @@ extension RoamPlanner {
                                      surface: surface, wrap: wrap, hop: hop)
             let grip = first.pose(at: first.duration).pose.foot
             let left = end.x < grip.x
-            let fallFrom = CGPoint(x: grip.x, y: grip.y + 8)
-            let landing = CGPoint(x: grip.x, y: end.y)
-            let fallTime = max(0.35, Double(((landing.y - fallFrom.y) / 1800).squareRoot() * 1.4))
+            let floorY = end.y
+            func fall(_ d: CGFloat) -> TimeInterval { max(0.35, Double((max(d, 1) / 1800).squareRoot() * 1.4)) }
+            // on his back on the floor: his feet up, his shell under him
+            // (the under pose is a little taller than he stands: the far wall leg ends half a body up)
+            let bodyH = legs.last(where: { $0.surface == .rightWall || $0.surface == .leftWall }).map { 2 * (floorY - $0.to.y) } ?? 62
+            let onBack = CGPoint(x: grip.x, y: floorY - bodyH * 1.1)
+            let flip = CGPoint(x: grip.x, y: floorY - (floorY - onBack.y) / 2)
+            let landing = CGPoint(x: grip.x, y: floorY)
             return Choreography(first.segments + [
-                // a wobble upside down… and he lets go
+                // a wobble upside down…
                 .travel(from: grip, to: grip, frames: ["crawl_0", "crawl_4"], fps: 9, surface: .ceiling, mirrored: left, bob: 0, alpha: 1, duration: 0.45),
-                .drop(from: fallFrom, to: landing, frame: Self.bareBody, mirrored: left, duration: fallTime),
-                // flat on the floor without his shell, until it lands on him
-                .hold(at: landing, frame: Self.bareBody, mirrored: left, duration: Self.shellLag),
+                // …his shell lets go first and drops to the floor; he hangs on bare for a moment
+                .travel(from: grip, to: grip, frames: [Self.bareBody], fps: 1, surface: .ceiling, mirrored: left, bob: 0, alpha: 1,
+                        duration: fall(floorY - grip.y) + Self.bareHang),
+                // then he falls too, on his back, onto it
+                .tumble(from: grip, to: onBack, frame: Self.bareBody, mirrored: left, duration: fall(onBack.y - grip.y)),
+                .travel(from: onBack, to: onBack, frames: ["crawl_0"], fps: 1, surface: .ceiling, mirrored: left, bob: 0, alpha: 1, duration: 0.5),
+                // flips the right way up
+                .travel(from: flip, to: flip, frames: ["crawl_2"], fps: 1, surface: left ? .rightWall : .leftWall, mirrored: false, bob: 0, alpha: 1, duration: 0.12),
                 .land(at: landing, frame: "crawl_0", mirrored: left, duration: 0.3, dust: true),
-                .hold(at: landing, frame: "crawl_0", mirrored: left, duration: 0.6),
-                // and he keeps going
+                // and keeps going
                 .travel(from: landing, to: end, frames: frames, fps: gait?.fps ?? 8, surface: .floor, mirrored: left, bob: 0, alpha: 1,
                         duration: dur(landing, end)),
             ])

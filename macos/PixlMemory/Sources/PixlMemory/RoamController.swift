@@ -153,52 +153,66 @@ final class RoamController {
 
     var shellPanel: PropPanel?
 
-    /// Slugg's fall: his body drops first; his shell lets go a beat later, tumbles down after him
-    /// and lands on his back just as he's flat on the floor. Drawn as its own panel over his.
+    /// Slugg's fall: hanging upside down, his shell lets go first and drops to the floor; he hangs
+    /// on bare, then tumbles onto it. The shell is drawn as its own panel until he lands in it.
     func dropShell(along c: Choreography) {
         var t0: TimeInterval = 0
-        var drop: (from: CGPoint, to: CGPoint, mirrored: Bool, duration: TimeInterval)?
-        for seg in c.segments {
-            if case .drop(let a, let b, _, let m, let d) = seg { drop = (a, b, m, d); break }
+        var hang: (at: CGPoint, mirrored: Bool, duration: TimeInterval)?
+        var tumble: TimeInterval = 0
+        for (k, seg) in c.segments.enumerated() {
+            if case .travel(let a, _, let frames, _, .ceiling, let m, _, _, let d) = seg, frames == [RoamPlanner.bareBody] {
+                hang = (a, m, d)
+                if k + 1 < c.segments.count { tumble = c.segments[k + 1].duration }
+                break
+            }
             t0 += seg.duration
         }
-        guard let d = drop, let img = FroggArt.shared.image("crawl_0_shell") else { return }
-        let scale = app.scale
-        let size = NSSize(width: CGFloat(img.width) * scale, height: CGFloat(img.height) * scale)
-        var angle: CGFloat = .pi
+        guard let h = hang, let img = FroggArt.shared.image("under_0_shell"), let frame = FroggArt.shared.frames["under_0_shell"] else { return }
+        let s = app.scale
+        let flip = !h.mirrored                                   // as his upside-down pose is drawn
+        let anchorX = CGFloat(frame.anchor?[0] ?? Double(frame.w) / 2)
+        let size = NSSize(width: CGFloat(img.width) * s, height: CGFloat(img.height) * s)
+        let bottom = CGFloat(Self.lowestOpaqueRow(img) + 1) * s   // the shell's underside, from the image top
+        let floorY = app.roam.world().screen.maxY
+        let startTop = h.at.y
+        let distance = max(0, floorY - (startTop + bottom))
+        let fallTime = max(0.3, h.duration - RoamPlanner.bareHang)
+        let left = h.at.x - (flip ? size.width - anchorX * s : anchorX * s)
         let panel = PropPanel(size: size) { r in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return }
             ctx.interpolationQuality = .none
-            ctx.translateBy(x: r.midX, y: r.midY)
-            ctx.rotate(by: angle)
-            if d.mirrored { ctx.scaleBy(x: -1, y: 1) }
-            ctx.draw(img, in: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+            if flip { ctx.translateBy(x: r.width, y: 0); ctx.scaleBy(x: -1, y: 1) }
+            ctx.draw(img, in: CGRect(origin: .zero, size: r.size))
         }
         shellPanel?.orderOut(nil)
         shellPanel = panel
-        let lets = 0.15                                            // it hangs on a moment longer than he does
-        let fall = d.duration + RoamPlanner.shellLag - lets        // and lands on him as he lies there
         let start = app.now + t0
-        func frame() {
+        let gone = t0 + h.duration + tumble                      // he's landed in it
+        func step() {
             guard let p = shellPanel, p === panel else { return }
             let t = app.now - start
-            if t >= lets + fall { p.orderOut(nil); shellPanel = nil; return }   // on his back again: his own frame has it
-            guard let body = app.froggPanel?.frame else { return }
-            // where the shell sits on him once he's down, and how far above that it still is
-            let k = min(1, max(0, (t - lets) / fall))
-            let height = d.to.y - d.from.y
-            let bodyTop = d.from.y + height * CGFloat(min(1, max(0, t / d.duration)) * min(1, max(0, t / d.duration)))
-            let shellTop = d.from.y + height * CGFloat(k * k)
-            angle = .pi * CGFloat(1 - k)                           // tumbles the right way up
-            p.contentView?.needsDisplay = true
-            if t >= 0 {
-                p.setFrame(NSRect(x: body.midX - size.width / 2, y: body.midY + (bodyTop - shellTop), width: size.width, height: size.height), display: true)
-                if !p.isVisible { p.orderFrontRegardless() }
-            }
-            app.later(1.0 / 60) { frame() }
+            if t >= gone - t0 { p.orderOut(nil); shellPanel = nil; return }
+            let k = min(1, max(0, t / fallTime))
+            let top = startTop + distance * CGFloat(k * k)
+            p.setFrameOrigin(NSPoint(x: left, y: app.primaryHeight - top - size.height))
+            if !p.isVisible { p.orderFrontRegardless() }
+            app.later(1.0 / 60) { step() }
         }
-        app.later(max(0, t0 - 0.02)) { frame() }
-        Debug.log("roam: Slugg loses his grip; the shell follows \(String(format: "%.2f", lets)) s later")
+        app.later(max(0, t0)) { step() }
+        Debug.log("roam: Slugg's shell lets go first; he follows \(String(format: "%.2f", h.duration)) s later")
+    }
+
+    /// The lowest row with any opaque pixel (image rows from the top).
+    static func lowestOpaqueRow(_ img: CGImage) -> Int {
+        let w = img.width, h = img.height
+        var buf = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &buf, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return h - 1 }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        for row in stride(from: h - 1, through: 0, by: -1) {   // the buffer's first row is the image's top
+            for x in 0..<w where buf[(row * w + x) * 4 + 3] > 0 { return row }
+        }
+        return h - 1
     }
 
     /// Between outings: now and then a little show in place (its signature, an idle quirk), or

@@ -41,12 +41,14 @@ import Testing
             guard let x = fallAt else { clean += 1; continue }
             falls += 1
             let c = RoamPlanner.choreography(.lap(legs: legs, fallAt: x, end: end), from: w.foot, style: .slider, hanging: nil, hop: hop)
-            // drops in his bare body, lies there for the shell, lands, then crawls on to the end
-            let drop = c.segments.firstIndex { if case .drop = $0 { return true }; return false }
-            #expect(drop != nil)
-            if let i = drop, case .drop(let a, let b, let frame, _, _) = c.segments[i] {
+            // the shell goes first: he hangs on bare upside down, then tumbles onto his back
+            let hang = c.segments.firstIndex { if case .travel(_, _, let f, _, .ceiling, _, _, _, _) = $0 { return f == [RoamPlanner.bareBody] }; return false }
+            let tumble = c.segments.firstIndex { if case .tumble = $0 { return true }; return false }
+            #expect(hang != nil && tumble != nil && hang! < tumble!)
+            if let i = tumble, case .tumble(let a, let b, let frame, _, _) = c.segments[i] {
                 #expect(frame == RoamPlanner.bareBody)
-                #expect(abs(a.x - x) < 1 && b.y == screen.maxY)
+                #expect(abs(a.x - x) < 1 && b.y < screen.maxY)       // lands on his back, feet up
+                #expect(c.pose(at: c.segments[..<i].map(\.duration).reduce(0, +) + 0.01).pose.surface == .ceiling)
             }
             let last = c.pose(at: c.duration).pose.foot
             #expect(abs(last.x - end.x) < 0.5 && abs(last.y - end.y) < 0.5, "\(last) vs \(end)")

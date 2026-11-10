@@ -61,13 +61,15 @@ public struct Choreography: Sendable {
         case wrap(CornerWrap, duration: TimeInterval)
         /// Dropping straight down under gravity in one frame, upright (Slugg losing his grip on the ceiling).
         case drop(from: CGPoint, to: CGPoint, frame: String, mirrored: Bool, duration: TimeInterval)
+        /// The same, upside down (Slugg falling on his back).
+        case tumble(from: CGPoint, to: CGPoint, frame: String, mirrored: Bool, duration: TimeInterval)
 
         public var duration: TimeInterval {
             switch self {
             case .hold(_, _, _, let d), .coil(_, _, let d), .land(_, _, _, let d, _), .settle(_, let d),
                  .fall(_, _, let d), .exit(_, _, let d), .whoa(_, _, let d), .pop(_, _, _, let d), .pivot(_, _, _, let d),
                  .travel(_, _, _, _, _, _, _, _, let d), .dangle(_, _, _, let d), .glide(_, _, _, let d), .wrap(_, let d),
-                 .drop(_, _, _, _, let d): d
+                 .drop(_, _, _, _, let d), .tumble(_, _, _, _, let d): d
             case .flight(let p, let offset, _, _): max(p.duration - offset, 0)
             }
         }
@@ -267,6 +269,10 @@ public struct Choreography: Sendable {
             var pose = Pose(foot: w.at, frame: w.frames[i], mirrored: w.turn.flip)
             pose.turns = w.turn.turns
             return pose
+        case .tumble(let a, let b, let frame, let m, _):
+            var pose = Pose(foot: CGPoint(x: b.x, y: a.y + (b.y - a.y) * CGFloat(f * f)), frame: frame, mirrored: m)
+            pose.surface = .ceiling
+            return pose
         case .drop(let a, let b, let frame, let m, _):
             let y = a.y + (b.y - a.y) * CGFloat(f * f)   // constant acceleration
             return Pose(foot: CGPoint(x: b.x, y: y), frame: frame, squash: CGSize(width: 1 - 0.1 * f, height: 1 + 0.12 * f), mirrored: m)
@@ -307,7 +313,7 @@ public struct Choreography: Sendable {
             return Choreography(rest.segments + Choreography.hop(route(plan.end), notice: false, coil: 0.08).segments)
         case .land(let p, _, _, _, _), .settle(let p, _):
             return Choreography.hop(route(p), notice: false, coil: 0.08)
-        case .fall(_, let b, _), .drop(_, let b, _, _, _):
+        case .fall(_, let b, _), .drop(_, let b, _, _, _), .tumble(_, let b, _, _, _):
             return Choreography.hop(route(b), notice: false)
         case .exit(let p, _, _), .whoa(let p, _, _), .pivot(let p, _, _, _):
             return Choreography.hop(route(p), notice: false)
