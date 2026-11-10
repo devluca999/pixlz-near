@@ -18,9 +18,10 @@ Changes to any decision here should be made by editing this file in the same com
 | **M1** | macOS | Frogg on the desktop: idles, walks, perches on window edges and menu bar/Dock, falls when a window closes. Poke, grab, file ride. Menu bar icon. First-run permissions onboarding. Meets idle CPU budget (D7). |
 | **M2** | iOS | Frogg on an in-app stage, idling and reacting to taps (D8). |
 | **M3** | Travel | Frogg goes Mac → iPhone → Mac over the local network (D9) with exit/entrance animations; PetState intact. |
-| **v1 done** | All | M1–M3 + remaining system reactions (fullscreen hide, Trash signature, typing avoidance, battery, focus guardian) + hotkey mini menu + one small home-screen widget. |
+| **M4** | ESP-Mosaico | Frogg goes Mac → Mosaico → Mac over the same Wi-Fi (D17): drop-in entrance, idle with blink, hop-out exit; PetState intact. Spike first (plain TCP), then pairing + TLS before merge. |
+| **v1 done** | All | M1–M4 + remaining system reactions (fullscreen hide, Trash signature, typing avoidance, battery, focus guardian) + hotkey mini menu + one small home-screen widget + Send to / Lock (D18). |
 
-Order: M1 → M2 → M3 → remaining v1 items.
+Order: M1 → M2 → M3 → M4 → remaining v1 items. Platform order: **macOS → iOS → ESP-Mosaico → Windows.** (amended 2026-11-10, D17)
 
 ## D3. Launch roster
 Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
@@ -36,6 +37,7 @@ Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
 - **macOS 15.0+**, **iOS 18.0+**.
 - Owner's devices: Mac on macOS 15 Sequoia (may upgrade to macOS 26 Tahoe; the floor stays at 15). iPhone 11 on iOS 18.7.8 (no Dynamic Island; has U1).
 - Build with the latest Xcode that runs on the host Mac (Xcode 26.x on macOS 15.6+), Swift 6 language mode.
+- **ESP-Mosaico** (ESP32-S31, 2.16" 480×480 AMOLED, touch): a travel device like the iPhone (D17). ESP-IDF pinned at `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`, target `esp32s31`, built and installed only through the vendor's `python mosaico.py` (repo `esp-mosaico/esp-mosaico-vibe`, cloned next to this one). Pixlz code for it lives in `mosaico/`.
 - Windows (WPF) later, from the platform-neutral SPEC.md.
 
 ## D5. Repository
@@ -48,7 +50,7 @@ Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
   - `assets/<pixl>/<slot>.png`, e.g. `assets/frogg/poke.png`
   - Slots: `idle, move, rest, poke, grab, file_ride, perch, signature, mischief`
 - **Emotions:** front view, `assets/<pixl>/emotions/<emotion>.png`. Emotions: `happy, annoyed, sleepy, startled, curious, proud`.
-- **Canvas:** fixed per-frame canvas **per Pixl**, declared in `pixl.json`. All frames of one Pixl share it. Frogg: **104×76 px**, from the Claude Design source. *(P2)*
+- **Frames:** `assets/<pixl>/sprites.json` is the source of truth: indexed-colour rows, each frame with its own `w × h`, trimmed to the art and drawn bottom-centred (SPEC §3.1). The fixed per-Pixl canvas from P2 is gone (amended 2026-11-10).
 - **Scaling:** whole-number multiples only, nearest-neighbor (no smoothing). User-selectable 2×/3×/4×.
 - **Facing:** behavior slots drawn facing right; the engine mirrors them for left.
 - **Manifest** `assets/<pixl>/pixl.json`: species, frame size, fps per slot, foot anchor (ground-contact pixel), hitbox, aura preset, movement type (`hop | walk | float | climb`).
@@ -100,6 +102,10 @@ Each milestone includes an Instruments check against these numbers.
   - **Timeout 8 s** or decline → `annoyed` shrug, the Pixl stays.
   - Every move increments a **version number**. On conflict (both devices think they own it), the higher version wins; the other device drops its copy.
 - **Transport-agnostic interface;** local network in v1, cloud later for Windows.
+- **Device kinds** (amended 2026-11-10): every device advertises `_pixlz._tcp` with TXT `id`, `name` and `kind` (`mac`, `iphone`, `mosaico`, later `windows`). `kind` picks the device icon in Send to (D18). The Mosaico advertises `kind=mosaico` and only travels with a Mac on the same Wi-Fi (D17).
+- **Pairing blocks travel off the Mac** (2026-11-10): a 6-digit code fed straight into TLS-PSK can be brute-forced offline from a recorded handshake (SPEC §15 Q7). Pairing must use the code to authenticate a fresh key exchange (a PAKE such as SPAKE2) before **M3 iPhone travel ships** and before `mosaico` merges. The plain-TCP Mosaico spike is the only exception, and it stays on its branch.
+- **Protocol version:** `offer` and the TXT record carry `proto` (now 2). A device declines an offer from a newer protocol with `needsUpdate`, so mismatched builds stop cleanly before any transfer. The checksum is SHA-256 of the raw received `payload.state` bytes on every platform; nobody re-encodes to check it (SPEC §10.1, §10.3).
+- **Pairing direction:** the device without a keyboard shows the 6-digit code. Mac ↔ iPhone: the Mac shows it. Mac ↔ Mosaico: the **Mosaico shows it, the user types it on the Mac**. The key derivation doesn't care who shows it (both device ids are sorted into the salt).
 
 ## D10. Out of scope for v1
 - AI/LLM calls, accounts, cloud sync, payments, analytics
@@ -109,10 +115,14 @@ Each milestone includes an Instruments check against these numbers.
 - Cat, Ghost, Spider (Frogg only)
 - Live Activities / Dynamic Island, lock-screen widgets, extra widgets
 - Alarm wake reaction
-- Swipe-to-fling travel; Nearby Interaction direction-aware travel
+- Swipe-to-fling travel on the iPhone (on the Mosaico it is how travel works, D17); Nearby Interaction direction-aware travel
+- Tiling several Mosaicos into one bigger stage
 - Chat and Mic functionality (UI shown greyed out; `IBrain` stub and speech bubble exist, unused)
 - Mirroring system Focus modes
-- Pixls roaming across displays on their own
+- Pixls walking across displays on their own (D11)
+- **Free roam:** a Pixl starting trips between devices on its own. Specified now (SPEC §10.6, D18) so the PetState field and rules are settled; ships in v1.1, after pairing + TLS
+- On-device AI on the Mosaico (Ask and memory run on the Mac or the cloud; D17)
+- A cloud relay (the Mosaico needs an awake Mac on the same Wi-Fi until it exists)
 - Localization (English only), auto-update, crash reporting
 - Sound effects
 
@@ -181,3 +191,32 @@ Each milestone includes an Instruments check against these numbers.
 - **Legibility without screen capture.** D12 rules out Screen Recording, so text surfaces never sample what's behind them. Instead they use the smallest backdrop dim that keeps text at 4.5:1 over any backdrop (`Legibility.pick`, unit tested).
 - **Per-pet UI data** (accent, menu face, signature, Ask placeholder, personality) lives in `pixl.json` → `ui`.
 - The iPhone stage (long-press, previously the radial menu) will use the same bubbles when the iPhone app is built.
+
+## D17. ESP-Mosaico is a travel device (2026-11-10)
+
+The Mosaico is a first-class home for a Pixl, like the iPhone (D8): the Pixl can live on it, and it travels to and from the Mac with the same trip protocol (SPEC §10.4). SPEC §12.1 has the details.
+
+- **Screen:** 2.16" 480×480 square AMOLED. To avoid burn-in, the Pixl never holds still in one spot for long (it drifts a few pixels between idle loops), the background is black (unlit pixels), there is no fixed UI chrome, and the screen dims when nobody touches it: 50% after 2 min, 10% after 10 min.
+- **Touch only:** no hover, right-click or keyboard. Touch targets at least ~110 px (about 9 mm), so **at most 4 options per screen**. Menus page with "more".
+- **Small battery:** when unplugged, the Pixl goes to sleep on the Mosaico and Wi-Fi turns off. It can't send, receive or be called until it's plugged in again. Its state is safe in flash (R8).
+- **Network:** travel only with a Mac that is awake and on the same Wi-Fi, until the cloud relay exists. No iPhone ↔ Mosaico trips in v1.
+- **No on-device AI.** Ask, Polish and memory run on the Mac (or the cloud later). The Mosaico only shows results the Mac sends it.
+- **Pairing is reversed:** the Mosaico shows the 6-digit code; the user types it on the Mac (D9).
+- **Mischief:** cursor-based mischief (tongue snatch, ghost drag, icon lick, Dock hop) doesn't port. Each Pixl gets a touch version (for example Frogg's tongue snatches the spot you just tapped) or none. Listed per species in SPEC §9.
+- **Pixl size:** a **per-device scale** in device settings, never in PetState. On the Mosaico: whole-number scales only (no blurry pixels), chosen so the Pixl is about half the screen width. Frogg (idle frame 68 px wide) → 4× = 272 px. A species can override it with `scale.mosaico` in `pixl.json`.
+- **Small-screen menu:** double-tap shows up to 4 bubbles at the screen edges; "more" leads to a second page. Swiping the Pixl off an edge flings it to the device assigned to that side. Tiling several Mosaicos comes later.
+- **The spike** (Phase 2 of the 2026-11-10 plan) uses plain TCP with PixlzCore's Framing and a `{"hello":{"deviceId","deviceName"}}` first frame, and maps a single tap on the Pixl to "go home" once the double-tap window expires. Pairing + TLS are required before `mosaico` merges.
+
+## D18. Send to, Lock, Free roam (2026-11-10)
+
+- **Send to ▸** lists paired devices, each with its device icon (`kind`, D9). Reachable ones can be picked. Known devices that are asleep or unreachable are greyed out with "wake it to send". It appears on the Mac (option bubbles and menu bar), the iPhone and the Mosaico.
+- **Lock to this device:** a PetState field (`policy.locked`), so the lock stays with the Pixl through restores and conflict resolution. A locked Pixl declines calls with the new reason `locked`, and no offer can start from it (Send to is greyed out: "unlock to send").
+- **Free roam:** a PetState field (`policy.freeRoam`). When on, the owner device may start `send` by itself, only to a device that is awake and in use, never during Focus on either device, never while locked, and with a cooldown. Rules in SPEC §10.6.
+- **New PetState fields are optional.** Old files still decode; the canonical encoding doesn't change. Adding them raises `proto` to 2 (D9).
+- **Free roam ships in v1.1, not v1.** Reasons:
+  1. *Trust first.* Until pairing + TLS exist, every trip runs over plain TCP. An autonomous sender would push the Pixl's state onto the network without the user asking.
+  2. *Surprise.* A dogfood user whose Pixl vanishes from the Mac with no action of their own will read it as a bug. Lock and Send to need to exist and feel solid first, so the user has an easy way to stop it.
+  3. *"In use" needs a signal that doesn't exist yet.* Each device must advertise whether someone is using it right now (SPEC §10.6). That's new TXT data and needs testing on all three platforms.
+  4. *Failures are more likely.* A Mosaico that is unplugged or a Mac that is asleep makes autonomous trips fail often. Each failure costs an `annoyed` shrug the user didn't cause.
+  - The field and the rules are specified now, so v1 PetState files already carry it and no migration is needed later.
+- D10's non-goal "Pixls roaming across displays on their own" is split in two: walking across displays stays out (D11); free roam between devices moves to v1.1.
