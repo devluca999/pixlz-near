@@ -1,4 +1,4 @@
-#include "pixl_trip/pt_json.h"
+#include "../include/pixl_trip/pt_json.h"
 
 #include <stdio.h>
 #include <string.h>

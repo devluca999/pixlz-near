@@ -1,10 +1,10 @@
-#include "pixl_trip/pt_trip.h"
+#include "../include/pixl_trip/pt_trip.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#include "pixl_trip/pt_json.h"
-#include "pixl_trip/pt_sha256.h"
+#include "../include/pixl_trip/pt_json.h"
+#include "../include/pixl_trip/pt_sha256.h"
 
 // ---------------------------------------------------------------------------------------------
 // Small helpers
@@ -199,11 +199,10 @@ static bool splice_date(char *buf, size_t *len, const char *path, int64_t ms)
     return splice(buf, len, path, q);
 }
 
-static bool splice_owner(char *buf, size_t *len, const pt_device_t *owner)
+static bool splice_owner(char *buf, size_t *len, const pt_device_t *owner, char *tmp, size_t cap)
 {
-    char tmp[2 * (PT_ID_MAX + PT_NAME_MAX) + 64];
     pt_jw_t w;
-    pt_jw_init(&w, tmp, sizeof tmp);
+    pt_jw_init(&w, tmp, cap);
     pt_jw_lit(&w, "{\"deviceId\":");
     pt_jw_str(&w, owner->id);
     pt_jw_lit(&w, ",\"deviceName\":");
@@ -227,14 +226,14 @@ static bool state_str(const char *s, size_t len, const char *path, char *out, si
 }
 
 /// A copy of `src` with a new epoch and owner, savedAt = now, and (if counting) one more trip.
-static bool rewrite_state(const char *src, size_t src_len, char *dst, size_t *dst_len, int64_t epoch,
+static bool rewrite_state(pt_node_t *n, const char *src, size_t src_len, char *dst, size_t *dst_len, int64_t epoch,
                           const pt_device_t *owner, int64_t now_ms, bool count_trip)
 {
     if (src_len > PT_STATE_MAX) return false;
     memcpy(dst, src, src_len);
     *dst_len = src_len;
     if (!splice_int(dst, dst_len, "epoch", epoch)) return false;
-    if (!splice_owner(dst, dst_len, owner)) return false;
+    if (!splice_owner(dst, dst_len, owner, n->scratch, sizeof n->scratch)) return false;
     if (count_trip) {
         int64_t trips = 0;
         if (!state_int(dst, *dst_len, "stats.trips", &trips)) return false;
@@ -466,7 +465,7 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
             // The session buffer is free: any trip with this peer is over.
             n->session.kind = PT_SES_NONE;
             int64_t epoch = r->epoch + 1;
-            if (!rewrite_state(r->state, r->state_len, n->session.next, &n->session.next_len, epoch, &n->me, now_ms,
+            if (!rewrite_state(n, r->state, r->state_len, n->session.next, &n->session.next_len, epoch, &n->me, now_ms,
                                false)) {
                 return;
             }
@@ -527,7 +526,8 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
             return;
         }
         int64_t next_epoch = n->session.epoch + 1;
-        if (!rewrite_state(r->state, r->state_len, n->session.next, &n->session.next_len, next_epoch, peer, now_ms, true)) {
+        if (!rewrite_state(n, r->state, r->state_len, n->session.next, &n->session.next_len, next_epoch, peer, now_ms,
+                           true)) {
             abort_trip(n, out, peer, r->pet_id, n->session.epoch, "encodingFailed", now_ms);
             return;
         }
@@ -631,11 +631,11 @@ void pt_node_tick(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
 {
     begin(n, out);
     if (n->session.kind == PT_SES_NONE || now_ms < n->session.deadline_ms) return;
-    pt_device_t peer = n->session.peer;
+    const pt_device_t *peer = &n->session.peer;  // not changed by the calls below
     switch (n->session.kind) {
     case PT_SES_OFFERED:
     case PT_SES_TRANSFERRED:
-        abort_trip(n, out, &peer, n->record.pet_id, n->session.epoch, "timeout", now_ms);
+        abort_trip(n, out, peer, n->record.pet_id, n->session.epoch, "timeout", now_ms);
         break;
     case PT_SES_COMMITTED:
         n->session.kind = PT_SES_NONE;  // no commitAck: stay away; the next status settles it
@@ -643,7 +643,7 @@ void pt_node_tick(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
     case PT_SES_RECEIVING:
         n->session.kind = PT_SES_NONE;
         if (n->record.kind == PT_REC_PENDING) {
-            send_plain(n, out, &peer, "status", n->record.pet_id, n->record.epoch, now_ms);
+            send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
         }
         break;
     case PT_SES_NONE:

@@ -1,4 +1,4 @@
-#include "pixl_trip/pt_sha256.h"
+#include "../include/pixl_trip/pt_sha256.h"
 
 #include <string.h>
 

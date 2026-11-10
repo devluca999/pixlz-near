@@ -102,6 +102,8 @@ typedef struct {
 
     char msg[PT_OUT_MAX][PT_MSG_MAX];
     int msg_used;
+    /// Scratch for building the new owner object (kept off the caller's stack).
+    char scratch[2 * (PT_ID_MAX + PT_NAME_MAX) + 64];
 } pt_node_t;
 
 void pt_node_init(pt_node_t *n, const pt_device_t *me, pt_random_fn random, void *random_ctx);
