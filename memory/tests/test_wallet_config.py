@@ -7,8 +7,8 @@ import pytest
 from pixl_memory.config import WalletConfig, WalletConfigError
 
 REPO = Path(__file__).resolve().parents[2]
-PARENT = "sylversurferr.testnet"
-FROGG = "frogg.sylversurferr.testnet"
+PARENT = "pixlz-petz.testnet"
+FROGG = "frogg.pixlz-petz.testnet"
 
 
 def test_example_env_names_the_owners_accounts():
@@ -22,8 +22,8 @@ def test_example_env_names_the_owners_accounts():
 @pytest.mark.parametrize("network,parent,frogg,msg", [
     ("mainnet", PARENT, FROGG, "testnet"),
     ("testnet", "sylversurferr.near", "frogg.sylversurferr.near", ".testnet"),
-    ("testnet", PARENT, "frogg.luca_m.testnet", "frogg.sylversurferr.testnet"),
-    ("testnet", PARENT, "pet.frogg.sylversurferr.testnet", "frogg.sylversurferr.testnet"),
+    ("testnet", PARENT, "frogg.luca_m.testnet", "frogg.pixlz-petz.testnet"),
+    ("testnet", PARENT, "pet.frogg.pixlz-petz.testnet", "frogg.pixlz-petz.testnet"),
     ("testnet", "Sylversurferr.testnet", "frogg.Sylversurferr.testnet", "valid NEAR account"),
     ("testnet", "", FROGG, "valid NEAR account"),
 ])
