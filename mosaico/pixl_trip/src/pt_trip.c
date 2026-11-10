@@ -47,7 +47,23 @@ void pt_format_date(int64_t unix_ms, char out[25])
     int y;
     unsigned m, d;
     civil_from_days(days, &y, &m, &d);
-    snprintf(out, 25, "%04d-%02u-%02uT%02d:%02d:%02d.%03dZ", y, m, d, sod / 3600, sod / 60 % 60, sod % 60, ms);
+    // Written digit by digit: always exactly 24 characters, whatever the compiler can prove.
+    if (y < 0) y = 0;
+    if (y > 9999) y = 9999;
+    unsigned fields[7] = {(unsigned)y, m, d, (unsigned)(sod / 3600), (unsigned)(sod / 60 % 60), (unsigned)(sod % 60),
+                          (unsigned)ms};
+    static const unsigned widths[7] = {4, 2, 2, 2, 2, 2, 3};
+    static const char seps[7] = {'-', '-', 'T', ':', ':', '.', 'Z'};
+    int o = 0;
+    for (int i = 0; i < 7; i++) {
+        for (int k = (int)widths[i] - 1; k >= 0; k--) {
+            unsigned v = fields[i];
+            for (int j = 0; j < k; j++) v /= 10;
+            out[o++] = (char)('0' + v % 10);
+        }
+        out[o++] = seps[i];
+    }
+    out[o] = 0;
 }
 
 // Swift encodes UUIDs in upper case.
