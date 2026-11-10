@@ -17,8 +17,10 @@ usage: PixlzSend send|dock [--host H] [--port P]
        PixlzSend fixtures <dir>
 """
 
-let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("PixlzDock", isDirectory: true)
+/// PIXLZ_DOCK_DIR overrides it (tests).
+let supportDir = ProcessInfo.processInfo.environment["PIXLZ_DOCK_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+    ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("PixlzDock", isDirectory: true)
 
 func thisMac() throws -> DeviceRef {
     let env = ProcessInfo.processInfo.environment

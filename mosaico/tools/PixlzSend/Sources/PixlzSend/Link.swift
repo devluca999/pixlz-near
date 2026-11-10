@@ -56,6 +56,7 @@ final class Link: @unchecked Sendable {
 
     /// Feeds one input to the node and performs its outputs in order (a save before any later send).
     func feed(_ input: TravelNode.Input) {
+        reloadIfIdle()
         for output in node.handle(input, at: Date()) {
             switch output {
             case .saved(let record):
@@ -71,6 +72,13 @@ final class Link: @unchecked Sendable {
             }
         }
         armTimer()
+    }
+
+    /// Another PixlzSend process (a `send` while `dock` runs) may have changed the store.
+    /// Between trips the file is the truth; mid-trip the node's own state is.
+    private func reloadIfIdle() {
+        guard !node.inTrip, let record = try? store.load(), record != node.record else { return }
+        node = TravelNode(me: node.me, record: record)
     }
 
     // MARK: Wire
