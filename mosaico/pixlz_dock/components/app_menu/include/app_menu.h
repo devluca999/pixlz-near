@@ -23,6 +23,7 @@ typedef enum {
     APP_MENU_EXIT,     /**< "Leave Pixlz?": red stay, green leave (the swap's buttons). */
     APP_MENU_AGENTS,   /**< Claude Code sessions, four rows a screen; swipe for more. */
     APP_MENU_AGENT,    /**< One waiting request: red Deny, green Allow (greyed until pairing). */
+    APP_MENU_PAIR,     /**< A Mac's pairing code: red no, green "same code" (D20). */
 } app_menu_mode_t;
 
 typedef enum {
@@ -30,7 +31,7 @@ typedef enum {
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
-    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS,
+    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS, APP_MENU_BUBBLE_UNPAIR,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -47,6 +48,9 @@ typedef enum {
     APP_MENU_ACTION_BRING,      /**< No Mac answers: bring it back from the copy kept here. */
     APP_MENU_ACTION_EXIT,       /**< Leave the app for Vibe Mode (the Pixl goes home first). */
     APP_MENU_ACTION_AGENT_DENY, /**< arg: the agents row whose request to deny */
+    APP_MENU_ACTION_AGENT_ALLOW,/**< arg: the agents row (only when paired with that Mac) */
+    APP_MENU_ACTION_PAIR,       /**< arg: 1 the codes match, 0 no */
+    APP_MENU_ACTION_UNPAIR,
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -68,6 +72,8 @@ typedef struct {
     int agents_count;   /**< Sessions the Mac sent (Agents list rows). */
     uint32_t agents_waiting; /**< Bit i: row i waits on you. */
     bool agents_connected;   /**< A Mac is connected (Agents is greyed without one). */
+    bool agents_paired;      /**< Paired with the Mac whose sessions these are: Allow works. */
+    bool paired;             /**< Paired with a Mac: Unpair on page 3. */
 } app_menu_context_t;
 
 typedef struct {
@@ -108,6 +114,10 @@ bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed
 void app_menu_update(app_menu_handle_t menu);
 /** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
+/** A Mac asks to pair: show its code over anything else, with red and green. */
+void app_menu_open_pair(app_menu_handle_t menu);
+/** New pairing state (paired now, or not) while the menu is open. */
+void app_menu_set_paired(app_menu_handle_t menu, bool paired, bool agents_paired);
 /** New sessions while the Agents list may be open; a request answered elsewhere closes. */
 void app_menu_set_agents(app_menu_handle_t menu, int count, uint32_t waiting);
 /** New feed counts while a reader may be open (the Mac sends again). */

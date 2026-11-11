@@ -4,6 +4,7 @@
 #define _DARWIN_C_SOURCE 1
 #define _DEFAULT_SOURCE 1
 #include <stdarg.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +145,36 @@ bool dock_platform_battery(int *percent, bool *on_battery)
     *percent = atoi(env);
     *on_battery = true;
     return true;
+}
+
+bool dock_platform_load_pair(pt_pair_record_t *rec)
+{
+    char path[620];
+    record_path(path, sizeof path - 6);
+    strcat(path, ".pair");
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return false;
+    }
+    bool ok = fread(rec, sizeof *rec, 1, f) == 1 && rec->paired;
+    fclose(f);
+    return ok;
+}
+
+bool dock_platform_save_pair(const pt_pair_record_t *rec)
+{
+    char path[620];
+    record_path(path, sizeof path - 6);
+    strcat(path, ".pair");
+    if (!rec->paired) {
+        return remove(path) == 0 || errno == ENOENT;
+    }
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return false;
+    }
+    bool ok = fwrite(rec, sizeof *rec, 1, f) == 1;
+    return fclose(f) == 0 && ok;
 }
 
 void dock_platform_load_look(char *out, size_t cap)

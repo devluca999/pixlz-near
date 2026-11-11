@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../../pixl_trip/include/pixl_trip/pt_trip.h"
+#include "../../pixl_trip/include/pixl_trip/pt_pair.h"
 
 #define APP_DOCK_PORT 47860
 
@@ -32,6 +33,10 @@ bool dock_platform_battery(int *percent, bool *on_battery);
 /** True once after the maintenance "forget" request arrived (ESP-Iris RPC over USB, device only).
  * The dock honours it only when it doesn't hold a Pixl. */
 bool dock_platform_take_forget_request(void);
+/** The paired Mac (D20): one blob. Load false = not paired. Save a record with paired=false
+ * to unpair. The key never leaves the device's own NVS. */
+bool dock_platform_load_pair(pt_pair_record_t *rec);
+bool dock_platform_save_pair(const pt_pair_record_t *rec);
 /** Leave the app for Vibe Mode (the device restarts into it). False if it can't. */
 bool dock_platform_enter_vibe_mode(void);
 /** A small device setting (the Pixl swap's look): "" when unset. */

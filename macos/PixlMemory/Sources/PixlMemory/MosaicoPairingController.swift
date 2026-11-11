@@ -1,0 +1,163 @@
+import AppKit
+import PixlMemoryKit
+import PixlTravel
+import PixlzCore
+import Security
+
+/// Pairing with a Mosaico (D20), from the Agents list: compare the 6-digit code on both screens.
+/// Paired devices (key and the last decision number) live in the Keychain. A paired Mosaico can
+/// Allow, with a decision signed over exactly what it showed.
+@MainActor
+final class MosaicoPairingController {
+    unowned let travel: TravelController
+    private var pairing: MosaicoPairing?
+    private var pairingPeer: DeviceRef?
+
+    init(travel: TravelController) { self.travel = travel }
+
+    var app: AppController { travel.app }
+
+    // MARK: the Agents list
+
+    func rows() -> [ListMenuView.Row] {
+        let wanted = MosaicoFeed.devices()
+        return travel.peers.filter { wanted.contains($0.deviceId) }.map { p in
+            Self.load(p.deviceId) != nil
+                ? ListMenuView.Row(id: "unpair.\(p.deviceId)", title: "Unpair \(p.deviceName)", icon: nil, trailing: "Allow off")
+                : ListMenuView.Row(id: "pair.\(p.deviceId)", title: "Pair \(p.deviceName) so it can Allow", icon: "send")
+        }
+    }
+
+    func chose(_ id: String) {
+        if id.hasPrefix("pair."), let p = travel.peers.first(where: { $0.deviceId == String(id.dropFirst(5)) }) {
+            app.menu.closeList()
+            start(with: p)
+        } else if id.hasPrefix("unpair.") {
+            let deviceId = String(id.dropFirst(7))
+            Self.delete(deviceId)
+            app.menu.closeList()
+            app.notify(.agents("Unpaired. That Mosaico can only Deny now."))
+            Debug.log("pairing: unpaired \(deviceId)")
+        }
+    }
+
+    // MARK: the exchange
+
+    func start(with peer: DeviceRef) {
+        let p = MosaicoPairing(me: travel.me, peer: peer)
+        pairing = p
+        pairingPeer = peer
+        travel.runner?.transport.sendFrame(p.start(), to: peer)
+        Debug.log("pairing: started with \(peer.deviceName)")
+        app.notify(.agents("Pairing with \(peer.deviceName)… look at its screen."))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            guard let self, self.pairingPeer == peer, self.pairing?.finished == false else { return }
+            self.pairing = nil
+            self.pairingPeer = nil
+            self.app.menu.closeList()
+            self.app.notify(.agentsError("Pairing timed out."))
+        }
+    }
+
+    /// A "pair" frame from a device. True when it was one.
+    func frame(_ body: Data, from peer: DeviceRef) -> Bool {
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any], o["pair"] != nil else { return false }
+        guard var p = pairing, pairingPeer?.deviceId == peer.deviceId else { return true }
+        let events = p.receive(body)
+        pairing = p
+        handle(events, peer: peer)
+        return true
+    }
+
+    private func answer(_ yes: Bool) {
+        guard var p = pairing, let peer = pairingPeer else { return }
+        let events = p.user(yes)
+        pairing = p
+        handle(events, peer: peer)
+        if yes, !p.finished { app.notify(.agents("Now tap green on \(peer.deviceName).")) }
+    }
+
+    private func handle(_ events: [MosaicoPairing.Event], peer: DeviceRef) {
+        for e in events {
+            switch e {
+            case .send(let body):
+                travel.runner?.transport.sendFrame(body, to: peer)
+            case .showCode(let code):
+                let spaced = String(code.prefix(3)) + " " + String(code.suffix(3))
+                Debug.log("pairing: code shown")
+                app.menu.showList([ListMenuView.Row(id: "q", title: "Does \(peer.deviceName) show \(spaced)?", icon: "info", enabled: false),
+                                   ListMenuView.Row(id: "yes", title: "Yes, the same code", icon: "check", trailing: "↵"),
+                                   ListMenuView.Row(id: "no", title: "No, cancel", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
+                    guard row.id != "q" else { return }
+                    self?.app.menu.closeList()
+                    self?.answer(row.id == "yes")
+                }
+            case .paired(let key):
+                Self.save(peer.deviceId, Paired(name: peer.deviceName, key: key, last: 0))
+                pairing = nil
+                pairingPeer = nil
+                Debug.log("pairing: paired with \(peer.deviceName)")
+                app.notify(.agents("Paired with \(peer.deviceName). It can Allow your agents now."))
+                travel.pushAgents()
+            case .cancelled(let why):
+                pairing = nil
+                pairingPeer = nil
+                app.menu.closeList()
+                Debug.log("pairing: cancelled (\(why))")
+                app.notify(.agentsError(why))
+            }
+        }
+    }
+
+    // MARK: decisions
+
+    /// A signed decision from a paired device: verified against what this Mac sent for that
+    /// request. Returns the decision, or nil (unsigned, not paired, or it doesn't check out).
+    func verified(_ body: Data, from peer: DeviceRef) -> (id: String, behavior: String)? {
+        guard var paired = Self.load(peer.deviceId),
+              let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let d = o["agentDecision"] as? [String: Any], d["tag"] != nil, let id = d["id"] as? String,
+              let req = app.agents.hub.requests.first(where: { $0.id == id }) else { return nil }
+        let summary = MosaicoFeed.ascii(req.summary, 60), detail = MosaicoFeed.ascii(req.detail, 140)
+        guard let ok = MosaicoPairing.verifyDecision(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last,
+                                                     summary: summary, detail: detail) else {
+            Debug.log("pairing: a decision from \(peer.deviceName) didn't verify")
+            return nil
+        }
+        paired.last = ok.n
+        Self.save(peer.deviceId, paired)
+        return (ok.id, ok.behavior)
+    }
+
+    // MARK: Keychain
+
+    struct Paired: Codable { var name: String; var key: Data; var last: UInt32 }
+    static let service = "dev.pixlz.PixlMemory.pairing"
+
+    static func load(_ deviceId: String) -> Paired? {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: deviceId, kSecReturnData as String: true]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
+        return try? JSONDecoder().decode(Paired.self, from: data)
+    }
+
+    static func save(_ deviceId: String, _ p: Paired) {
+        guard let data = try? JSONEncoder().encode(p) else { return }
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: deviceId]
+        if SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
+            var add = q
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let s = SecItemAdd(add as CFDictionary, nil)
+            if s != errSecSuccess { Debug.log("pairing: keychain add failed \(s)") }
+        }
+    }
+
+    static func delete(_ deviceId: String) {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: deviceId]
+        SecItemDelete(q as CFDictionary)
+    }
+}

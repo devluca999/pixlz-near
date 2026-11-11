@@ -233,3 +233,14 @@ A Pixl can watch your coding agents. **Agent mode** is a front-page entry in the
 - **Voice later:** the Mosaico has a microphone (ES8311). Dictation goes to the Mac, which transcribes it on the Mac and starts or resumes a session it runs itself (headless `claude -p --resume`), since no supported API types into a running terminal session.
 - **Installing the hooks** writes to the user's global Claude Code settings (`~/.claude/settings.json`). Pixlz asks before doing it and can remove them again.
 - Order: Mac (sessions, approvals, alerts) → Mosaico (list, alerts, Deny) → pairing (then Allow on the Mosaico) → voice.
+
+## D20. Pairing compares codes; a paired Mosaico can Allow (2026-11-11)
+
+Replaces the typed-code TLS-PSK plan for the Mac ↔ Mosaico link (open question 7, D9) with **numeric comparison**, as Bluetooth does it:
+
+- The Mac commits to its X25519 key (a hash), the Mosaico sends its key, the Mac reveals its own. Both derive the same key (HKDF) and the same 6-digit code, and the user confirms on **both** screens that the codes match. Because of the commitment, an attacker in the middle gets one chance in a million per attempt, and the code is no secret, so there's nothing to guess offline.
+- Only standard parts: X25519, SHA-256, HMAC, HKDF (CryptoKit on the Mac; a small dependency-free C version on the Mosaico, checked against the RFC vectors and against CryptoKit).
+- **What pairing buys now:** Allow from the Mosaico (D19). A decision is signed with the paired key over the request id, a number that only goes up (saved before sending, so it never repeats), and a hash of the summary and command the Mosaico showed. The Mac checks all three against what it sent, so a fake list on the Wi-Fi can't get you to approve something else. Unsigned Deny still works from any feed device.
+- The link itself still isn't encrypted (the feed and the sessions list travel in the clear on the local network). Encrypting frames with the paired key is the next step before the iPhone (M3).
+- Pair and Unpair from the Agents list on the Mac; Unpair on the Mosaico's page 3. The key lives in the Mac's Keychain and the Mosaico's own NVS.
+

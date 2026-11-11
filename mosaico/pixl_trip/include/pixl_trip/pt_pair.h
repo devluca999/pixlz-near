@@ -25,7 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "pixl_trip/pt_trip.h"
+#include "pt_trip.h"
 
 #ifdef __cplusplus
 extern "C" {

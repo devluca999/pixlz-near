@@ -140,6 +140,9 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
     } else if (m->mode == APP_MENU_PAGE_3) {
         bubbles[0] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[0] = c->has_pet;
         bubbles[1] = APP_MENU_BUBBLE_EXIT, enabled[1] = true;
+        if (c->paired) {
+            bubbles[2] = APP_MENU_BUBBLE_UNPAIR, enabled[2] = true;
+        }
         bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
     }
 }
@@ -189,6 +192,7 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_AGENTS: show(m, APP_MENU_AGENTS); break;
     case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
     case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
+    case APP_MENU_BUBBLE_UNPAIR: act(m, APP_MENU_ACTION_UNPAIR, 0); break;
     case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
     case APP_MENU_BUBBLE_MEMORY: show(m, APP_MENU_MEMORY); break;
     case APP_MENU_BUBBLE_SWAP:
@@ -328,8 +332,8 @@ static void agent_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool presse
 {
     if (pressed && !was_down) {
         m->pressed = (int8_t)button_at(m, x, y);
-        if (m->pressed > 0) {
-            m->pressed = 0;   /* Allow can't be pressed here yet */
+        if (m->pressed > 0 && !m->context.agents_paired) {
+            m->pressed = 0;   /* Allow needs pairing with that Mac (D20) */
         }
         return;
     }
@@ -341,8 +345,8 @@ static void agent_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool presse
     }
     int8_t button = m->pressed;
     m->pressed = 0;
-    if (button < 0 && button_at(m, x, y) == button) {
-        act(m, APP_MENU_ACTION_AGENT_DENY, m->agent);
+    if (button && button_at(m, x, y) == button) {
+        act(m, button < 0 ? APP_MENU_ACTION_AGENT_DENY : APP_MENU_ACTION_AGENT_ALLOW, m->agent);
         return;
     }
     int32_t dx = x - m->down_x, dy = y - m->down_y;
@@ -350,6 +354,26 @@ static void agent_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool presse
         int first = m->agent_first;
         show(m, APP_MENU_AGENTS);
         m->agent_first = first;
+    }
+}
+
+/* The pairing code: red says no, green says the codes match. Nothing else. */
+static void pair_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    if (pressed && !was_down) {
+        m->pressed = (int8_t)button_at(m, x, y);
+        return;
+    }
+    if (pressed) {
+        if (m->pressed && button_at(m, x, y) != m->pressed) {
+            m->pressed = 0;
+        }
+        return;
+    }
+    int8_t button = m->pressed;
+    m->pressed = 0;
+    if (button && button_at(m, x, y) == button) {
+        act(m, APP_MENU_ACTION_PAIR, button > 0);
     }
 }
 
@@ -397,6 +421,8 @@ bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
         swap_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_EXIT) {
         exit_pointer(m, x, y, pressed, was_down);
+    } else if (m->mode == APP_MENU_PAIR) {
+        pair_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_AGENTS) {
         agents_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_AGENT) {
@@ -423,6 +449,9 @@ void app_menu_update(app_menu_handle_t m)
         return;
     }
     uint32_t idle = m->tick - m->last_touch;
+    if (m->mode == APP_MENU_PAIR) {
+        return;   /* stays until answered, or until the dock says the pairing ended */
+    }
     const bool long_open = m->mode == APP_MENU_SWAP || reading(m) || m->mode == APP_MENU_AGENTS || m->mode == APP_MENU_AGENT;
     if (!m->down && idle >= (long_open ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
         app_menu_close(m);   /* nothing static stays on the AMOLED (SPEC §12.1) */
@@ -488,6 +517,21 @@ void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
     m->scroll_max = content_px > view_px ? content_px - view_px : 0;
     if (m->scroll > (float)m->scroll_max) {
         m->scroll = (float)m->scroll_max;
+    }
+}
+
+void app_menu_open_pair(app_menu_handle_t m)
+{
+    if (m) {
+        show(m, APP_MENU_PAIR);
+    }
+}
+
+void app_menu_set_paired(app_menu_handle_t m, bool paired, bool agents_paired)
+{
+    if (m) {
+        m->context.paired = paired;
+        m->context.agents_paired = agents_paired;
     }
 }
 

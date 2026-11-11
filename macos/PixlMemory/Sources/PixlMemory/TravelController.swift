@@ -84,18 +84,27 @@ final class TravelController {
     /// A frame from a device that isn't a trip message: a Mosaico's answer to a request.
     /// Deny only: Allow from the Mosaico waits for pairing (D19), since the link isn't secured.
     func frame(_ body: Data, from peer: DeviceRef) {
+        if pairingController.frame(body, from: peer) { return }
         guard let d = MosaicoFeed.agentDecision(body) else { return }
         guard MosaicoFeed.devices().contains(peer.deviceId) else {
             Debug.log("travel: agent decision from \(peer.deviceName) ignored (not a feed device)")
             return
         }
+        // Signed by a paired device (D20): Allow or Deny, over what it showed.
+        if let v = pairingController.verified(body, from: peer) {
+            Debug.log("travel: \(peer.deviceName) \(v.behavior == "allow" ? "allowed" : "denied") \(v.id) (signed)")
+            app.agents.decide(v.id, v.behavior == "allow" ? .allow : .deny)
+            return
+        }
         guard d.behavior == "deny" else {
-            Debug.log("travel: \(d.behavior) from \(peer.deviceName) refused: Allow works on the Mac until pairing")
+            Debug.log("travel: \(d.behavior) from \(peer.deviceName) refused: Allow needs a paired device and a valid signature")
             return
         }
         Debug.log("travel: \(peer.deviceName) denied \(d.id)")
         app.agents.decide(d.id, .deny)
     }
+
+    lazy var pairingController = MosaicoPairingController(travel: self)
 
     var me: DeviceRef { ThisDevice.ref() }
 
@@ -128,6 +137,8 @@ final class TravelController {
         }
         r.transport.onFrame = { [weak self] body, peer in self?.frame(body, from: peer) }
         app.agents.onHubChange = { [weak self] in self?.scheduleAgentsPush() }
+        app.agents.extraRows = { [weak self] in self?.pairingController.rows() ?? [] }
+        app.agents.onExtraRow = { [weak self] id in self?.pairingController.chose(id) }
         r.onAsk = { [weak self] peer, name in self?.ask(peer: peer, name: name) }
         r.onExit = { [weak self] to in self?.leave(to: to) }
         r.onEntrance = { [weak self] state in self?.arrive(state) }

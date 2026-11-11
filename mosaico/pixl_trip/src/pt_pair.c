@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "pixl_trip/pt_pair.h"
+#include "../include/pixl_trip/pt_pair.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#include "pixl_trip/pt_crypto.h"
-#include "pixl_trip/pt_json.h"
-#include "pixl_trip/pt_sha256.h"
+#include "../include/pixl_trip/pt_crypto.h"
+#include "../include/pixl_trip/pt_json.h"
+#include "../include/pixl_trip/pt_sha256.h"
 
 static void reset(pt_pair_t *p)
 {

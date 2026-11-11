@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // X25519 after TweetNaCl's crypto_scalarmult (public domain): 16 limbs of 16 bits, constant
 // time ladder. HMAC and HKDF over pt_sha256.
-#include "pixl_trip/pt_crypto.h"
+#include "../include/pixl_trip/pt_crypto.h"
 
 #include <string.h>
 
-#include "pixl_trip/pt_sha256.h"
+#include "../include/pixl_trip/pt_sha256.h"
 
 typedef int64_t gf[16];
 

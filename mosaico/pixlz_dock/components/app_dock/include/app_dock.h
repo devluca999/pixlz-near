@@ -15,6 +15,9 @@ typedef enum {
     APP_DOCK_EVENT_ARRIVED = 1,  /**< The Pixl is owned here now: play the entrance. */
     APP_DOCK_EVENT_LEFT,         /**< Committed: play the exit. */
     APP_DOCK_EVENT_SHRUG,        /**< The trip didn't happen; `reason` says why. */
+    APP_DOCK_EVENT_PAIR_CODE,    /**< A Mac wants to pair: show `reason` (6 digits) and ask. */
+    APP_DOCK_EVENT_PAIRED,       /**< Paired; `reason` is the Mac's name (cut to fit). */
+    APP_DOCK_EVENT_PAIR_ENDED,   /**< The pairing stopped without pairing. */
 } app_dock_event_kind_t;
 
 typedef struct {
@@ -34,6 +37,9 @@ typedef struct {
     bool can_call;       /**< It knows a Pixl that's away, and a Mac is connected to ask. */
     bool can_bring;      /**< Away, no Mac connected, and a safety copy here (app_dock_bring). */
     char away_on[96];    /**< Where the Pixl is when it's away ("" otherwise). */
+    bool paired;         /**< Paired with a Mac (D20): Allow works here for that Mac's agents. */
+    bool agents_paired;  /**< The agents list came from the paired Mac. */
+    char paired_with[96];
 } app_dock_status_t;
 
 /** What the Mac shows on the Mosaico (SPEC §12.1: results only, no AI here): its latest Ask
@@ -92,6 +98,13 @@ const app_dock_agents_t *app_dock_agents(app_dock_handle_t dock);
 /** Deny a waiting request on the Mac. False when no Mac is connected to tell. Allow isn't
  * offered here until pairing (D19). */
 bool app_dock_agent_deny(app_dock_handle_t dock, const char *req);
+/** Answer a waiting request: signed with the pairing key when paired with the Mac that sent the
+ * list (Allow needs that); otherwise only Deny, unsigned. */
+bool app_dock_agent_decide(app_dock_handle_t dock, int index, bool allow);
+/** The user's answer to the pairing code on screen. */
+void app_dock_pair_answer(app_dock_handle_t dock, bool accept);
+/** Forget the paired Mac (Allow turns off here). */
+void app_dock_unpair(app_dock_handle_t dock);
 /** Lock or unlock the Pixl here; saved at once. False if nothing changed. */
 bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
 /** The species ids this device can draw (the strings must outlive the dock). */

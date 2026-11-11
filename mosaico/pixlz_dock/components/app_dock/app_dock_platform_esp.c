@@ -396,6 +396,55 @@ bool dock_platform_battery(int *percent, bool *on_battery)
 
 #define LOOK_KEY "look"
 
+#define PAIR_KEY "pair"
+#define PAIR_MAGIC 0x50584C50u /* "PXLP" */
+typedef struct {
+    uint32_t magic;
+    pt_pair_record_t rec;
+} pair_blob_t;
+static pair_blob_t s_pair_blob;
+
+bool dock_platform_load_pair(pt_pair_record_t *rec)
+{
+    nvs_handle_t h;
+    if (nvs_open(STORE_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
+        return false;
+    }
+    size_t len = sizeof s_pair_blob;
+    esp_err_t err = nvs_get_blob(h, PAIR_KEY, &s_pair_blob, &len);
+    nvs_close(h);
+    if (err != ESP_OK || len != sizeof s_pair_blob || s_pair_blob.magic != PAIR_MAGIC || !s_pair_blob.rec.paired) {
+        return false;
+    }
+    *rec = s_pair_blob.rec;
+    rec->mac_id[PT_ID_MAX - 1] = rec->mac_name[PT_NAME_MAX - 1] = 0;
+    return true;
+}
+
+bool dock_platform_save_pair(const pt_pair_record_t *rec)
+{
+    if (!s_store_ok) {
+        return false;
+    }
+    nvs_handle_t h;
+    if (nvs_open(STORE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        return false;
+    }
+    bool ok;
+    if (rec->paired) {
+        s_pair_blob.magic = PAIR_MAGIC;
+        s_pair_blob.rec = *rec;
+        ok = nvs_set_blob(h, PAIR_KEY, &s_pair_blob, sizeof s_pair_blob) == ESP_OK;
+        memset(&s_pair_blob, 0, sizeof s_pair_blob);
+    } else {
+        esp_err_t err = nvs_erase_key(h, PAIR_KEY);
+        ok = err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND;
+    }
+    ok = ok && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
 void dock_platform_load_look(char *out, size_t cap)
 {
     nvs_handle_t h;

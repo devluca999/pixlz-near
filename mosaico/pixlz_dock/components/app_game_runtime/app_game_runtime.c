@@ -48,6 +48,7 @@ typedef struct {
     uint32_t agents_version;
     uint32_t next_alert;      /* Agent alerts: when to call again (0 = at once) */
     char banner[64];          /* a line across the top ("pixlz needs you") */
+    char pair_code[8];        /* a Mac's pairing code while it's asked (D20) */
     uint32_t banner_until;
     app_dock_event_t events[MAX_EVENTS];
 } host_state_t;
@@ -206,8 +207,10 @@ static void open_menu(host_state_t *state)
         d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
         d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT, d.can_call && !d.in_trip,
         feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
-        d.can_bring && !here, 0, 0, d.macs > 0,
+        d.can_bring && !here, 0, 0, d.macs > 0, false, false,
     };
+    ctx.agents_paired = d.agents_paired;
+    ctx.paired = d.paired;
     const app_dock_agents_t *ag = app_dock_agents(state->dock);
     if (ag) {
         ctx.agents_count = ag->count;
@@ -216,6 +219,12 @@ static void open_menu(host_state_t *state)
         }
     }
     app_menu_open(state->menu, &ctx);
+}
+
+static void say_banner(host_state_t *state, const char *text)
+{
+    snprintf(state->banner, sizeof state->banner, "%s", text);
+    state->banner_until = app_game_read(state->game).tick + 4 * 30;
 }
 
 static void apply_menu(host_state_t *state, app_menu_action_t a)
@@ -228,16 +237,24 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
     case APP_MENU_ACTION_TRICK: app_game_trick(state->game); break;
     case APP_MENU_ACTION_CALL: (void)app_dock_call(state->dock); break;
     case APP_MENU_ACTION_BRING: (void)app_dock_bring(state->dock); break;
-    case APP_MENU_ACTION_AGENT_DENY: {
+    case APP_MENU_ACTION_AGENT_DENY:
+    case APP_MENU_ACTION_AGENT_ALLOW: {
+        const bool allow = a.kind == APP_MENU_ACTION_AGENT_ALLOW;
         const app_dock_agents_t *ag = app_dock_agents(state->dock);
-        const uint32_t tick = app_game_read(state->game).tick;
         if (ag && a.arg >= 0 && a.arg < ag->count && ag->items[a.arg].req[0]) {
-            const bool sent = ag->items[a.arg].answerable && app_dock_agent_deny(state->dock, ag->items[a.arg].req);
-            snprintf(state->banner, sizeof state->banner, "%s", sent ? "Denied" : "Answer it in the terminal");
-            state->banner_until = tick + 3 * 30;
+            const bool sent = ag->items[a.arg].answerable && app_dock_agent_decide(state->dock, a.arg, allow);
+            say_banner(state, sent ? (allow ? "Allowed" : "Denied") : "Answer it in the terminal");
         }
         break;
     }
+    case APP_MENU_ACTION_PAIR:
+        app_dock_pair_answer(state->dock, a.arg != 0);
+        say_banner(state, a.arg ? "Now confirm on your Mac" : "Pairing cancelled");
+        break;
+    case APP_MENU_ACTION_UNPAIR:
+        app_dock_unpair(state->dock);
+        say_banner(state, "Unpaired. Allow is off here.");
+        break;
     case APP_MENU_ACTION_EXIT: {
         /* With a Mac to go to, the Pixl hops home first, so it isn't left on a device that
          * stops running Pixlz; locked, it stays. Leave when the trip ends, or after 8 s. */
@@ -331,6 +348,10 @@ static void update(void *value)
         app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
     }
     agents_update(state, tick);
+    {
+        const app_dock_status_t ds = app_dock_status(state->dock);
+        app_menu_set_paired(state->menu, ds.paired, ds.agents_paired);
+    }
     int n = app_dock_poll(state->dock, state->events, MAX_EVENTS);
     for (int i = 0; i < n; i++) {
         switch (state->events[i].kind) {
@@ -354,6 +375,26 @@ static void update(void *value)
             if (state->exit_tick) {
                 state->exit_tick = tick + 45;   /* let him hop off first */
             }
+            break;
+        case APP_DOCK_EVENT_PAIR_CODE:
+            snprintf(state->pair_code, sizeof state->pair_code, "%s", state->events[i].reason);
+            app_menu_open_pair(state->menu);
+            state->last_touch_tick = tick;   /* wake the screen */
+            break;
+        case APP_DOCK_EVENT_PAIRED: {
+            char line[64];
+            snprintf(line, sizeof line, "Paired with %.40s", state->events[i].reason);
+            say_banner(state, line);
+            if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
+                app_menu_close(state->menu);
+            }
+            break;
+        }
+        case APP_DOCK_EVENT_PAIR_ENDED:
+            if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
+                app_menu_close(state->menu);
+            }
+            say_banner(state, "Pairing cancelled");
             break;
         case APP_DOCK_EVENT_SHRUG:
             state->sending = false;
@@ -624,6 +665,7 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_BRING: return "Bring";
     case APP_MENU_BUBBLE_EXIT: return "Exit";
     case APP_MENU_BUBBLE_AGENTS: return "Agents";
+    case APP_MENU_BUBBLE_UNPAIR: return "Unpair";
     default: return "";
     }
 }
@@ -637,6 +679,7 @@ static Color bubble_colour(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_BRING: return shade(110, 180, 245, 100);    /* blue: travel */
     case APP_MENU_BUBBLE_EXIT: return shade(150, 160, 200, 100);     /* slate */
     case APP_MENU_BUBBLE_AGENTS: return shade(255, 176, 60, 100);    /* amber */
+    case APP_MENU_BUBBLE_UNPAIR: return shade(150, 160, 200, 100);   /* slate */
     case APP_MENU_BUBBLE_TRICK: return shade(245, 200, 80, 100);     /* gold */
     case APP_MENU_BUBBLE_SWAP: return shade(185, 150, 240, 100);     /* violet */
     case APP_MENU_BUBBLE_MORE: return shade(120, 200, 190, 100);     /* teal */
@@ -786,14 +829,33 @@ static void draw_agent(const host_state_t *state, const app_menu_snapshot_t *m)
     if (!a->answerable) {
         draw_text_centred("Answer it in the terminal", GAME_WIDTH / 2, m->buttons_y - 90, 1, grey);
     }
-    /* Red Deny; green Allow drawn greyed: it works on the Mac until this device is paired. */
+    /* Red Deny; green Allow, live only when paired with this Mac (D20). */
+    const bool can_allow = app_dock_status(state->dock).agents_paired && a->answerable;
     const int y = m->buttons_y;
     DrawCircle(m->cancel_x, y, (float)m->button_radius + (m->pressed < 0 ? 4.0f : 0.0f),
                a->answerable ? shade(205, 52, 52, 100) : shade(90, 50, 50, 100));
-    DrawCircle(m->confirm_x, y, (float)m->button_radius, shade(50, 70, 55, 100));
+    DrawCircle(m->confirm_x, y, (float)m->button_radius + (m->pressed > 0 ? 4.0f : 0.0f),
+               can_allow ? shade(58, 170, 82, 100) : shade(50, 70, 55, 100));
     draw_text_centred("Deny", m->cancel_x, y - PIXL_FONT_HEIGHT, 2, white);
-    draw_text_centred("Allow", m->confirm_x, y - PIXL_FONT_HEIGHT - 6, 2, grey);
-    draw_text_centred("on your Mac", m->confirm_x, y + 10, 1, grey);
+    if (can_allow) {
+        draw_text_centred("Allow", m->confirm_x, y - PIXL_FONT_HEIGHT, 2, white);
+    } else {
+        draw_text_centred("Allow", m->confirm_x, y - PIXL_FONT_HEIGHT - 6, 2, grey);
+        draw_text_centred("pair first", m->confirm_x, y + 10, 1, grey);
+    }
+}
+
+/* A Mac's pairing code, big, with red (no) and green (same code). */
+static void draw_pair(const host_state_t *state, const app_menu_snapshot_t *m)
+{
+    Color white = shade(240, 240, 235, 100), grey = shade(150, 150, 150, 100);
+    draw_text_centred("Pair with your Mac?", GAME_WIDTH / 2, 50, 3, white);
+    char spaced[8];
+    snprintf(spaced, sizeof spaced, "%.3s %.3s", state->pair_code, state->pair_code + 3);
+    draw_text_centred(spaced, GAME_WIDTH / 2, 140, 7, shade(255, 200, 110, 100));
+    wrap_text("Same code on your Mac? Tap green here, then confirm there. Paired, this Mosaico can Allow your agents.",
+              50, 250, GAME_WIDTH - 100, 1, grey, true);
+    draw_buttons(m);
 }
 
 /* A line across the top (an agent waiting, "Denied"), over everything. */
@@ -987,6 +1049,8 @@ static int render(void *value)
         draw_swap(&m, s.tick);
     } else if (m.mode == APP_MENU_EXIT) {
         draw_exit(state, &m);
+    } else if (m.mode == APP_MENU_PAIR) {
+        draw_pair(state, &m);
     } else if (m.mode == APP_MENU_AGENTS) {
         draw_agents(state, &m);
     } else if (m.mode == APP_MENU_AGENT) {

@@ -14,6 +14,7 @@
 
 #include "../pixl_trip/include/pixl_trip/pt_frame.h"
 #include "../pixl_trip/include/pixl_trip/pt_json.h"
+#include "../pixl_trip/include/pixl_trip/pt_pair.h"
 #include "../pixl_trip/include/pixl_trip/pt_trip.h"
 #include "private/app_dock_platform.h"
 
@@ -51,6 +52,11 @@ struct app_dock {
     app_dock_feed_t feed;
     app_dock_agents_t agents;
     char agents_from[PT_ID_MAX];
+    pt_pair_t pair;
+    pt_pair_record_t paired;
+    pt_pair_out_t pair_out;
+    uint8_t rnd[32];
+    char decision[320];
     uint8_t io[512];
     char hello[HELLO_MAX];
 };
@@ -186,6 +192,9 @@ app_dock_handle_t app_dock_create(void)
     pt_node_init(&d->node, &me, dock_platform_random, NULL);
     if (!dock_platform_load(&d->node.record)) {
         d->node.record.kind = PT_REC_NONE;
+    }
+    if (!dock_platform_load_pair(&d->paired)) {
+        memset(&d->paired, 0, sizeof d->paired);
     }
     d->listen_fd = -1;
     d->battery_percent = -1;
@@ -367,6 +376,39 @@ static bool handle_agents(app_dock_handle_t d, const conn_t *c, const char *body
     return true;
 }
 
+/* What pt_pair asked for: a reply, the code on screen, saving, or an end. */
+static void apply_pair(app_dock_handle_t d, conn_t *c, const char *peer_name)
+{
+    pt_pair_out_t *o = &d->pair_out;
+    if (o->reply[0] && c) {
+        (void)enqueue(c, o->reply, strlen(o->reply));
+    }
+    if (o->show_code) {
+        queue_event(d, APP_DOCK_EVENT_PAIR_CODE, d->pair.code);
+    }
+    if (o->paired) {
+        bool saved = dock_platform_save_pair(&d->paired);
+        dock_platform_log("pixlz: paired with %s (%s)", d->paired.mac_name, saved ? "saved" : "NOT saved");
+        queue_event(d, APP_DOCK_EVENT_PAIRED, d->paired.mac_name);
+    }
+    if (o->cancelled) {
+        dock_platform_log("pixlz: pairing with %s ended", peer_name);
+        queue_event(d, APP_DOCK_EVENT_PAIR_ENDED, NULL);
+    }
+}
+
+static bool handle_pair(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
+{
+    dock_platform_random(NULL, d->rnd, sizeof d->rnd);
+    bool used = pt_pair_receive(&d->pair, &d->paired, &d->node.me, &c->peer, body, len, d->rnd,
+                                dock_platform_now_ms(), &d->pair_out);
+    memset(d->rnd, 0, sizeof d->rnd);
+    if (used) {
+        apply_pair(d, c, c->peer.name);
+    }
+    return used;
+}
+
 static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
 {
     if (!c->hello) {
@@ -386,7 +428,7 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             return;
         }
     }
-    if (handle_feed(d, c, body, len) || handle_agents(d, c, body, len)) {
+    if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
@@ -430,6 +472,11 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
         return 0;
     }
     d->node.can_host = dock_platform_clock_ok();
+    if (d->pair.phase != PT_PAIR_IDLE) {
+        pt_pair_t was = d->pair;
+        pt_pair_tick(&d->pair, dock_platform_now_ms(), &d->pair_out);
+        apply_pair(d, conn_for(d, was.peer.id), was.peer.name);
+    }
     if (dock_platform_take_forget_request()) {
         pt_rec_kind_t kind = d->node.record.kind;
         if (kind == PT_REC_AWAY || kind == PT_REC_NONE) {
@@ -573,6 +620,11 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     s.locked = pt_node_locked(&d->node);
     s.can_call = d->node.record.kind == PT_REC_AWAY && s.macs > 0;
     s.can_bring = s.macs == 0 && pt_node_can_reclaim(&d->node);
+    s.paired = d->paired.paired;
+    s.agents_paired = d->paired.paired && strcmp(d->paired.mac_id, d->agents_from) == 0;
+    if (s.paired) {
+        snprintf(s.paired_with, sizeof s.paired_with, "%s", d->paired.mac_name);
+    }
     if (d->node.record.kind == PT_REC_AWAY) {
         snprintf(s.away_on, sizeof s.away_on, "%s", d->node.record.away_name);
     }
@@ -593,6 +645,46 @@ const app_dock_agents_t *app_dock_agents(app_dock_handle_t d)
         d->agents.version++;
     }
     return &d->agents;
+}
+
+bool app_dock_agent_decide(app_dock_handle_t d, int index, bool allow)
+{
+    if (!d || index < 0 || index >= d->agents.count || !d->agents.items[index].req[0]) {
+        return false;
+    }
+    const app_dock_agent_t *a = &d->agents.items[index];
+    conn_t *c = conn_for(d, d->agents_from);
+    if (d->paired.paired && c && strcmp(d->paired.mac_id, d->agents_from) == 0) {
+        size_t n = pt_pair_sign_decision(&d->paired, &d->node.me, a->req, allow ? "allow" : "deny", a->summary,
+                                         a->detail, d->decision, sizeof d->decision);
+        /* The number must never repeat, even across a restart: save before sending. */
+        if (!n || !dock_platform_save_pair(&d->paired) || !enqueue(c, d->decision, n)) {
+            return false;
+        }
+        dock_platform_log("pixlz: %s %s on %s (signed)", allow ? "allowed" : "denied", a->req, c->peer.name);
+        return true;
+    }
+    return !allow && app_dock_agent_deny(d, a->req);
+}
+
+void app_dock_pair_answer(app_dock_handle_t d, bool accept)
+{
+    if (!d) {
+        return;
+    }
+    pt_pair_t was = d->pair;
+    pt_pair_user(&d->pair, accept, &d->pair_out);
+    apply_pair(d, conn_for(d, was.peer.id), was.peer.name);
+}
+
+void app_dock_unpair(app_dock_handle_t d)
+{
+    if (!d || !d->paired.paired) {
+        return;
+    }
+    dock_platform_log("pixlz: unpaired from %s", d->paired.mac_name);
+    memset(&d->paired, 0, sizeof d->paired);
+    (void)dock_platform_save_pair(&d->paired);
 }
 
 bool app_dock_agent_deny(app_dock_handle_t d, const char *req)

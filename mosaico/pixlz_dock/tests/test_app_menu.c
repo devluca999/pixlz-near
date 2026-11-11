@@ -24,7 +24,7 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false, 0, 0, true};
+static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false, 0, 0, true, false, false};
 
 static void test_pages(void)
 {
@@ -309,6 +309,39 @@ static void test_agents(void)
     // Tapping above the rows goes back to page 1.
     tap(m, 240, 20);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
+    // Paired with that Mac: Allow works.
+    ctx.agents_paired = true;
+    app_menu_open(m, &ctx);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row);
+    tap(m, s.confirm_x, s.buttons_y);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_ALLOW && a.arg == 0);
+    ctx.agents_paired = false;
+
+    // Pairing: the code screen stays until answered; red is no, green is yes.
+    app_menu_open_pair(m);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAIR);
+    for (int i = 0; i < 60 * 30; i++) app_menu_update(m);
+    tap(m, 240, 240);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAIR && app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
+    tap(m, s.cancel_x, s.buttons_y);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_PAIR && a.arg == 0 && !app_menu_is_open(m));
+    app_menu_open_pair(m);
+    tap(m, s.confirm_x, s.buttons_y);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_PAIR && a.arg == 1);
+    // Paired: Unpair on page 3.
+    ctx.paired = true;
+    app_menu_open(m, &ctx);
+    tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
+    tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3 && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_UNPAIR);
+    tap(m, 240, app_menu_read(m).slots[2].y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_UNPAIR);
+    ctx.paired = false;
+
     // No Mac: Agents is greyed.
     ctx.agents_connected = false;
     app_menu_open(m, &ctx);
