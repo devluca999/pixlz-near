@@ -156,7 +156,9 @@ final class AgentController {
         clients[fd]?.buffer = Data()
         guard let event = HookEvent(json: Data(line)) else { finish(fd, reply: nil); return }
         let had = hub.requests.count
-        if heldStops[event.sessionID] != nil { release(event.sessionID) }   // it moved on without us
+        // It moved on without us (a prompt typed in the terminal, a tool call): let go. A
+        // Notification ("waiting for your input", ~60 s after it finished) isn't moving on.
+        if heldStops[event.sessionID] != nil, event.name != "Notification" { release(event.sessionID) }
         let request = hub.receive(event, at: Date())
         if event.name == "Stop", replyHere {
             releaseSettled()

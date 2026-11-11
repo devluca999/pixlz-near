@@ -161,6 +161,9 @@ import Testing
         #expect(hub.sessions["a"]?.transcriptPath == "/tmp/a.jsonl")
         hub.setReplyOpen("a", true)
         #expect(hub.sessions["a"]?.replyOpen == true)
+        // Claude Code's "waiting for your input" notification ~60 s later doesn't close it.
+        hub.receive(HookEvent(name: "Notification", sessionID: "a", message: "Claude is waiting for your input"), at: t0)
+        #expect(hub.sessions["a"]?.replyOpen == true)
         hub.receive(HookEvent(name: "UserPromptSubmit", sessionID: "a", prompt: "typed in the terminal"), at: t0)
         #expect(hub.sessions["a"]?.replyOpen == false)   // it moved on
     }
