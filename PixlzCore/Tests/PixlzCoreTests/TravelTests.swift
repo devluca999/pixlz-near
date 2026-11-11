@@ -245,6 +245,29 @@ struct TravelSim {
         #expect(fresh.owners == [mac] && !fresh[phone].canReclaim && !fresh[mac].canReclaim)
     }
 
+    /// Two copies after two reclaims (Mac at 11, Mosaico at 13). The Mosaico only asks (it never
+    /// asks back when asked): the Mac must ask back, learn it's older, and leave the screen.
+    @Test func anOlderCopyAsksBackAndGivesWay() throws {
+        var frogg = sampleFrogg()
+        frogg.epoch = 11
+        var node = TravelNode(me: mac, record: .owned(frogg))
+        let status = Envelope(petId: frogg.petId, from: phone.deviceId, to: mac.deviceId, type: .status, epoch: 13, sentAt: tripStart)
+        let out = node.handle(.received(status, from: phone), at: tripStart)
+        let sent = out.compactMap { o -> EnvelopeType? in if case .send(let e, _) = o { return e.type } else { return nil } }
+        #expect(sent == [.statusReply, .status])
+        let reply = Envelope(petId: frogg.petId, from: phone.deviceId, to: mac.deviceId, type: .statusReply, epoch: 13,
+                             payload: Payload(held: .owned, inTrip: false), sentAt: tripStart)
+        let settled = node.handle(.received(reply, from: phone), at: tripStart)
+        #expect(settled.contains(.playExit(to: phone)))
+        guard case .away(_, 13, _, _)? = node.record else { Issue.record("the Mac should have let go"); return }
+        // The newer side, asked by an older one, just answers: no ping-pong.
+        var newer = sampleFrogg()
+        newer.epoch = 13
+        var other = TravelNode(me: phone, record: .owned(newer))
+        let ask = Envelope(petId: newer.petId, from: mac.deviceId, to: phone.deviceId, type: .status, epoch: 11, sentAt: tripStart)
+        #expect(other.handle(.received(ask, from: mac), at: tripStart).count == 1)
+    }
+
     /// SPEC §14: kill either process (or both) between any two messages, and right after any save,
     /// then reconnect. The invariant holds throughout and exactly one device ends up with the Pixl.
     @Test func crashAtEveryStep() {

@@ -197,8 +197,14 @@ public struct TravelNode: Sendable {
                 case .away: held = .away
                 }
             }
-            return [.send(envelope(.statusReply, to: peer, petId: env.petId, epoch: epoch,
-                                   payload: Payload(held: held, inTrip: inTrip), at: now), to: peer)]
+            var out: [Output] = [.send(envelope(.statusReply, to: peer, petId: env.petId, epoch: epoch,
+                                                 payload: Payload(held: held, inTrip: inTrip), at: now), to: peer)]
+            // The asker's copy is newer than ours: ask back, so its answer can settle who has
+            // the Pixl here too (a device that only answers would never tell us).
+            if let r = record, r.petId == env.petId, env.epoch > r.epoch, session == nil {
+                out.append(.send(envelope(.status, to: peer, petId: r.petId, epoch: r.epoch, at: now), to: peer))
+            }
+            return out
 
         case .statusReply:
             return reconcile(env, from: peer, at: now)
@@ -289,7 +295,7 @@ public struct TravelNode: Sendable {
             guard peerWins else { return [] }
             record = .away(petId: s.petId, epoch: peerEpoch, ownerName: peer.deviceName, tombstone: s)
             session = nil
-            return [.saved(record!)]
+            return [.saved(record!), .playExit(to: peer)]   // it's there, not here: leave the screen
         }
     }
 
