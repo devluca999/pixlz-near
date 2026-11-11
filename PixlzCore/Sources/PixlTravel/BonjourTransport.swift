@@ -153,8 +153,14 @@ public final class BonjourTransport: @unchecked Sendable {
     private func start(_ c: NWConnection) {
         c.stateUpdateHandler = { [weak self, weak c] state in
             guard let self, let c else { return }
+            let who = self.inboundPeer[ObjectIdentifier(c)]?.deviceName ?? "\(c.endpoint)"
+            let text = "connection \(who): \(state)"
+            DispatchQueue.main.async { self.onState?(text) }
             if case .failed = state { self.drop(c) }
             if case .cancelled = state { self.drop(c) }
+            // `waiting` (refused, unreachable: the other device restarted) never fails on its own,
+            // and everything sent on it would queue forever: drop it so the next send reconnects.
+            if case .waiting = state { self.drop(c) }
         }
         c.start(queue: queue)
         receive(on: c)
