@@ -140,3 +140,72 @@ struct BonjourTripTests {
         #expect(MosaicoFeed.agentDecision(Data(#"{"feed":{}}"#.utf8)) == nil)
     }
 }
+
+import CryptoKit
+
+@Suite struct PairingTests {
+    static func hexData(_ s: String) -> Data { Data(stride(from: 0, to: s.count, by: 2).map { i in
+        UInt8(s[s.index(s.startIndex, offsetBy: i)..<s.index(s.startIndex, offsetBy: i + 2)], radix: 16)! }) }
+    // RFC 7748 §6.1 keys: Alice is the Mac, Bob the Mosaico. pt_pair tests use the same ones.
+    static let macPriv = hexData("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+    static let devPriv = hexData("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
+    let mac = DeviceRef(deviceId: "MAC-1", deviceName: "Test Mac")
+    let dev = DeviceRef(deviceId: "MOSAICO-1", deviceName: "Mosaico 1")
+
+    /// The Mosaico's side, as pt_pair.c computes it.
+    func device(_ start: Data) throws -> (key: SymmetricKey, code: String, keyFrame: Data, pub: Data) {
+        let o = try #require(try JSONSerialization.jsonObject(with: start) as? [String: Any])
+        let commit = Self.hexData(try #require((o["pair"] as? [String: Any])?["commit"] as? String))
+        let p = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Self.devPriv)
+        let macPub = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Self.macPriv).publicKey
+        let s = try p.sharedSecretFromKeyAgreement(with: macPub)
+        let t = MosaicoPairing.transcript(commit: commit, devicePub: p.publicKey.rawRepresentation, macPub: macPub.rawRepresentation,
+                                          macId: mac.deviceId, deviceId: dev.deviceId)
+        let k = s.hkdfDerivedSymmetricKey(using: SHA256.self, salt: t, sharedInfo: Data("pixlz-key".utf8), outputByteCount: 32)
+        let frame = MosaicoPairing.json(["pair": ["step": "key", "pub": p.publicKey.rawRepresentation.hex]])
+        return (k, MosaicoPairing.code(k), frame, p.publicKey.rawRepresentation)
+    }
+
+    @Test func bothSidesShowTheSameCodeAndPair() throws {
+        var m = MosaicoPairing(me: mac, peer: dev, privateKey: try .init(rawRepresentation: Self.macPriv))
+        let d = try device(m.start())
+        let ev = m.receive(d.keyFrame)
+        #expect(ev.contains(.showCode(d.code)))
+        #expect(d.code == "635989")   // the value pt_pair's test expects too
+        #expect(d.key.withUnsafeBytes { Data($0) }.hex == "1b832b28e81b8ed9aeafb2e9167a45a7dc29d952534c9d23df19d19c065cfa09")
+        #expect(m.user(true).isEmpty)          // waits for the Mosaico's yes
+        let tag = Data(HMAC<SHA256>.authenticationCode(for: Data("mosaico-ok".utf8), using: d.key))
+        let done = m.receive(MosaicoPairing.json(["pair": ["step": "confirm", "tag": tag.hex]]))
+        #expect(done.count == 2)
+        guard case .paired(let key)? = done.last else { Issue.record("not paired"); return }
+        #expect(key == d.key.withUnsafeBytes { Data($0) })
+    }
+
+    @Test func aBadConfirmOrANoCancels() throws {
+        var m = MosaicoPairing(me: mac, peer: dev)
+        _ = m.start()
+        let d = try device(MosaicoPairing(me: mac, peer: dev, privateKey: try .init(rawRepresentation: Self.macPriv)).start())
+        _ = m.receive(d.keyFrame)   // different Mac key: the Mosaico's tag can't match
+        let ev = m.receive(MosaicoPairing.json(["pair": ["step": "confirm", "tag": String(repeating: "0", count: 64)]]))
+        #expect(ev.contains { if case .cancelled = $0 { true } else { false } })
+        var n = MosaicoPairing(me: mac, peer: dev)
+        _ = n.receive(d.keyFrame)
+        #expect(n.user(false).contains { if case .cancelled = $0 { true } else { false } })
+    }
+
+    @Test func decisionsVerifyOnlyWithKeySeenAndANewNumber() throws {
+        let key = Data(repeating: 7, count: 32)
+        let seen = MosaicoPairing.seen(summary: "Run ls", detail: "ls -la")
+        func body(n: UInt32, behavior: String = "allow", seen: String = seen, key k: Data = key) -> Data {
+            let msg = "pixlz-decision-v1|MOSAICO-1|\(n)|req-3|\(behavior)|\(seen)"
+            let tag = Data(HMAC<SHA256>.authenticationCode(for: Data(msg.utf8), using: SymmetricKey(data: k))).hex
+            return MosaicoPairing.json(["agentDecision": ["id": "req-3", "behavior": behavior, "n": n, "seen": seen, "tag": tag]])
+        }
+        let ok = MosaicoPairing.verifyDecision(body(n: 5), deviceId: "MOSAICO-1", key: key, lastCounter: 4, summary: "Run ls", detail: "ls -la")
+        #expect(ok?.id == "req-3" && ok?.behavior == "allow" && ok?.n == 5)
+        #expect(MosaicoPairing.verifyDecision(body(n: 4), deviceId: "MOSAICO-1", key: key, lastCounter: 4, summary: "Run ls", detail: "ls -la") == nil)
+        #expect(MosaicoPairing.verifyDecision(body(n: 5), deviceId: "MOSAICO-1", key: key, lastCounter: 4, summary: "Run ls", detail: "rm -rf /") == nil)
+        #expect(MosaicoPairing.verifyDecision(body(n: 5, key: Data(repeating: 8, count: 32)), deviceId: "MOSAICO-1", key: key, lastCounter: 4, summary: "Run ls", detail: "ls -la") == nil)
+        #expect(MosaicoPairing.verifyDecision(body(n: 5), deviceId: "MOSAICO-2", key: key, lastCounter: 4, summary: "Run ls", detail: "ls -la") == nil)
+    }
+}

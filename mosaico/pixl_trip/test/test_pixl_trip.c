@@ -7,6 +7,8 @@
 #include "pixl_trip/pt_frame.h"
 #include "pixl_trip/pt_json.h"
 #include "pixl_trip/pt_sha256.h"
+#include "pixl_trip/pt_crypto.h"
+#include "pixl_trip/pt_pair.h"
 #include "pixl_trip/pt_trip.h"
 
 static int failures, checks;
@@ -594,8 +596,122 @@ static void test_lock_and_species(void)
     free(m);
 }
 
+static void hexeq(const uint8_t *got, size_t n, const char *want, int line)
+{
+    char h[129];
+    pt_hex(got, n, h);
+    checks++;
+    if (strcmp(h, want) != 0) { failures++; fprintf(stderr, "line %d: got %s\n  want %s\n", line, h, want); }
+}
+#define HEXEQ(got, n, want) hexeq(got, n, want, __LINE__)
+
+// The same keys and ids as PixlzCore's PairingTests: both sides must show 635989.
+static void test_pairing(void)
+{
+    const pt_device_t me = {"MOSAICO-1", "Mosaico 1"}, mac = {"MAC-1", "Test Mac"}, other = {"MAC-2", "Other"};
+    uint8_t priv[32];
+    CHECK(pt_unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb", priv, 32));
+    static pt_pair_t p;
+    static pt_pair_record_t rec;
+    pt_pair_out_t out;
+    memset(&p, 0, sizeof p);
+    memset(&rec, 0, sizeof rec);
+    const char *start = "{\"pair\":{\"step\":\"start\",\"commit\":\"300c9c9603b92a4b39ed3958bf9240114804db4fd373012c0ca47432d63425ae\"},\"from\":\"MAC-1\"}";
+    CHECK(pt_pair_receive(&p, &rec, &me, &mac, start, strlen(start), priv, 1000, &out));
+    CHECK(p.phase == PT_PAIR_KEYED);
+    CHECK(strstr(out.reply, "\"pub\":\"de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f\"") != NULL);
+    // Someone else can't step in.
+    CHECK(pt_pair_receive(&p, &rec, &me, &other, start, strlen(start), priv, 1000, &out) && strstr(out.reply, "cancel"));
+    CHECK(p.phase == PT_PAIR_KEYED);
+    // A reveal that doesn't match the commitment ends it.
+    static pt_pair_t q;
+    q = p;
+    const char *bad = "{\"pair\":{\"step\":\"reveal\",\"pub\":\"de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f\"}}";
+    pt_pair_receive(&q, &rec, &me, &mac, bad, strlen(bad), priv, 1000, &out);
+    CHECK(out.cancelled && q.phase == PT_PAIR_IDLE);
+    const char *reveal = "{\"pair\":{\"step\":\"reveal\",\"pub\":\"8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a\"}}";
+    pt_pair_receive(&p, &rec, &me, &mac, reveal, strlen(reveal), priv, 2000, &out);
+    CHECK(out.show_code && p.phase == PT_PAIR_SHOWING);
+    CHECK_STR(p.code, "635989");
+    HEXEQ(p.key, 32, "1b832b28e81b8ed9aeafb2e9167a45a7dc29d952534c9d23df19d19c065cfa09");
+    // "done" before the user's yes is out of order.
+    q = p;
+    const char *done = "{\"pair\":{\"step\":\"done\",\"tag\":\"3d767fca6cb5cd31bf118fb5c59b539cc217365837e3d87600e697f10519ef3f\"}}";
+    pt_pair_receive(&q, &rec, &me, &mac, done, strlen(done), priv, 2000, &out);
+    CHECK(out.cancelled && !rec.paired);
+    pt_pair_user(&p, true, &out);
+    CHECK(strstr(out.reply, "66e447fafe1c13f8d2f62e112d2dc912a66a4e0fd6f2ca15085b0d6b7799bd83") != NULL);
+    CHECK(p.phase == PT_PAIR_CONFIRMED);
+    pt_pair_receive(&p, &rec, &me, &mac, done, strlen(done), priv, 3000, &out);
+    CHECK(out.paired && rec.paired && p.phase == PT_PAIR_IDLE);
+    CHECK_STR(rec.mac_id, "MAC-1");
+    HEXEQ(rec.key, 32, "1b832b28e81b8ed9aeafb2e9167a45a7dc29d952534c9d23df19d19c065cfa09");
+
+    // A no on the screen, and a timeout.
+    pt_pair_receive(&p, &rec, &me, &mac, start, strlen(start), priv, 1000, &out);
+    pt_pair_receive(&p, &rec, &me, &mac, reveal, strlen(reveal), priv, 1000, &out);
+    pt_pair_user(&p, false, &out);
+    CHECK(out.cancelled && strstr(out.reply, "cancel") && p.phase == PT_PAIR_IDLE);
+    pt_pair_receive(&p, &rec, &me, &mac, start, strlen(start), priv, 1000, &out);
+    pt_pair_tick(&p, 1000 + PT_PAIR_TIMEOUT_MS - 1, &out);
+    CHECK(!out.cancelled);
+    pt_pair_tick(&p, 1000 + PT_PAIR_TIMEOUT_MS, &out);
+    CHECK(out.cancelled && p.phase == PT_PAIR_IDLE);
+
+    // A signed decision, as PairingTests verifies it (key 07…, n = 1).
+    static pt_pair_record_t k7;
+    memset(&k7, 0, sizeof k7);
+    char body[300];
+    CHECK(pt_pair_sign_decision(&k7, &me, "req-3", "allow", "Run ls", "ls -la", body, sizeof body) == 0);   // not paired
+    k7.paired = true;
+    memset(k7.key, 7, 32);
+    CHECK(pt_pair_sign_decision(&k7, &me, "req-3", "allow", "Run ls", "ls -la", body, sizeof body) > 0);
+    CHECK(k7.counter == 1);
+    CHECK(strstr(body, "\"seen\":\"f4a7c5a915b6f3223411f488a0e8979c2ce7f037124601058f3f56ffafa45305\"") != NULL);
+    CHECK(strstr(body, "\"tag\":\"1ca12bc426098c0d24618af80088564b59e9cec06a131461f282b08032ae0bfe\"") != NULL);
+    CHECK(pt_pair_sign_decision(&k7, &me, "req\"x", "allow", "a", "b", body, sizeof body) == 0);
+    CHECK(pt_pair_sign_decision(&k7, &me, "req-3", "maybe", "a", "b", body, sizeof body) == 0);
+}
+
+static void test_crypto(void)
+{
+    uint8_t k[32], u[32], out[32];
+    // RFC 7748 §5.2
+    CHECK(pt_unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4", k, 32));
+    CHECK(pt_unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c", u, 32));
+    CHECK(pt_x25519(out, k, u));
+    HEXEQ(out, 32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
+    // RFC 7748 §6.1: both sides reach the same secret.
+    uint8_t a[32], b[32], ap[32], bp[32], s1[32], s2[32];
+    CHECK(pt_unhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a", a, 32));
+    CHECK(pt_unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb", b, 32));
+    pt_x25519_public(ap, a);
+    pt_x25519_public(bp, b);
+    HEXEQ(ap, 32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
+    HEXEQ(bp, 32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
+    CHECK(pt_x25519(s1, a, bp) && pt_x25519(s2, b, ap));
+    HEXEQ(s1, 32, "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
+    CHECK(pt_equal(s1, s2, 32));
+    // A low-order point gives all zeros: refused.
+    uint8_t zero[32] = {0};
+    CHECK(!pt_x25519(out, a, zero));
+    // RFC 4231 test case 2
+    pt_hmac_sha256((const uint8_t *)"Jefe", 4, "what do ya want for nothing?", 28, out);
+    HEXEQ(out, 32, "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+    // RFC 5869 test case 1 (first 32 bytes of the 42)
+    uint8_t ikm[22], salt[13];
+    memset(ikm, 0x0b, sizeof ikm);
+    for (int i = 0; i < 13; i++) salt[i] = (uint8_t)i;
+    const char info[] = "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9";
+    pt_hkdf_sha256(ikm, sizeof ikm, salt, sizeof salt, info, out);
+    HEXEQ(out, 32, "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf");
+    CHECK(!pt_unhex("abc", out, 2) && !pt_unhex("zz", out, 1));
+}
+
 int main(int argc, char **argv)
 {
+    test_crypto();
+    test_pairing();
     if (argc > 1) fixture_dir = argv[1];
     test_sha256();
     test_framer();
