@@ -3,6 +3,7 @@
   "sources": [
     "main/game_entry.c",
     "components/app_game/app_game.c",
+    "components/app_menu/app_menu.c",
     "components/app_game_runtime/app_game_runtime.c",
     "components/app_dock/app_dock.c",
     "components/app_dock/app_dock_platform_host.c",

@@ -374,6 +374,32 @@ bool dock_platform_battery(int *percent, bool *on_battery)
     return true;
 }
 
+#define LOOK_KEY "look"
+
+void dock_platform_load_look(char *out, size_t cap)
+{
+    nvs_handle_t h;
+    if (nvs_open(STORE_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    size_t len = cap;
+    if (nvs_get_str(h, LOOK_KEY, out, &len) != ESP_OK) {
+        out[0] = 0;
+    }
+    nvs_close(h);
+}
+
+bool dock_platform_save_look(const char *id)
+{
+    nvs_handle_t h;
+    if (!s_store_ok || nvs_open(STORE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        return false;
+    }
+    bool ok = nvs_set_str(h, LOOK_KEY, id) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
 bool dock_platform_take_forget_request(void)
 {
     return atomic_exchange(&s_forget_requested, false);

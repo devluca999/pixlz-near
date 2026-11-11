@@ -32,3 +32,6 @@ bool dock_platform_battery(int *percent, bool *on_battery);
 /** True once after the maintenance "forget" request arrived (ESP-Iris RPC over USB, device only).
  * The dock honours it only when it doesn't hold a Pixl. */
 bool dock_platform_take_forget_request(void);
+/** A small device setting (the Pixl swap's look): "" when unset. */
+void dock_platform_load_look(char *out, size_t cap);
+bool dock_platform_save_look(const char *id);

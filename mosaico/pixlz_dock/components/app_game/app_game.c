@@ -6,6 +6,8 @@
 /* Fixed 30 Hz update. Art timing is 12 fps "ticks" (SPEC §4.4): one art tick = 2.5 updates. */
 enum { TICK_HZ = 30 };
 #define ART_HOLD(n) (((n) * 5 + 1) / 2)
+#define SECONDS(s) ((uint32_t)((s) * TICK_HZ))
+#define MINUTES(m) ((uint32_t)((m) * 60 * TICK_HZ))
 static const float DT = 1.0f / (float)TICK_HZ;
 
 /* Physics in art pixels (apx), scaled by config.scale on screen (SPEC §4.5, §12.2). */
@@ -13,7 +15,7 @@ static const float GRAVITY_APX = 900.0f;
 static const float HOP_APEX_MIN = 18.0f, HOP_APEX_MAX = 30.0f;
 static const float HOP_DIST_MIN = 40.0f, HOP_DIST_MAX = 90.0f;
 static const float EXIT_APEX = 60.0f, EXIT_SPEED = 320.0f;
-static const float HAPPY_APEX = 26.0f;
+static const float DEFAULT_WALK_SPEED = 18.0f;
 /* Throws (SPEC §4.5, §11.1): release speed capped; walls and ceiling bounce at 0.4. */
 static const float THROW_CAP_APX = 1500.0f;
 static const float RESTITUTION = 0.4f;
@@ -21,6 +23,8 @@ static const float RESTITUTION = 0.4f;
 static const float FLING_APX = 350.0f;
 /* Below this landing speed (apx/s) the Pixl stops instead of bouncing. */
 static const float SETTLE_APX = 120.0f;
+/* Floaters: drag per tick on a throw; hover height above the floor (in pet heights); bob. */
+static const float FLOAT_DRAG = 0.94f, FLOAT_SETTLE_APX = 20.0f, HOVER = 0.3f, BOB_PX = 3.0f;
 
 /* Touch (SPEC §11.1): a tap is short and still; a second tap inside the window is a double-tap. */
 enum { TAP_MAX_TICKS = 8, TAP_SLOP_PX = 12, DOUBLE_TAP_TICKS = 9 };
@@ -28,7 +32,26 @@ enum { CROUCH_TICKS = ART_HOLD(3), LAND_TICKS = ART_HOLD(3), SHRUG_TICKS = 36, G
 enum { BLINK_TICKS = 5, BLINK_GAP_MIN = 60, BLINK_GAP_MAX = 150, WANDER_MIN = 300, WANDER_MAX = 600 };
 /* poke holds [2, 4, 6] art ticks (pixl.json); three pokes inside 4 s annoy it (SPEC §11.1). */
 enum { POKE_ANNOY_COUNT = 3, POKE_ANNOY_TICKS = 4 * TICK_HZ };
-enum { SAMPLES = 4 };
+enum { SAMPLES = 4, WALK_FRAME_TICKS = 8 };
+
+/* The Pixl's own life (SPEC §4.3, §6.2, the Mac app's sleep and roam): */
+#define SLEEP_AFTER MINUTES(3)           /* no touch for this long: wind down and sleep */
+#define NAP_EVERY_MIN MINUTES(45)        /* short naps while people are around */
+#define NAP_EVERY_MAX MINUTES(90)
+#define NAP_LENGTH_MIN MINUTES(2)
+#define NAP_LENGTH_MAX MINUTES(4)
+#define TRICK_EVERY_MIN MINUTES(8)       /* its signature, now and then */
+#define TRICK_EVERY_MAX MINUTES(16)
+#define MISCHIEF_EVERY_MIN MINUTES(20)   /* mischief only when nobody has touched it lately */
+#define MISCHIEF_EVERY_MAX MINUTES(40)
+#define MISCHIEF_QUIET MINUTES(1)
+#define CHAT_EVERY_MIN SECONDS(90)       /* an idle voice line */
+#define CHAT_EVERY_MAX SECONDS(240)
+/* rest holds [6, 6, 12]; signature [4, 2, 8]; mischief [6, 12, 4] (pixl.json). */
+enum { REST_0_TICKS = ART_HOLD(6), REST_1_TICKS = ART_HOLD(6) };
+enum { TRICK_0 = ART_HOLD(4), TRICK_1 = ART_HOLD(2), TRICK_2 = ART_HOLD(8) };
+enum { MISCHIEF_0 = ART_HOLD(6), MISCHIEF_1 = ART_HOLD(12), MISCHIEF_2 = ART_HOLD(4) };
+enum { WAKE_STRETCH_TICKS = 12 };
 
 typedef enum { HOP_NONE, HOP_CROUCH, HOP_AIR, HOP_LAND } hop_stage_t;
 
@@ -44,6 +67,17 @@ struct app_game {
     uint32_t idle_tick;
     uint32_t next_blink, blink_until, next_wander;
     bool shrug_after_landing;
+    /* Walks and glides: start, target and length (ticks). */
+    float from_x, from_y, to_x, to_y;
+    uint32_t move_ticks;
+
+    /* Its own life. */
+    uint32_t last_touch, next_nap, next_trick, next_mischief, next_chat;
+    uint32_t nap_until;         /* 0 = sleeping until woken */
+    bool waking;                /* the stretch after a nap */
+    app_game_pose_t emotion;
+    uint32_t emotion_ticks;
+    app_game_say_t say;
 
     /* Touch */
     bool was_down, down_on_pet;
@@ -94,10 +128,41 @@ static float floor_y(app_game_handle_t g)
     return (float)g->config.height;
 }
 
+static bool floats(app_game_handle_t g)
+{
+    return g->config.movement == APP_GAME_MOVE_FLOAT;
+}
+
+/* Where a Pixl rests: on the floor, or hovering a little above it. */
+static float rest_y(app_game_handle_t g)
+{
+    return floats(g) ? floor_y(g) - HOVER * pet_height(g) : floor_y(g);
+}
+
+static float clampf(float v, float lo, float hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static void say(app_game_handle_t g, app_game_say_t what)
+{
+    g->say = what;
+}
+
 static void set_phase(app_game_handle_t g, app_game_pet_phase_t phase)
 {
     g->state.phase = phase;
     g->stage_tick = g->state.tick;
+    g->state.asleep = false;
+}
+
+static void schedule_life(app_game_handle_t g)
+{
+    uint32_t now = g->state.tick;
+    g->next_nap = now + random_ticks(g, NAP_EVERY_MIN, NAP_EVERY_MAX);
+    g->next_trick = now + random_ticks(g, TRICK_EVERY_MIN, TRICK_EVERY_MAX);
+    g->next_mischief = now + random_ticks(g, MISCHIEF_EVERY_MIN, MISCHIEF_EVERY_MAX);
+    g->next_chat = now + random_ticks(g, CHAT_EVERY_MIN, CHAT_EVERY_MAX);
 }
 
 static void start_idle(app_game_handle_t g)
@@ -105,10 +170,21 @@ static void start_idle(app_game_handle_t g)
     set_phase(g, APP_GAME_PET_IDLE);
     g->hop = HOP_NONE;
     g->idle_tick = g->state.tick;
-    g->y = floor_y(g);
+    if (!floats(g)) {
+        g->y = floor_y(g);
+    }
     g->vx = g->vy = 0;
     g->next_blink = g->state.tick + random_ticks(g, BLINK_GAP_MIN, BLINK_GAP_MAX);
     g->next_wander = g->state.tick + random_ticks(g, WANDER_MIN, WANDER_MAX);
+}
+
+static void emote(app_game_handle_t g, app_game_pose_t pose, uint32_t ticks)
+{
+    set_phase(g, APP_GAME_PET_EMOTING);
+    g->emotion = pose;
+    g->emotion_ticks = ticks;
+    g->vx = g->vy = 0;
+    g->state.pose = pose;
 }
 
 app_game_err_t app_game_create(const app_game_config_t *config, app_game_handle_t *ret_handle)
@@ -154,6 +230,7 @@ void app_game_reset(app_game_handle_t game)
     game->y = floor_y(game);
     game->state.phase = APP_GAME_PET_ABSENT;
     game->state.facing = 1;
+    game->say = APP_GAME_SAY_NONE;
 }
 
 void app_game_set_paused(app_game_handle_t game, bool paused)
@@ -197,11 +274,6 @@ static void add_sample(app_game_handle_t g, float x, float y)
     g->sample_count++;
 }
 
-static float clampf(float v, float lo, float hi)
-{
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-
 /* Feet position for a finger at (fx, fy) while held, kept on the screen. */
 static void follow_finger(app_game_handle_t g, float fx, float fy)
 {
@@ -219,6 +291,7 @@ static void begin_hold(app_game_handle_t g)
     g->grab_dy = g->y - (float)g->down_y;
     g->sample_count = 0;
     add_sample(g, (float)g->down_x, (float)g->down_y);
+    say(g, APP_GAME_SAY_CURIOUS);
 }
 
 /* Release: the finger's speed over the last few samples becomes the throw. */
@@ -246,31 +319,36 @@ static void release_hold(app_game_handle_t g)
     }
 }
 
+static bool resting(app_game_handle_t g)
+{
+    return g->state.phase == APP_GAME_PET_RESTING;
+}
+
 static void poke(app_game_handle_t g)
 {
+    if (resting(g)) {
+        /* Woken by a poke: startled, then grumpy (SPEC §6.2). */
+        emote(g, APP_GAME_POSE_STARTLED, SECONDS(2));
+        say(g, APP_GAME_SAY_STARTLED);
+        return;
+    }
     for (int i = 1; i < POKE_ANNOY_COUNT; i++) {
         g->poke_ticks[i - 1] = g->poke_ticks[i];
     }
     g->poke_ticks[POKE_ANNOY_COUNT - 1] = g->state.tick;
     bool annoyed = g->poke_ticks[0] && g->state.tick - g->poke_ticks[0] <= POKE_ANNOY_TICKS;
     g->hop = HOP_NONE;
-    g->y = floor_y(g);
+    if (!floats(g)) {
+        g->y = floor_y(g);
+    }
     g->vx = g->vy = 0;
     if (annoyed) {
         g->poke_ticks[0] = 0;
         set_phase(g, APP_GAME_PET_SHRUGGING);
+        say(g, APP_GAME_SAY_ANNOYED);
     } else {
         set_phase(g, APP_GAME_PET_POKED);
     }
-}
-
-static void happy_jump(app_game_handle_t g)
-{
-    set_phase(g, APP_GAME_PET_HAPPY);
-    g->hop = HOP_NONE;
-    g->y = floor_y(g);
-    g->vx = 0;
-    g->vy = -sqrtf(2.0f * px(g, GRAVITY_APX) * px(g, HAPPY_APEX));
 }
 
 void app_game_set_pointer(app_game_handle_t game, int32_t x, int32_t y, bool pressed)
@@ -284,6 +362,9 @@ void app_game_set_pointer(app_game_handle_t game, int32_t x, int32_t y, bool pre
     g->state.pointer_down = pressed;
     x = g->state.pointer_x;
     y = g->state.pointer_y;
+    if (pressed) {
+        g->last_touch = g->state.tick;
+    }
 
     if (pressed && !g->was_down) {
         g->down_tick = g->state.tick;
@@ -299,17 +380,20 @@ void app_game_set_pointer(app_game_handle_t game, int32_t x, int32_t y, bool pre
             follow_finger(g, (float)x, (float)y);
             add_sample(g, (float)x, (float)y);
         }
-    } else if (!pressed && g->was_down && g->down_on_pet) {
-        if (g->state.phase == APP_GAME_PET_HELD) {
+    } else if (!pressed && g->was_down) {
+        int32_t dx = x - g->down_x, dy = y - g->down_y;
+        bool tap = dx * dx + dy * dy <= TAP_SLOP_PX * TAP_SLOP_PX && g->state.tick - g->down_tick <= TAP_MAX_TICKS;
+        if (g->down_on_pet && g->state.phase == APP_GAME_PET_HELD) {
             add_sample(g, (float)x, (float)y);
             release_hold(g);
-        } else if (g->state.tick - g->down_tick <= TAP_MAX_TICKS) {
-            /* The poke shows at once; a second tap inside the window turns it into a double-tap. */
+        } else if (tap) {
+            /* A tap on the Pixl pokes at once; a second tap anywhere inside the window opens
+             * the menu (SPEC §11.1, §11.2). */
             bool second = g->last_tap_tick && g->state.tick - g->last_tap_tick <= DOUBLE_TAP_TICKS;
             g->last_tap_tick = second ? 0 : (g->state.tick ? g->state.tick : 1);
             if (second) {
-                happy_jump(g);
-            } else {
+                g->request = APP_GAME_REQUEST_MENU;
+            } else if (g->down_on_pet) {
                 poke(g);
             }
         }
@@ -339,6 +423,19 @@ static void begin_hop(app_game_handle_t g, float target_x, float apex_apx)
     g->stage_tick = g->state.tick;
 }
 
+/* A crawl or glide from here to (x, y) over `ticks`. */
+static void begin_travel(app_game_handle_t g, float x, float y, uint32_t ticks)
+{
+    g->from_x = g->x;
+    g->from_y = g->y;
+    g->to_x = x;
+    g->to_y = y;
+    g->move_ticks = ticks ? ticks : 1;
+    if (x != g->x) {
+        g->state.facing = x > g->x ? 1 : -1;
+    }
+}
+
 static void begin_wander(app_game_handle_t g)
 {
     float hw = half_width(g), lo = hw, hi = (float)g->config.width - hw;
@@ -348,8 +445,24 @@ static void begin_wander(app_game_handle_t g)
     if (target < lo || target > hi) {
         target = g->x - dir * dist;  /* turn around at a wall */
     }
-    set_phase(g, APP_GAME_PET_HOPPING);
-    begin_hop(g, clampf(target, lo, hi), random_between(g, HOP_APEX_MIN, HOP_APEX_MAX));
+    target = clampf(target, lo, hi);
+    set_phase(g, APP_GAME_PET_MOVING);
+    switch (g->config.movement) {
+    case APP_GAME_MOVE_HOP:
+        begin_hop(g, target, random_between(g, HOP_APEX_MIN, HOP_APEX_MAX));
+        break;
+    case APP_GAME_MOVE_WALK: {
+        float speed = px(g, g->config.walk_speed > 0 ? g->config.walk_speed : DEFAULT_WALK_SPEED);
+        begin_travel(g, target, floor_y(g), (uint32_t)(fabsf(target - g->x) / speed * (float)TICK_HZ));
+        break;
+    }
+    case APP_GAME_MOVE_FLOAT: {
+        /* Anywhere in the air: its own head stays below the top edge. */
+        float y = random_between(g, pet_height(g) * 1.3f, rest_y(g));
+        begin_travel(g, target, y, random_ticks(g, SECONDS(2), SECONDS(3)));
+        break;
+    }
+    }
 }
 
 /* Gravity and motion for one tick; true when the feet reach the floor. */
@@ -391,25 +504,49 @@ static bool hop_step(app_game_handle_t g)
     }
 }
 
-/* A thrown Pixl: walls and ceiling bounce; a fast crossing of a side edge is a fling home. */
+/* Crawls and glides: eased for floaters, steady for walkers. True when there. */
+static bool travel_step(app_game_handle_t g)
+{
+    uint32_t t = g->state.tick - g->stage_tick;
+    float u = t >= g->move_ticks ? 1.0f : (float)t / (float)g->move_ticks;
+    if (floats(g)) {
+        u = u * u * (3.0f - 2.0f * u);
+    }
+    g->x = g->from_x + (g->to_x - g->from_x) * u;
+    g->y = g->from_y + (g->to_y - g->from_y) * u;
+    return t >= g->move_ticks;
+}
+
+static void begin_fling(app_game_handle_t g, int edge)
+{
+    /* Clings half off that edge until the trip settles (SPEC §11.1). */
+    set_phase(g, APP_GAME_PET_CLINGING);
+    g->state.edge = (int8_t)edge;
+    g->state.facing = (int8_t)-edge;
+    g->x = edge < 0 ? 0.0f : (float)g->config.width;
+    g->y = clampf(g->y, pet_height(g), floor_y(g));
+    g->vx = g->vy = 0;
+    g->request = APP_GAME_REQUEST_SEND_HOME;
+    g->state.waiting = true;
+}
+
+/* A thrown Pixl: walls and ceiling bounce; a fast crossing of a side edge is a fling home.
+ * Floaters have no gravity: they coast, slow down and stay where they stop. */
 static void airborne_step(app_game_handle_t g)
 {
     float hw = half_width(g), w = (float)g->config.width, h = pet_height(g);
-    g->vy += px(g, GRAVITY_APX) * DT;
+    if (floats(g)) {
+        g->vx *= FLOAT_DRAG;
+        g->vy *= FLOAT_DRAG;
+    } else {
+        g->vy += px(g, GRAVITY_APX) * DT;
+    }
     g->x += g->vx * DT;
     g->y += g->vy * DT;
 
     int edge = g->x - hw < 0 ? -1 : (g->x + hw > w ? 1 : 0);
     if (edge && fabsf(g->vx) >= px(g, FLING_APX) && (g->vx > 0) == (edge > 0)) {
-        /* Clings half off that edge until the trip settles (SPEC §11.1). */
-        set_phase(g, APP_GAME_PET_CLINGING);
-        g->state.edge = (int8_t)edge;
-        g->state.facing = (int8_t)-edge;
-        g->x = edge < 0 ? 0.0f : w;
-        g->y = clampf(g->y, h, floor_y(g));
-        g->vx = g->vy = 0;
-        g->request = APP_GAME_REQUEST_SEND_HOME;
-        g->state.waiting = true;
+        begin_fling(g, edge);
         return;
     }
     if (edge) {
@@ -420,6 +557,23 @@ static void airborne_step(app_game_handle_t g)
         g->y = h;
         g->vy = -g->vy * RESTITUTION;
     }
+    if (floats(g)) {
+        if (g->y > floor_y(g)) {
+            g->y = floor_y(g);
+            g->vy = -g->vy * RESTITUTION;
+        }
+        if (sqrtf(g->vx * g->vx + g->vy * g->vy) < px(g, FLOAT_SETTLE_APX)) {
+            g->vx = g->vy = 0;
+            if (g->shrug_after_landing) {
+                g->shrug_after_landing = false;
+                set_phase(g, APP_GAME_PET_SHRUGGING);
+                say(g, APP_GAME_SAY_SAD);
+            } else {
+                start_idle(g);
+            }
+        }
+        return;
+    }
     if (g->y >= floor_y(g) && g->vy > 0) {
         g->y = floor_y(g);
         if (g->vy > px(g, SETTLE_APX)) {
@@ -428,7 +582,7 @@ static void airborne_step(app_game_handle_t g)
         } else {
             /* Settled: the landing squash, then idle (or the shrug a failed trip owes). */
             g->vx = g->vy = 0;
-            set_phase(g, APP_GAME_PET_HOPPING);
+            set_phase(g, APP_GAME_PET_MOVING);
             g->hop = HOP_LAND;
         }
     }
@@ -452,23 +606,117 @@ static app_game_pose_t hop_pose(app_game_handle_t g)
 
 static void exiting_step(app_game_handle_t g)
 {
-    if (g->hop == HOP_CROUCH) {
-        g->state.pose = APP_GAME_POSE_CROUCH;
-        if (g->state.tick - g->stage_tick >= CROUCH_TICKS) {
-            g->hop = HOP_AIR;
-        }
-        return;
-    }
-    g->vy += px(g, GRAVITY_APX) * DT;
-    g->x += g->vx * DT;
-    g->y += g->vy * DT;
-    g->state.pose = APP_GAME_POSE_AIR;
     float hw = half_width(g);
+    if (g->config.movement == APP_GAME_MOVE_HOP || g->state.edge) {
+        if (g->hop == HOP_CROUCH) {
+            g->state.pose = APP_GAME_POSE_CROUCH;
+            if (g->state.tick - g->stage_tick >= CROUCH_TICKS) {
+                g->hop = HOP_AIR;
+            }
+            return;
+        }
+        if (!floats(g)) {
+            g->vy += px(g, GRAVITY_APX) * DT;
+        }
+        g->x += g->vx * DT;
+        g->y += g->vy * DT;
+        g->state.pose = APP_GAME_POSE_AIR;
+    } else {
+        /* Walkers crawl off and floaters glide off, at the exit speed. */
+        g->x += g->vx * DT;
+        g->state.pose = floats(g) ? APP_GAME_POSE_IDLE_0
+                        : (app_game_pose_t)(APP_GAME_POSE_CROUCH + (g->state.tick / WALK_FRAME_TICKS) % 3);
+    }
     if (g->x < -hw || g->x > (float)g->config.width + hw || g->y > floor_y(g) + pet_height(g)) {
         set_phase(g, APP_GAME_PET_ABSENT);
         g->state.waiting = false;
         g->state.edge = 0;
     }
+}
+
+static void begin_rest(app_game_handle_t g, uint32_t length)
+{
+    set_phase(g, APP_GAME_PET_RESTING);
+    g->hop = HOP_NONE;
+    g->vx = g->vy = 0;
+    g->nap_until = length ? g->state.tick + length : 0;
+    g->waking = false;
+    say(g, APP_GAME_SAY_SLEEPY);
+}
+
+static void begin_trick(app_game_handle_t g)
+{
+    set_phase(g, APP_GAME_PET_TRICK);
+    g->hop = HOP_NONE;
+    g->vx = g->vy = 0;
+    g->next_trick = g->state.tick + random_ticks(g, TRICK_EVERY_MIN, TRICK_EVERY_MAX);
+}
+
+/* Idle: blink, chat, and now and then wander, play a trick, get up to mischief or doze off. */
+static void idle_step(app_game_handle_t g)
+{
+    uint32_t now = g->state.tick;
+    if (now >= g->next_blink) {
+        g->blink_until = now + BLINK_TICKS;
+        g->next_blink = now + random_ticks(g, BLINK_GAP_MIN, BLINK_GAP_MAX);
+    }
+    if (g->was_down) {
+        g->state.pose = idle_pose(g);
+        return;
+    }
+    uint32_t quiet = now - g->last_touch;
+    if (quiet >= SLEEP_AFTER || now >= g->next_nap) {
+        bool nap = quiet < SLEEP_AFTER;
+        g->next_nap = now + random_ticks(g, NAP_EVERY_MIN, NAP_EVERY_MAX);
+        begin_rest(g, nap ? random_ticks(g, NAP_LENGTH_MIN, NAP_LENGTH_MAX) : 0);
+        g->state.pose = APP_GAME_POSE_REST_0;
+        return;
+    }
+    if (now >= g->next_trick) {
+        begin_trick(g);
+        g->state.pose = APP_GAME_POSE_TRICK_0;
+        return;
+    }
+    if (now >= g->next_mischief && quiet >= MISCHIEF_QUIET) {
+        /* Due, and nobody has touched it for a minute (before it would doze off). */
+        g->next_mischief = now + random_ticks(g, MISCHIEF_EVERY_MIN, MISCHIEF_EVERY_MAX);
+        set_phase(g, APP_GAME_PET_MISCHIEF);
+        g->state.pose = APP_GAME_POSE_MISCHIEF_0;
+        return;
+    }
+    if (now >= g->next_chat) {
+        g->next_chat = now + random_ticks(g, CHAT_EVERY_MIN, CHAT_EVERY_MAX);
+        say(g, APP_GAME_SAY_IDLE);
+    }
+    if (now >= g->next_wander) {
+        begin_wander(g);
+        g->state.pose = g->config.movement == APP_GAME_MOVE_HOP ? APP_GAME_POSE_CROUCH : idle_pose(g);
+        return;
+    }
+    g->state.pose = idle_pose(g);
+}
+
+static void rest_step(app_game_handle_t g)
+{
+    uint32_t t = g->state.tick - g->stage_tick;
+    if (g->waking) {
+        /* The stretch after a nap, then up. */
+        g->state.pose = APP_GAME_POSE_CROUCH;
+        if (t >= WAKE_STRETCH_TICKS) {
+            start_idle(g);
+            g->state.pose = idle_pose(g);
+        }
+        return;
+    }
+    if (g->nap_until && g->state.tick >= g->nap_until) {
+        g->waking = true;
+        g->stage_tick = g->state.tick;
+        g->state.pose = APP_GAME_POSE_CROUCH;
+        return;
+    }
+    g->state.pose = t < REST_0_TICKS ? APP_GAME_POSE_REST_0 :
+                    t < REST_0_TICKS + REST_1_TICKS ? APP_GAME_POSE_REST_1 : APP_GAME_POSE_REST_2;
+    g->state.asleep = t >= REST_0_TICKS;
 }
 
 void app_game_update(app_game_handle_t game)
@@ -486,7 +734,14 @@ void app_game_update(app_game_handle_t game)
     case APP_GAME_PET_ABSENT:
         break;
     case APP_GAME_PET_ENTERING:
-        if (g->hop == HOP_AIR) {
+        if (floats(g)) {
+            /* Drifts down to its hover height. */
+            g->state.pose = APP_GAME_POSE_IDLE_0;
+            if (travel_step(g)) {
+                emote(g, APP_GAME_POSE_HAPPY, SECONDS(3));
+                say(g, APP_GAME_SAY_GREET);
+            }
+        } else if (g->hop == HOP_AIR) {
             if (fall_step(g)) {
                 g->hop = HOP_LAND;
                 g->stage_tick = now;
@@ -496,36 +751,38 @@ void app_game_update(app_game_handle_t game)
             squash = squash_at(t);
             g->state.pose = APP_GAME_POSE_LAND;
             if (t >= 12) {
-                start_idle(g);
+                emote(g, APP_GAME_POSE_HAPPY, SECONDS(3));
+                say(g, APP_GAME_SAY_GREET);
             }
         }
         break;
     case APP_GAME_PET_IDLE:
-        if (now >= g->next_blink) {
-            g->blink_until = now + BLINK_TICKS;
-            g->next_blink = now + random_ticks(g, BLINK_GAP_MIN, BLINK_GAP_MAX);
-        }
-        if (now >= g->next_wander && !g->was_down) {
-            begin_wander(g);
-            g->state.pose = APP_GAME_POSE_CROUCH;
-            break;
-        }
-        g->state.pose = idle_pose(g);
+        idle_step(g);
         break;
-    case APP_GAME_PET_HOPPING:
-        if (g->hop == HOP_LAND) {
-            squash = squash_at(now - g->stage_tick);
-        }
-        g->state.pose = hop_pose(g);
-        if (hop_step(g)) {
-            if (g->shrug_after_landing) {
-                g->shrug_after_landing = false;
-                set_phase(g, APP_GAME_PET_SHRUGGING);
-                g->state.pose = APP_GAME_POSE_ANNOYED;
-            } else {
-                start_idle(g);
-                g->state.pose = idle_pose(g);
+    case APP_GAME_PET_MOVING:
+        if (g->config.movement == APP_GAME_MOVE_HOP || g->hop != HOP_NONE) {
+            if (g->hop == HOP_LAND) {
+                squash = squash_at(now - g->stage_tick);
             }
+            g->state.pose = hop_pose(g);
+            if (!hop_step(g)) {
+                break;
+            }
+        } else {
+            g->state.pose = floats(g) ? idle_pose(g) :
+                            (app_game_pose_t)(APP_GAME_POSE_CROUCH + (t / WALK_FRAME_TICKS) % 3);
+            if (!travel_step(g)) {
+                break;
+            }
+        }
+        if (g->shrug_after_landing) {
+            g->shrug_after_landing = false;
+            set_phase(g, APP_GAME_PET_SHRUGGING);
+            g->state.pose = APP_GAME_POSE_ANNOYED;
+            say(g, APP_GAME_SAY_SAD);
+        } else {
+            start_idle(g);
+            g->state.pose = idle_pose(g);
         }
         break;
     case APP_GAME_PET_EXITING:
@@ -551,27 +808,43 @@ void app_game_update(app_game_handle_t game)
             g->state.pose = idle_pose(g);
         }
         break;
-    case APP_GAME_PET_HAPPY:
-        g->state.pose = APP_GAME_POSE_HAPPY;
-        if (g->vy != 0 && fall_step(g)) {
-            g->stage_tick = now;
-        }
-        if (g->vy == 0 && now - g->stage_tick >= 18 && g->y >= floor_y(g)) {
-            start_idle(g);
-        }
-        break;
     case APP_GAME_PET_HELD:
         g->state.pose = t < GRAB_CATCH_TICKS ? APP_GAME_POSE_GRAB_0 : APP_GAME_POSE_GRAB_1;
         break;
     case APP_GAME_PET_AIRBORNE:
         airborne_step(g);
-        g->state.pose = APP_GAME_POSE_AIR;
-        if (g->state.phase == APP_GAME_PET_CLINGING) {
-            g->state.pose = APP_GAME_POSE_GRAB_1;
-        }
+        g->state.pose = g->state.phase == APP_GAME_PET_CLINGING ? APP_GAME_POSE_GRAB_1 :
+                        floats(g) ? APP_GAME_POSE_IDLE_0 : APP_GAME_POSE_AIR;
         break;
     case APP_GAME_PET_CLINGING:
         g->state.pose = APP_GAME_POSE_GRAB_1;
+        break;
+    case APP_GAME_PET_RESTING:
+        rest_step(g);
+        break;
+    case APP_GAME_PET_TRICK:
+        g->state.pose = t < TRICK_0 ? APP_GAME_POSE_TRICK_0 :
+                        t < TRICK_0 + TRICK_1 ? APP_GAME_POSE_TRICK_1 : APP_GAME_POSE_TRICK_2;
+        if (t >= TRICK_0 + TRICK_1 + TRICK_2) {
+            emote(g, APP_GAME_POSE_PROUD, SECONDS(3));   /* proud after its signature (SPEC §5) */
+            say(g, APP_GAME_SAY_HAPPY);
+            g->state.pose = APP_GAME_POSE_PROUD;
+        }
+        break;
+    case APP_GAME_PET_MISCHIEF:
+        g->state.pose = t < MISCHIEF_0 ? APP_GAME_POSE_MISCHIEF_0 :
+                        t < MISCHIEF_0 + MISCHIEF_1 ? APP_GAME_POSE_MISCHIEF_1 : APP_GAME_POSE_MISCHIEF_2;
+        if (t >= MISCHIEF_0 + MISCHIEF_1 + MISCHIEF_2) {
+            start_idle(g);
+            g->state.pose = idle_pose(g);
+        }
+        break;
+    case APP_GAME_PET_EMOTING:
+        g->state.pose = g->emotion;
+        if (t >= g->emotion_ticks) {
+            start_idle(g);
+            g->state.pose = idle_pose(g);
+        }
         break;
     }
     /* Squash keeps the feet planted: narrower when taller, wider when flatter. */
@@ -587,12 +860,47 @@ app_game_snapshot_t app_game_read(app_game_handle_t game)
         };
     }
     app_game_snapshot_t s = game->state;
+    float y = game->y;
+    /* Floaters bob gently whenever they aren't being moved (slower while asleep). */
+    if (floats(game)) {
+        switch (s.phase) {
+        case APP_GAME_PET_IDLE:
+        case APP_GAME_PET_RESTING:
+        case APP_GAME_PET_EMOTING:
+        case APP_GAME_PET_POKED:
+        case APP_GAME_PET_TRICK:
+        case APP_GAME_PET_MISCHIEF:
+        case APP_GAME_PET_SHRUGGING: {
+            float period = s.phase == APP_GAME_PET_RESTING ? 120.0f : 60.0f;
+            y += BOB_PX * sinf(6.2831853f * (float)s.tick / period);
+            break;
+        }
+        default:
+            break;
+        }
+    }
     s.pet_x = (int32_t)lroundf(game->x);
-    s.pet_y = (int32_t)lroundf(game->y);
+    s.pet_y = (int32_t)lroundf(y);
     if (!s.squash_x) {
         s.squash_x = s.squash_y = 1000;
     }
     return s;
+}
+
+void app_game_set_look(app_game_handle_t g, const app_game_config_t *config)
+{
+    if (!g || !config || !config->scale || config->scale > 16 || !config->pet_w || !config->pet_h) {
+        return;
+    }
+    bool present = g->state.phase != APP_GAME_PET_ABSENT;
+    g->config.scale = config->scale;
+    g->config.pet_w = config->pet_w;
+    g->config.pet_h = config->pet_h;
+    g->config.movement = config->movement;
+    g->config.walk_speed = config->walk_speed;
+    if (present && g->state.phase != APP_GAME_PET_CLINGING && g->state.phase != APP_GAME_PET_EXITING) {
+        app_game_pet_arrive(g);
+    }
 }
 
 void app_game_pet_arrive(app_game_handle_t g)
@@ -604,11 +912,16 @@ void app_game_pet_arrive(app_game_handle_t g)
     g->x = (float)g->config.width / 2.0f;
     g->y = 0.0f;  /* feet at the top edge: the whole body starts above the screen */
     g->vx = g->vy = 0;
-    g->hop = HOP_AIR;
+    g->hop = floats(g) ? HOP_NONE : HOP_AIR;
+    if (floats(g)) {
+        begin_travel(g, g->x, rest_y(g), SECONDS(1.5));
+    }
     g->state.pose = APP_GAME_POSE_AIR;
     g->state.waiting = false;
     g->state.edge = 0;
     g->down_on_pet = false;
+    g->last_touch = g->state.tick;
+    schedule_life(g);
 }
 
 void app_game_pet_leave(app_game_handle_t g)
@@ -617,15 +930,19 @@ void app_game_pet_leave(app_game_handle_t g)
         return;
     }
     float dir;
-    if (g->state.phase == APP_GAME_PET_CLINGING) {
+    bool clinging = g->state.phase == APP_GAME_PET_CLINGING;
+    if (clinging) {
         dir = (float)g->state.edge;  /* out through the edge it holds */
     } else {
         dir = g->x < (float)g->config.width / 2.0f ? -1.0f : 1.0f;  /* off the nearer side */
-        g->y = floor_y(g);
+        if (!floats(g)) {
+            g->y = floor_y(g);
+        }
     }
     set_phase(g, APP_GAME_PET_EXITING);
-    g->vy = -sqrtf(2.0f * px(g, GRAVITY_APX) * px(g, EXIT_APEX));
     g->vx = dir * px(g, EXIT_SPEED);
+    g->vy = (clinging || g->config.movement == APP_GAME_MOVE_HOP) && !floats(g)
+            ? -sqrtf(2.0f * px(g, GRAVITY_APX) * px(g, EXIT_APEX)) : 0.0f;
     g->state.facing = (int8_t)dir;
     g->hop = HOP_CROUCH;
     g->down_on_pet = false;
@@ -643,14 +960,47 @@ void app_game_pet_shrug(app_game_handle_t g)
         g->state.edge = 0;
         set_phase(g, APP_GAME_PET_AIRBORNE);
         g->x += inward * half_width(g);
-        g->vx = inward * px(g, 200.0f);
-        g->vy = -px(g, 150.0f);
+        g->vx = inward * px(g, floats(g) ? 400.0f : 200.0f);
+        g->vy = floats(g) ? 0.0f : -px(g, 150.0f);
         g->state.facing = (int8_t)inward;
         g->shrug_after_landing = true;
     } else if (touchable(g) && g->state.phase != APP_GAME_PET_HELD && g->state.phase != APP_GAME_PET_AIRBORNE) {
-        g->y = floor_y(g);
+        if (!floats(g)) {
+            g->y = floor_y(g);
+        }
         g->hop = HOP_NONE;
         set_phase(g, APP_GAME_PET_SHRUGGING);
+        say(g, APP_GAME_SAY_SAD);
+    }
+}
+
+/* Only a Pixl standing (or hovering) still can start something new from the menu. */
+static bool settled(app_game_handle_t g)
+{
+    switch (g->state.phase) {
+    case APP_GAME_PET_IDLE:
+    case APP_GAME_PET_RESTING:
+    case APP_GAME_PET_EMOTING:
+    case APP_GAME_PET_POKED:
+    case APP_GAME_PET_SHRUGGING:
+        return true;
+    default:
+        return false;
+    }
+}
+
+void app_game_trick(app_game_handle_t g)
+{
+    if (g && settled(g)) {
+        g->last_touch = g->state.tick;
+        begin_trick(g);
+    }
+}
+
+void app_game_nap(app_game_handle_t g)
+{
+    if (g && settled(g) && !resting(g)) {
+        begin_rest(g, random_ticks(g, NAP_LENGTH_MIN, NAP_LENGTH_MAX));
     }
 }
 
@@ -662,4 +1012,14 @@ app_game_request_t app_game_take_request(app_game_handle_t g)
     app_game_request_t r = g->request;
     g->request = APP_GAME_REQUEST_NONE;
     return r;
+}
+
+app_game_say_t app_game_take_say(app_game_handle_t g)
+{
+    if (!g) {
+        return APP_GAME_SAY_NONE;
+    }
+    app_game_say_t s = g->say;
+    g->say = APP_GAME_SAY_NONE;
+    return s;
 }

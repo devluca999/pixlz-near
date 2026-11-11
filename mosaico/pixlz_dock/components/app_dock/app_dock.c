@@ -441,5 +441,47 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     s.owns_pet = d->node.record.kind == PT_REC_OWNED;
     s.battery_percent = d->battery_percent;
     s.on_battery = d->on_battery;
+    s.locked = pt_node_locked(&d->node);
     return s;
+}
+
+bool app_dock_set_locked(app_dock_handle_t d, bool locked)
+{
+    if (!d || !pt_node_set_locked(&d->node, locked)) {
+        return false;
+    }
+    bool saved = dock_platform_save(&d->node.record);
+    dock_platform_log("pixlz: %s (%s)", locked ? "locked to this device" : "unlocked", saved ? "saved" : "NOT saved");
+    return true;
+}
+
+void app_dock_set_known_species(app_dock_handle_t d, const char *const *ids, int count)
+{
+    if (d && ids && count > 0) {
+        d->node.known_species = ids;
+        d->node.known_count = count;
+    }
+}
+
+bool app_dock_pet_species(app_dock_handle_t d, char *out, int cap)
+{
+    pt_span_t v;
+    return d && d->node.record.kind == PT_REC_OWNED &&
+           pt_json_find(d->node.record.state, d->node.record.state_len, "species", &v) &&
+           pt_json_string(v, out, (size_t)cap);
+}
+
+void app_dock_load_look(char *out, int cap)
+{
+    if (out && cap > 0) {
+        out[0] = 0;
+        dock_platform_load_look(out, (size_t)cap);
+    }
+}
+
+void app_dock_save_look(const char *id)
+{
+    if (id && !dock_platform_save_look(id)) {
+        dock_platform_log("pixlz: couldn't save the look");
+    }
 }

@@ -30,6 +30,7 @@ typedef struct {
     bool owns_pet;
     int battery_percent; /**< 0..100, or -1 when unknown. */
     bool on_battery;     /**< Unplugged (discharging). */
+    bool locked;         /**< The Pixl here is locked to this device (SPEC §10.6). */
 } app_dock_status_t;
 
 /** Loads the saved record and starts networking. Returns NULL on allocation failure. */
@@ -41,6 +42,15 @@ int app_dock_poll(app_dock_handle_t dock, app_dock_event_t *events, int max);
 /** Send the Pixl to the connected Mac. The result arrives as LEFT or SHRUG events. */
 void app_dock_send_home(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
+/** Lock or unlock the Pixl here; saved at once. False if nothing changed. */
+bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
+/** The species ids this device can draw (the strings must outlive the dock). */
+void app_dock_set_known_species(app_dock_handle_t dock, const char *const *ids, int count);
+/** The species of the Pixl here (from its state), or false when none. */
+bool app_dock_pet_species(app_dock_handle_t dock, char *out, int cap);
+/** The look chosen on this device (Pixl swap), saved across restarts; "" when none. */
+void app_dock_load_look(char *out, int cap);
+void app_dock_save_look(const char *id);
 
 #ifdef __cplusplus
 }

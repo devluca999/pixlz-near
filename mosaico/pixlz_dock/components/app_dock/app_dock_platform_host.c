@@ -140,6 +140,35 @@ bool dock_platform_battery(int *percent, bool *on_battery)
     return true;
 }
 
+void dock_platform_load_look(char *out, size_t cap)
+{
+    char path[620];
+    record_path(path, sizeof path - 6);
+    strcat(path, ".look");
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        return;
+    }
+    if (!fgets(out, (int)cap, f)) {
+        out[0] = 0;
+    }
+    out[strcspn(out, "\r\n")] = 0;
+    fclose(f);
+}
+
+bool dock_platform_save_look(const char *id)
+{
+    char path[620];
+    record_path(path, sizeof path - 6);
+    strcat(path, ".look");
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        return false;
+    }
+    bool ok = fputs(id, f) >= 0;
+    return fclose(f) == 0 && ok;
+}
+
 bool dock_platform_take_forget_request(void)
 {
     return false; /* in the simulator, delete the record file instead */
