@@ -181,14 +181,22 @@ size_t pt_pair_sign_decision(pt_pair_record_t *rec, const pt_device_t *me, const
 size_t pt_pair_sign_reply(pt_pair_record_t *rec, const pt_device_t *me, const char *session, const char *text,
                           char *out, size_t cap)
 {
-    for (const char *c = text; *c; c++) {   /* the quick replies: letters and spaces */
-        if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || *c == ' ')) return 0;
+    /* Printable ASCII only (the Mac sends transcripts as ASCII); at most 400 characters. */
+    size_t tl = strlen(text);
+    if (!tl || tl > 400) return 0;
+    for (const char *c = text; *c; c++) {
+        if (*c < 32 || *c > 126) return 0;
     }
     static char signed_body[320];
     size_t n = pt_pair_sign_decision(rec, me, session, "reply", "reply", text, signed_body, sizeof signed_body);
     if (!n) return 0;
-    /* Same fields under "agentReply", with the text: {"agentReply":{"behavior":…,"text":"…"}} */
-    const char *inner = signed_body + strlen("{\"agentDecision\":");
-    int m = snprintf(out, cap, "{\"agentReply\":{\"text\":\"%s\",%s", text, inner + 1);
-    return m > 0 && (size_t)m < cap ? (size_t)m : 0;
+    /* {"agentReply":{"text":"…",<the signed decision's fields>} */
+    pt_jw_t w;
+    pt_jw_init(&w, out, cap);
+    pt_jw_lit(&w, "{\"agentReply\":{\"text\":");
+    pt_jw_str(&w, text);
+    pt_jw_lit(&w, ",");
+    const char *inner = signed_body + strlen("{\"agentDecision\":{");
+    pt_jw_raw(&w, inner, n - (size_t)(inner - signed_body));
+    return w.ok ? w.len : 0;
 }

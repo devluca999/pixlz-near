@@ -26,6 +26,7 @@ typedef enum {
     APP_MENU_PAIR,     /**< A Mac's pairing code: red no, green "same code" (D20). */
     APP_MENU_CHAT,     /**< One session's chat: drag to scroll, tap to go back; green Reply when it can. */
     APP_MENU_QUICK,    /**< Quick replies: Continue · Yes · No · Run the tests. */
+    APP_MENU_HEARD,    /**< What the Mac heard: red discard, green send it as the reply. */
 } app_menu_mode_t;
 
 typedef enum {
@@ -56,6 +57,9 @@ typedef enum {
     APP_MENU_ACTION_UNPAIR,
     APP_MENU_ACTION_AGENT_CHAT, /**< arg: the agents row; the menu stays open (ask the Mac for its chat) */
     APP_MENU_ACTION_AGENT_REPLY,/**< arg: row * 16 + quick reply (0..3) */
+    APP_MENU_ACTION_DICTATE_START, /**< the mic button went down in a chat (menu stays open) */
+    APP_MENU_ACTION_DICTATE_STOP,  /**< it came up: send what was said */
+    APP_MENU_ACTION_DICTATE_SEND,  /**< green on the heard screen */
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -121,6 +125,8 @@ void app_menu_update(app_menu_handle_t menu);
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
 /** Chat: whether the open session takes a reply from here now (held open, and paired). */
 void app_menu_set_chat(app_menu_handle_t menu, bool reply_ok);
+/** The Mac's transcript is in: show it with red and green. */
+void app_menu_open_heard(app_menu_handle_t menu);
 /** A Mac asks to pair: show its code over anything else, with red and green. */
 void app_menu_open_pair(app_menu_handle_t menu);
 /** New pairing state (paired now, or not) while the menu is open. */

@@ -9,6 +9,8 @@
 #include "pixl_trip/pt_sha256.h"
 #include "pixl_trip/pt_crypto.h"
 #include "pixl_trip/pt_pair.h"
+#include "pixl_trip/pt_adpcm.h"
+#include <math.h>
 #include "pixl_trip/pt_trip.h"
 
 static int failures, checks;
@@ -713,9 +715,33 @@ static void test_pairing(void)
     CHECK(strncmp(body, "{\"agentReply\":{\"text\":\"Run the tests\",\"behavior\":\"reply\"", 51) == 0);
     CHECK(strstr(body, "\"seen\":\"39167a70b8bc685f4ef3bbcf52243f4af2befe26da4c88734383ff0b92150dfc\"") != NULL);
     CHECK(strstr(body, "\"tag\":\"a4ef693ac6022fd8e6ed1c91f3431177ca56354e73eaef9030d6bb4e4e37fbfc\"") != NULL);
-    CHECK(pt_pair_sign_reply(&k7, &me, sid, "rm -rf /", body, sizeof body) == 0);
+    // Free text (a transcript) is allowed now, escaped; control characters aren't.
+    CHECK(pt_pair_sign_reply(&k7, &me, sid, "run \"make test\" please", body, sizeof body) > 0);
+    CHECK(strstr(body, "\"text\":\"run \\\"make test\\\" please\"") != NULL);
+    CHECK(pt_pair_sign_reply(&k7, &me, sid, "line\nbreak", body, sizeof body) == 0);
     CHECK(pt_pair_sign_decision(&k7, &me, "req\"x", "allow", "a", "b", body, sizeof body) == 0);
     CHECK(pt_pair_sign_decision(&k7, &me, "req-3", "maybe", "a", "b", body, sizeof body) == 0);
+}
+
+// ADPCM: a 440 Hz tone survives the round trip closely; the first bytes are fixed (PixlzCore's
+// decoder test expects the same ones).
+static void test_adpcm(void)
+{
+    static int16_t pcm[1600], back[1600];
+    static uint8_t enc[800];
+    for (int i = 0; i < 1600; i++) pcm[i] = (int16_t)(8000.0 * sin(2 * 3.14159265358979 * 440.0 * i / 16000.0));
+    pt_adpcm_t s;
+    pt_adpcm_init(&s);
+    CHECK(pt_adpcm_encode(&s, pcm, 1600, enc) == 800);
+    pt_adpcm_init(&s);
+    CHECK(pt_adpcm_decode(&s, enc, 800, back) == 1600);
+    double err = 0, sig = 0;
+    for (int i = 200; i < 1600; i++) {
+        err += (double)(pcm[i] - back[i]) * (pcm[i] - back[i]);
+        sig += (double)pcm[i] * pcm[i];
+    }
+    CHECK(10 * log10(sig / err) > 20);   // > 20 dB SNR once the step adapts
+    HEXEQ(enc, 8, "70777777378898aa");
 }
 
 static void test_crypto(void)
@@ -756,6 +782,7 @@ static void test_crypto(void)
 int main(int argc, char **argv)
 {
     test_crypto();
+    test_adpcm();
     test_pairing();
     if (argc > 1) fixture_dir = argv[1];
     test_sha256();

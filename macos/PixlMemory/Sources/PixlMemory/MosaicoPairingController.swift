@@ -12,6 +12,8 @@ final class MosaicoPairingController {
     unowned let travel: TravelController
     private var pairing: MosaicoPairing?
     private var pairingPeer: DeviceRef?
+    /// Texts this Mac transcribed for a Mosaico: the only free text it may send as a reply.
+    var dictated: Set<String> = []
 
     init(travel: TravelController) { self.travel = travel }
 
@@ -132,7 +134,9 @@ final class MosaicoPairingController {
     /// A signed quick reply from a paired device (only the known replies pass).
     func verifiedReply(_ body: Data, from peer: DeviceRef) -> (id: String, text: String)? {
         guard var paired = Self.load(peer.deviceId),
-              let ok = MosaicoPairing.verifyReply(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last) else { return nil }
+              let ok = MosaicoPairing.verifyReply(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last,
+                                                  dictated: dictated) else { return nil }
+        dictated.remove(ok.text)   // once
         paired.last = ok.n
         Self.save(peer.deviceId, paired)
         return (ok.id, ok.text)

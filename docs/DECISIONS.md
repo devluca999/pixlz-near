@@ -254,3 +254,12 @@ The Mosaico's Wi-Fi can be weak where it sits (-82 dBm measured), and calls and 
 - Security is the same as Wi-Fi today: Allow is signed (D20); encrypting frames with the paired key is still the next step.
 - Range is about 10 m. Wi-Fi stays as the fallback when Bluetooth isn't linked.
 
+## D22. Dictation on the Mosaico (2026-11-11)
+
+Reply to a Claude Code session by voice from the Mosaico. Hold the mic button in a session's chat, talk, let go; the Mosaico shows what was heard, and green sends it as your reply.
+
+- **Recording on the Mosaico:** the onboard microphone (LMA2718B331) through the ES8311's ADC on I2S RX (MCLK 54, BCLK 37, WS 49, DIN 52, from Espressif's pin table). 16 kHz mono, IMA ADPCM (4:1), up to 30 s in PSRAM. The codec is opened only while recording.
+- **Speech to text on the Mac:** Apple's Speech framework, on-device when supported. The Mosaico can't run a speech model (Whisper's smallest is ~39M parameters; the S31 has 16 MB RAM and no NPU). Whisper (whisper.cpp) stays an option on the Mac if Apple's recognizer struggles with code words.
+- **Safety:** the transcript is sent as a signed reply (D20), and the Mac accepts free text only if it transcribed exactly that text for that Mosaico (once). A paired Mosaico can't type anything else.
+- **Cost:** nothing while not dictating. While dictating: the codec and mic (tens of mW), under 2 % of a core, ~8 KB/s of audio (a 10 s clip is ~80 KB: under a second over Wi-Fi, a few seconds over Bluetooth).
+

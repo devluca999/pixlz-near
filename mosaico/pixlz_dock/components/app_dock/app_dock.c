@@ -55,6 +55,15 @@ struct app_dock {
     app_dock_agents_t agents;
     char agents_from[PT_ID_MAX];
     app_dock_chat_t chat;
+    app_dock_transcript_t transcript;
+    struct {                       /* a dictation clip streaming to the Mac */
+        const uint8_t *clip;
+        size_t len, sent;
+        int part;
+        bool active;
+    } up;
+    uint32_t dictation_n;
+    char frame[2400];
     pt_pair_t pair;
     pt_pair_record_t paired;
     pt_pair_out_t pair_out;
@@ -445,6 +454,84 @@ static bool handle_chat(app_dock_handle_t d, const char *body, size_t len)
     return true;
 }
 
+/* `{"transcript":{"id","session","text"}}` or `{"transcript":{"id","error"}}` from the Mac. */
+static bool handle_transcript(app_dock_handle_t d, const char *body, size_t len)
+{
+    pt_span_t t;
+    if (!pt_json_find(body, len, "transcript", &t)) {
+        return false;
+    }
+    app_dock_transcript_t *tr = &d->transcript;
+    char id[16];
+    copy_field(t, "id", id, sizeof id);
+    if (strcmp(id, tr->id) != 0) {
+        return true;   /* an older dictation */
+    }
+    copy_field(t, "text", tr->text, sizeof tr->text);
+    copy_field(t, "error", tr->error, sizeof tr->error);
+    tr->pending = false;
+    tr->version++;
+    dock_platform_log("pixlz: transcript %s: %d chars%s", tr->id, (int)strlen(tr->text), tr->error[0] ? " (error)" : "");
+    return true;
+}
+
+static void base64(const uint8_t *in, size_t n, char *out)
+{
+    static const char t[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t o = 0;
+    for (size_t i = 0; i < n; i += 3) {
+        uint32_t v = (uint32_t)in[i] << 16 | (i + 1 < n ? (uint32_t)in[i + 1] << 8 : 0) | (i + 2 < n ? in[i + 2] : 0);
+        out[o++] = t[v >> 18 & 63];
+        out[o++] = t[v >> 12 & 63];
+        out[o++] = i + 1 < n ? t[v >> 6 & 63] : '=';
+        out[o++] = i + 2 < n ? t[v & 63] : '=';
+    }
+    out[o] = 0;
+}
+
+/* Streams the clip: one part per call while the send buffer has room, then "done". */
+static void pump_dictation(app_dock_handle_t d)
+{
+    enum { PART = 1536 };   /* 2048 base64 characters a frame */
+    if (!d->up.active) {
+        return;
+    }
+    conn_t *c = conn_for(d, d->agents_from);
+    if (!c) {
+        d->up.active = false;
+        d->transcript.pending = false;
+        snprintf(d->transcript.error, sizeof d->transcript.error, "Lost the Mac while sending");
+        d->transcript.version++;
+        return;
+    }
+    for (int k = 0; k < 4 && d->up.active; k++) {
+        int n;
+        if (d->up.sent < d->up.len) {
+            size_t take = d->up.len - d->up.sent < PART ? d->up.len - d->up.sent : PART;
+            static char b64[PART / 3 * 4 + 8];
+            base64(d->up.clip + d->up.sent, take, b64);
+            n = snprintf(d->frame, sizeof d->frame,
+                         "{\"dictation\":{\"id\":\"%.15s\",\"session\":\"%.43s\",\"part\":%d,\"data\":\"%s\"}}",
+                         d->transcript.id, d->transcript.session, d->up.part, b64);
+            if (n <= 0 || (size_t)n >= sizeof d->frame || !enqueue(c, d->frame, (size_t)n)) {
+                return;   /* full: next poll */
+            }
+            d->up.sent += take;
+            d->up.part++;
+        } else {
+            n = snprintf(d->frame, sizeof d->frame,
+                         "{\"dictation\":{\"id\":\"%.15s\",\"session\":\"%.43s\",\"done\":true,\"parts\":%d,"
+                         "\"rate\":16000,\"codec\":\"ima-adpcm\"}}",
+                         d->transcript.id, d->transcript.session, d->up.part);
+            if (n <= 0 || (size_t)n >= sizeof d->frame || !enqueue(c, d->frame, (size_t)n)) {
+                return;
+            }
+            d->up.active = false;
+            dock_platform_log("pixlz: dictation %s sent (%d parts)", d->transcript.id, d->up.part);
+        }
+    }
+}
+
 static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
 {
     if (!c->hello) {
@@ -465,7 +552,7 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
         }
     }
     if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len) ||
-            handle_chat(d, body, len)) {
+            handle_chat(d, body, len) || handle_transcript(d, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
@@ -508,6 +595,7 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
     if (!d) {
         return 0;
     }
+    pump_dictation(d);
     d->node.can_host = dock_platform_clock_ok();
     if (d->pair.phase != PT_PAIR_IDLE) {
         pt_pair_t was = d->pair;
@@ -718,6 +806,51 @@ bool app_dock_restyle(app_dock_handle_t d, const char *species, const char *name
     }
     perform(d, &d->outs);   /* saves the record */
     dock_platform_log("pixlz: the Pixl here is now %s (%s)", name, species);
+    return true;
+}
+
+bool app_dock_dictation_send(app_dock_handle_t d, const char *session, const uint8_t *clip, size_t len)
+{
+    if (!d || !session || !clip || len < 1600 || !conn_for(d, d->agents_from)) {
+        return false;   /* < 0.2 s: nothing said */
+    }
+    app_dock_transcript_t *tr = &d->transcript;
+    snprintf(tr->id, sizeof tr->id, "d%u", (unsigned)++d->dictation_n);
+    snprintf(tr->session, sizeof tr->session, "%s", session);
+    tr->text[0] = tr->error[0] = 0;
+    tr->pending = true;
+    tr->version++;
+    d->up.clip = clip;
+    d->up.len = len;
+    d->up.sent = 0;
+    d->up.part = 0;
+    d->up.active = true;
+    pump_dictation(d);
+    return true;
+}
+
+const app_dock_transcript_t *app_dock_transcript(app_dock_handle_t d)
+{
+    return d ? &d->transcript : NULL;
+}
+
+bool app_dock_transcript_reply(app_dock_handle_t d)
+{
+    if (!d || d->transcript.pending || !d->transcript.text[0]) {
+        return false;
+    }
+    conn_t *c = conn_for(d, d->agents_from);
+    if (!c || !d->paired.paired || strcmp(d->paired.mac_id, d->agents_from) != 0) {
+        return false;
+    }
+    size_t n = pt_pair_sign_reply(&d->paired, &d->node.me, d->transcript.session, d->transcript.text, d->frame,
+                                  sizeof d->frame);
+    if (!n || !dock_platform_save_pair(&d->paired) || !enqueue(c, d->frame, n)) {
+        return false;
+    }
+    dock_platform_log("pixlz: dictated reply sent (%d chars)", (int)strlen(d->transcript.text));
+    d->transcript.text[0] = 0;
+    d->transcript.version++;
     return true;
 }
 

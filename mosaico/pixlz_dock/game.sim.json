@@ -7,9 +7,11 @@
     "components/app_game_runtime/app_game_runtime.c",
     "components/app_dock/app_dock.c",
     "components/app_dock/app_dock_platform_host.c",
+    "components/app_audio/app_audio_host.c",
     "components/pixl_trip/src/pt_sha256.c",
     "components/pixl_trip/src/pt_crypto.c",
     "components/pixl_trip/src/pt_pair.c",
+    "components/pixl_trip/src/pt_adpcm.c",
     "components/pixl_trip/src/pt_frame.c",
     "components/pixl_trip/src/pt_json.c",
     "components/pixl_trip/src/pt_trip.c"

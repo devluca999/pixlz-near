@@ -378,6 +378,30 @@ static void agent_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool presse
     }
 }
 
+/* What the Mac heard: red goes back to the chat, green sends it. */
+static void heard_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    if (pressed && !was_down) {
+        m->pressed = (int8_t)button_at(m, x, y);
+        return;
+    }
+    if (pressed) {
+        return;
+    }
+    int8_t button = m->pressed;
+    m->pressed = 0;
+    if (!button || button_at(m, x, y) != button) {
+        return;
+    }
+    if (button > 0) {
+        act(m, APP_MENU_ACTION_DICTATE_SEND, m->agent);
+    } else {
+        int row = m->agent;
+        show(m, APP_MENU_CHAT);
+        m->agent = row;
+    }
+}
+
 /* The pairing code: red says no, green says the codes match. Nothing else. */
 static void pair_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
 {
@@ -402,6 +426,23 @@ static void pair_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
 static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
 {
     int32_t dx = x - m->down_x, dy = y - m->down_y;
+    /* Chat: hold the mic (red spot, bottom left) to dictate; let go to send it to the Mac. */
+    if (m->mode == APP_MENU_CHAT && m->chat_reply_ok) {
+        if (pressed && !was_down && button_at(m, x, y) < 0) {
+            m->pressed = -1;
+            m->action.kind = APP_MENU_ACTION_DICTATE_START;
+            m->action.arg = m->agent;
+            return;
+        }
+        if (m->pressed < 0) {
+            if (!pressed) {
+                m->pressed = 0;
+                m->action.kind = APP_MENU_ACTION_DICTATE_STOP;
+                m->action.arg = m->agent;
+            }
+            return;   /* holding: no scrolling */
+        }
+    }
     if (pressed && !was_down) {
         m->scroll_at_down = m->scroll;
         return;
@@ -455,6 +496,8 @@ bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
         exit_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_PAIR) {
         pair_pointer(m, x, y, pressed, was_down);
+    } else if (m->mode == APP_MENU_HEARD) {
+        heard_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_AGENTS) {
         agents_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_AGENT) {
@@ -485,7 +528,7 @@ void app_menu_update(app_menu_handle_t m)
         return;   /* stays until answered, or until the dock says the pairing ended */
     }
     const bool long_open = m->mode == APP_MENU_SWAP || reading(m) || m->mode == APP_MENU_AGENTS ||
-                           m->mode == APP_MENU_AGENT || m->mode == APP_MENU_QUICK;
+                           m->mode == APP_MENU_AGENT || m->mode == APP_MENU_QUICK || m->mode == APP_MENU_HEARD;
     if (!m->down && idle >= (long_open ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
         app_menu_close(m);   /* nothing static stays on the AMOLED (SPEC §12.1) */
         return;
@@ -524,7 +567,8 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.read_index = m->read_index;
     s.read_count = read_count(m);
     s.scroll = (int16_t)m->scroll;
-    s.agent_first = (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK) ? m->agent
+    s.agent_first = (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK ||
+                     m->mode == APP_MENU_HEARD) ? m->agent
                                                                                                        : m->agent_first;
     s.agent_count = m->context.agents_count;
     s.rows_y = ROWS_Y;
@@ -562,6 +606,15 @@ void app_menu_set_chat(app_menu_handle_t m, bool reply_ok)
 {
     if (m) {
         m->chat_reply_ok = reply_ok;
+    }
+}
+
+void app_menu_open_heard(app_menu_handle_t m)
+{
+    if (m && (m->mode == APP_MENU_CHAT || m->mode == APP_MENU_HEARD)) {
+        int row = m->agent;
+        show(m, APP_MENU_HEARD);
+        m->agent = row;
     }
 }
 

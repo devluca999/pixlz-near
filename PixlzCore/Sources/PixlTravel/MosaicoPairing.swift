@@ -115,12 +115,14 @@ public struct MosaicoPairing {
         return (id, behavior, n)
     }
 
-    /// A quick reply from a paired Mosaico: `{"agentReply":{"id","text","n","seen","tag"}}`, signed
-    /// like a decision with behavior "reply" over ("reply", text). Only the known quick replies pass.
-    public static func verifyReply(_ body: Data, deviceId: String, key: Data, lastCounter: UInt32) -> (id: String, text: String, n: UInt32)? {
+    /// A reply from a paired Mosaico: `{"agentReply":{"id","text","n","seen","tag"}}`, signed like a
+    /// decision with behavior "reply" over ("reply", text). Only the quick replies and texts this Mac
+    /// transcribed for it (`dictated`) pass: the Mosaico can't type anything else.
+    public static func verifyReply(_ body: Data, deviceId: String, key: Data, lastCounter: UInt32,
+                                   dictated: Set<String> = []) -> (id: String, text: String, n: UInt32)? {
         guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let r = o["agentReply"] as? [String: Any], let id = r["id"] as? String, let text = r["text"] as? String,
-              MosaicoFeed.quickReplies.contains(text) else { return nil }
+              MosaicoFeed.quickReplies.contains(text) || dictated.contains(text) else { return nil }
         var d = r
         d["behavior"] = "reply"
         guard let wrapped = try? JSONSerialization.data(withJSONObject: ["agentDecision": d]),

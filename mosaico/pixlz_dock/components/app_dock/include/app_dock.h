@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -121,6 +122,21 @@ bool app_dock_agent_chat(app_dock_handle_t dock, int index);
 const app_dock_chat_t *app_dock_chat(app_dock_handle_t dock);
 /** A quick reply to a session held open for one: signed, so only when paired with that Mac. */
 bool app_dock_agent_reply(app_dock_handle_t dock, int index, const char *text);
+/** Dictation (D22): what the Mac heard. `pending` while it's uploading or transcribing. */
+typedef struct {
+    uint32_t version;
+    bool pending;
+    char id[16];
+    char session[44];
+    char text[404];      /**< "" with error set when it couldn't transcribe */
+    char error[80];
+} app_dock_transcript_t;
+/** Send a recorded clip (IMA ADPCM, 16 kHz mono) to the Mac that sent the sessions, for `session`.
+ * The clip must stay valid until the upload ends (it streams over the next polls). */
+bool app_dock_dictation_send(app_dock_handle_t dock, const char *session, const uint8_t *clip, size_t len);
+const app_dock_transcript_t *app_dock_transcript(app_dock_handle_t dock);
+/** Send the transcript as the reply to its session: signed, so only when paired with that Mac. */
+bool app_dock_transcript_reply(app_dock_handle_t dock);
 /** The user's answer to the pairing code on screen. */
 void app_dock_pair_answer(app_dock_handle_t dock, bool accept);
 /** Forget the paired Mac (Allow turns off here). */

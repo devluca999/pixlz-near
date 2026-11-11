@@ -367,6 +367,31 @@ static void test_agents(void)
     tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_AGENT_REPLY && a.arg == 1 * 16 + 3 && !app_menu_is_open(m));
+    // Dictation: hold the mic (bottom left) in a chat that takes replies, let go to send.
+    app_menu_open(m, &ctx);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row + s.row_h);
+    (void)app_menu_take_action(m);
+    app_menu_set_chat(m, true);
+    CHECK(app_menu_pointer(m, c.cancel_x, c.buttons_y, true));
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_DICTATE_START && a.arg == 1);
+    app_menu_pointer(m, c.cancel_x, c.buttons_y - 150, true);   // dragging while holding: no scroll
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
+    app_menu_pointer(m, c.cancel_x, c.buttons_y - 150, false);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_DICTATE_STOP && app_menu_is_open(m));
+    // The transcript arrives: red goes back to the chat, green sends.
+    app_menu_open_heard(m);
+    CHECK(app_menu_read(m).mode == APP_MENU_HEARD && app_menu_read(m).agent_first == 1);
+    tap(m, c.cancel_x, c.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
+    app_menu_open_heard(m);
+    tap(m, c.confirm_x, c.buttons_y);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_DICTATE_SEND && !app_menu_is_open(m));
+    app_menu_open_heard(m);   // not in a chat: ignored
+    CHECK(!app_menu_is_open(m));
     app_menu_set_chat(m, false);
 
     // No Mac: Agents is greyed.

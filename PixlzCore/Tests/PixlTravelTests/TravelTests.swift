@@ -221,3 +221,42 @@ import CryptoKit
         #expect(MosaicoPairing.verifyDecision(body(n: 5), deviceId: "MOSAICO-2", key: key, lastCounter: 4, summary: "Run ls", detail: "ls -la") == nil)
     }
 }
+
+@Suite struct DictationTests {
+    @Test func decodesExactlyLikeTheMosaico() {
+        // pt_adpcm_decode of the first bytes test_pixl_trip.c pins for a 440 Hz tone.
+        let s = MosaicoDictation.decode(Data([0x70, 0x77, 0x77, 0x77, 0x37, 0x88, 0x98, 0xaa]))
+        #expect(s == [0, 11, 41, 104, 240, 533, 1164, 2521, 5431, 8340, 7962, 7619, 7307, 6455, 5164, 3991])
+    }
+
+    @Test func assemblesPartsInOrderAndRefusesGaps() {
+        var d = MosaicoDictation()
+        func part(_ k: Int, _ bytes: [UInt8]) -> Data {
+            try! JSONSerialization.data(withJSONObject: ["dictation": ["id": "d1", "session": "s", "part": k, "data": Data(bytes).base64EncodedString()]])
+        }
+        let done = try! JSONSerialization.data(withJSONObject: ["dictation": ["id": "d1", "session": "s", "done": true, "parts": 2]])
+        #expect(d.receive(part(1, [0x37, 0x88])) == nil)
+        #expect(d.receive(part(0, [0x70, 0x77])) == nil)
+        let clip = d.receive(done)
+        #expect(clip?.session == "s" && clip?.samples.count == 8 && clip?.samples[2] == 41)
+        #expect(d.receive(part(0, [0x70])) == nil)
+        #expect(d.receive(done.replacingOccurrences()) == nil)   // part 1 missing
+        #expect(MosaicoDictation.isDictation(done))
+    }
+
+    @Test func aDictatedReplyPassesOnlyWhenThisMacHeardIt() {
+        let key = Data(repeating: 7, count: 32)
+        let sid = "0d5c1f5e-1111-4222-8333-944455556666"
+        let seen = MosaicoPairing.seen(summary: "reply", detail: "please run make test")
+        let msg = "pixlz-decision-v1|MOSAICO-1|1|\(sid)|reply|\(seen)"
+        let tag = Data(HMAC<SHA256>.authenticationCode(for: Data(msg.utf8), using: SymmetricKey(data: key))).map { String(format: "%02x", $0) }.joined()
+        let body = try! JSONSerialization.data(withJSONObject: ["agentReply": ["text": "please run make test", "behavior": "reply", "id": sid, "n": 1, "seen": seen, "tag": tag]])
+        #expect(MosaicoPairing.verifyReply(body, deviceId: "MOSAICO-1", key: key, lastCounter: 0) == nil)
+        #expect(MosaicoPairing.verifyReply(body, deviceId: "MOSAICO-1", key: key, lastCounter: 0, dictated: ["please run make test"])?.text == "please run make test")
+    }
+}
+
+private extension Data {
+    func replacingOccurrences() -> Data { self }
+}
+

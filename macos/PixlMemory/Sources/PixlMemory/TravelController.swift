@@ -95,6 +95,29 @@ final class TravelController {
             Debug.log("travel: chat for \(peer.deviceName): \(lines.count) lines, \(out.count) bytes")
             return
         }
+        if MosaicoDictation.isDictation(body) {
+            guard MosaicoFeed.devices().contains(peer.deviceId), let clip = dictation.receive(body) else { return }
+            Debug.log("travel: dictation from \(peer.deviceName): \(clip.samples.count / 16) ms")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                var out: Data
+                do {
+                    let text = try await Dictation.transcribe(clip.samples)
+                    let sent = MosaicoFeed.ascii(text, 400)
+                    self.pairingController.dictated.insert(sent)   // the only free text a Mosaico may send back
+                    out = MosaicoDictation.transcriptBody(id: clip.id, session: clip.session, text: sent)
+                    Debug.log("travel: heard \(sent.count) chars")
+                } catch Dictation.Failure.notAllowed {
+                    out = MosaicoDictation.transcriptBody(id: clip.id, session: clip.session, text: nil,
+                                                          error: "Allow Speech Recognition for Pixl Memory on your Mac")
+                    self.app.notify(.agentsError("Dictation needs Speech Recognition: System Settings → Privacy & Security."))
+                } catch {
+                    out = MosaicoDictation.transcriptBody(id: clip.id, session: clip.session, text: nil, error: "Didn't catch that. Try again?")
+                }
+                self.runner?.transport.sendFrame(out, to: peer)
+            }
+            return
+        }
         if let r = pairingController.verifiedReply(body, from: peer) {
             let ok = app.agents.reply(r.id, r.text)
             Debug.log("travel: \(peer.deviceName) replied \"\(r.text)\" (\(ok ? "sent" : "session no longer open"))")
@@ -120,6 +143,7 @@ final class TravelController {
     }
 
     lazy var pairingController = MosaicoPairingController(travel: self)
+    private var dictation = MosaicoDictation()
 
     private var bluetooth: BLEBridge?
 

@@ -7,6 +7,7 @@
 #include "../app_game/include/app_game.h"
 #include "../app_dock/include/app_dock.h"
 #include "../app_menu/include/app_menu.h"
+#include "../app_audio/include/app_audio.h"
 #include "private/game_config.h"
 #include "private/pixl_font.h"
 #include "private/pixl_pets.h"
@@ -49,6 +50,9 @@ typedef struct {
     uint32_t next_alert;      /* Agent alerts: when to call again (0 = at once) */
     char banner[64];          /* a line across the top ("pixlz needs you") */
     char pair_code[8];        /* a Mac's pairing code while it's asked (D20) */
+    bool dictating;           /* the mic is on (D22) */
+    bool dictation_ready;     /* let go: send the clip once the recorder has finished */
+    uint32_t transcript_version;
     uint32_t banner_until;
     app_dock_event_t events[MAX_EVENTS];
 } host_state_t;
@@ -227,7 +231,7 @@ static void open_menu(host_state_t *state)
 
 static void say_banner(host_state_t *state, const char *text)
 {
-    snprintf(state->banner, sizeof state->banner, "%s", text);
+    snprintf(state->banner, sizeof state->banner, "%.63s", text);
     state->banner_until = app_game_read(state->game).tick + 4 * 30;
 }
 
@@ -269,6 +273,22 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         say_banner(state, sent ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
         break;
     }
+    case APP_MENU_ACTION_DICTATE_START:
+        state->dictating = app_audio_start();
+        if (!state->dictating) {
+            say_banner(state, "The microphone isn't available");
+        }
+        break;
+    case APP_MENU_ACTION_DICTATE_STOP:
+        if (state->dictating) {
+            app_audio_stop();
+            state->dictating = false;
+            state->dictation_ready = true;
+        }
+        break;
+    case APP_MENU_ACTION_DICTATE_SEND:
+        say_banner(state, app_dock_transcript_reply(state->dock) ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
+        break;
     case APP_MENU_ACTION_PAIR:
         app_dock_pair_answer(state->dock, a.arg != 0);
         say_banner(state, a.arg ? "Now confirm on your Mac" : "Pairing cancelled");
@@ -371,6 +391,27 @@ static void update(void *value)
         app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
     }
     agents_update(state, tick);
+    /* Dictation: once the recorder has stopped, send the clip; show what the Mac heard. */
+    if (state->dictation_ready && !app_audio_recording()) {
+        state->dictation_ready = false;
+        size_t len = 0;
+        const uint8_t *clip = app_audio_clip(&len);
+        const app_dock_chat_t *ch = app_dock_chat(state->dock);
+        if (!ch || !app_dock_dictation_send(state->dock, ch->id, clip, len)) {
+            say_banner(state, len < 1600 ? "Hold the mic while you talk" : "Couldn't reach your Mac");
+        }
+    }
+    {
+        const app_dock_transcript_t *tr = app_dock_transcript(state->dock);
+        if (tr && tr->version != state->transcript_version) {
+            state->transcript_version = tr->version;
+            if (!tr->pending && tr->text[0]) {
+                app_menu_open_heard(state->menu);
+            } else if (!tr->pending && tr->error[0]) {
+                say_banner(state, tr->error);
+            }
+        }
+    }
     {   /* the open chat takes a reply from here: held open on the Mac, and paired with it */
         const app_dock_agents_t *ag = app_dock_agents(state->dock);
         const app_dock_chat_t *ch = app_dock_chat(state->dock);
@@ -937,13 +978,39 @@ static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
     }
     EndScissorMode();
     if (reply_ok) {
+        /* Hold-to-talk mic on the left (a ring grows with your voice), quick replies on the right. */
+        const app_dock_transcript_t *tr = app_dock_transcript(state->dock);
+        const bool live = app_audio_recording();
+        const float ring = live ? (float)app_audio_level() * 0.4f : 0.0f;
+        if (live) {
+            DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius + 6 + ring, shade(120, 80, 200, 60));
+        }
+        DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius, live ? shade(170, 110, 255, 100) : shade(120, 80, 200, 100));
+        draw_text_centred(live ? "Listening" : "Hold", m->cancel_x, m->buttons_y - PIXL_FONT_HEIGHT - 6, 2, white);
+        draw_text_centred(live ? "let go to send" : "to talk", m->cancel_x, m->buttons_y + 10, 1, white);
         DrawCircle(m->confirm_x, m->buttons_y, (float)m->button_radius, shade(58, 170, 82, 100));
         draw_text_centred("Reply", m->confirm_x, m->buttons_y - PIXL_FONT_HEIGHT, 2, white);
-        draw_text("tap to go back", 30, m->buttons_y - 4, 1, grey);
+        if (tr && tr->pending) {
+            draw_text_centred("Your Mac is listening...", GAME_WIDTH / 2, m->buttons_y - m->button_radius - 24, 1, amber);
+        }
     } else {
         draw_text_centred(reply_open ? "pair with your Mac to reply" : "drag to scroll - tap to go back", GAME_WIDTH / 2,
                           GAME_HEIGHT - 26, 1, grey);
     }
+}
+
+/* What the Mac heard: the text, red to discard, green to send it as the reply. */
+static void draw_heard(host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const app_dock_transcript_t *tr = app_dock_transcript(state->dock);
+    Color white = shade(240, 240, 235, 100), grey = shade(150, 150, 150, 100);
+    draw_text_centred("Send this?", GAME_WIDTH / 2, 30, 3, white);
+    BeginScissorMode(30, 80, GAME_WIDTH - 60, m->buttons_y - m->button_radius - 100);
+    wrap_text(tr && tr->text[0] ? tr->text : "(nothing heard)", 40, 90, GAME_WIDTH - 80, 2, white, true);
+    EndScissorMode();
+    draw_buttons(m);
+    draw_text_centred("Discard", m->cancel_x, m->buttons_y + m->button_radius + 6, 1, grey);
+    draw_text_centred("Send", m->confirm_x, m->buttons_y + m->button_radius + 6, 1, grey);
 }
 
 /* A Mac's pairing code, big, with red (no) and green (same code). */
@@ -1152,6 +1219,8 @@ static int render(void *value)
         draw_exit(state, &m);
     } else if (m.mode == APP_MENU_CHAT) {
         draw_chat(state, &m);
+    } else if (m.mode == APP_MENU_HEARD) {
+        draw_heard(state, &m);
     } else if (m.mode == APP_MENU_PAIR) {
         draw_pair(state, &m);
     } else if (m.mode == APP_MENU_AGENTS) {
