@@ -8,7 +8,7 @@ public enum HookSettings {
     /// Tool events take a matcher ("*" = every tool); the others don't.
     public static let events: [(name: String, toolMatcher: Bool, timeout: Int)] = [
         ("SessionStart", false, 10), ("SessionEnd", false, 10), ("UserPromptSubmit", false, 10),
-        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("Stop", false, 10), ("Notification", false, 10),
+        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("PostToolUseFailure", true, 10), ("Stop", false, 10), ("Notification", false, 10),
         ("PermissionRequest", true, 60),
     ]
 

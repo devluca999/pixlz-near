@@ -383,9 +383,14 @@ final class BubbleMenu {
                 ListMenuView.Row(id: "detail.\(i)", title: String(l), icon: nil, enabled: false)
             }
         }
-        rows += [ListMenuView.Row(id: "allow", title: "Allow", icon: "check", trailing: "↵"),
-                 ListMenuView.Row(id: "deny", title: "Deny", icon: nil),
-                 ListMenuView.Row(id: "snooze", title: "Snooze alerts 10 min", icon: nil)]
+        if agents.canAnswer(id) {
+            rows += [ListMenuView.Row(id: "allow", title: "Allow", icon: "check", trailing: "↵"),
+                     ListMenuView.Row(id: "deny", title: "Deny", icon: nil)]
+        } else {
+            rows.append(ListMenuView.Row(id: "terminal", title: "Answer it in the terminal (turn on Answer from Pixlz to answer here)",
+                                         icon: "info", enabled: false))
+        }
+        rows.append(ListMenuView.Row(id: "snooze", title: "Snooze alerts 10 min", icon: nil))
         showList(rows, near: nil) { [weak self] row in
             guard let self else { return }
             switch row.id {
@@ -398,7 +403,7 @@ final class BubbleMenu {
         agents.onChange = { [weak self] in
             // answered in the terminal, or timed out: the card goes
             guard let self, !agents.hub.requests.contains(where: { $0.id == id }),
-                  self.list?.rows.contains(where: { $0.id == "allow" }) == true else { return }
+                  self.list?.rows.contains(where: { $0.id == "snooze" }) == true else { return }
             self.closeList()
         }
     }

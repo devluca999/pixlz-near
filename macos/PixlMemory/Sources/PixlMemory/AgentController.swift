@@ -119,11 +119,12 @@ final class AgentController {
         let request = hub.receive(event, at: Date())
         if let request, answerHere {
             held[request] = fd   // keep the hook waiting for Allow / Deny
+            hub.markHeld(request)
             Debug.log("agents: \(event.name) from \(hub.sessions[event.sessionID]?.project ?? "?") held as \(request)")
         } else {
-            if let request { hub.resolve(request) }   // watching only: the terminal asks
-            finish(fd, reply: nil)
+            finish(fd, reply: nil)   // watching only: it stays listed while the terminal asks
         }
+        releaseSettled()
         if hub.requests.count > had { newRequest() }
         changed()
     }
@@ -151,6 +152,19 @@ final class AgentController {
         hub.resolve(requestID)
         finish(fd, reply: AgentHub.reply(decision))
         changed()
+    }
+
+    /// Can Allow / Deny here answer it (Pixlz holds its hook)?
+    func canAnswer(_ requestID: String) -> Bool { held[requestID] != nil }
+
+    /// Held hooks whose request the hub settled (answered in the terminal, a new tool call):
+    /// let them go without an answer.
+    private func releaseSettled() {
+        let live = Set(hub.requests.map(\.id))
+        for (id, fd) in held where !live.contains(id) {
+            held[id] = nil
+            finish(fd, reply: nil)
+        }
     }
 
     private func tick() {
