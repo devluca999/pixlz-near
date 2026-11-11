@@ -185,21 +185,22 @@ static void bridge_task(void *param)
 {
     (void)param;
     for (;;) {
+        /* Any link (subscribed or not) that hasn't carried a byte from the Mac for 60 s is dead:
+         * the Mac pings every 15 s. A quit Mac app can leave macOS holding the link unsubscribed,
+         * and while it's up this device doesn't advertise, so nothing could find it. */
+        if (s.conn != BLE_HS_CONN_HANDLE_NONE && xTaskGetTickCount() - s.last_rx > pdMS_TO_TICKS(60000)) {
+            ESP_LOGW(TAG, "no word from the Mac for 60 s; dropping the Bluetooth link");
+            s.last_rx = xTaskGetTickCount();
+            (void)ble_gap_terminate(s.conn, BLE_ERR_REM_USER_CONN_TERM);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
         const bool linked = s.conn != BLE_HS_CONN_HANDLE_NONE && s.subscribed;
         if (!linked) {
             if (s.sock >= 0) {
                 close_sock();
             }
             vTaskDelay(pdMS_TO_TICKS(50));
-            continue;
-        }
-        /* A Mac that's said nothing for 60 s is gone (it pings every 15 s): drop the link so it
-         * can reconnect cleanly, instead of both sides holding a dead one. */
-        if (xTaskGetTickCount() - s.last_rx > pdMS_TO_TICKS(60000)) {
-            ESP_LOGW(TAG, "no word from the Mac for 60 s; dropping the Bluetooth link");
-            s.last_rx = xTaskGetTickCount();
-            (void)ble_gap_terminate(s.conn, BLE_ERR_REM_USER_CONN_TERM);
-            vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
         if (s.sock < 0) {

@@ -64,11 +64,21 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if c.state == .poweredOn { scan() }
     }
 
+    static let knownKey = "PixlMemory.bluetoothMosaico"
+
     private func scan() {
         guard peripheral == nil, central.state == .poweredOn else { return }
         // A Mosaico this Mac connected to before may already be known to the system.
         if let known = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
             connect(known)
+            return
+        }
+        // The last one this Mac used: connect straight to it. It doesn't advertise while macOS
+        // still holds a link to it (left by a quit or restarted app), so a scan alone can't find it.
+        if let s = UserDefaults.standard.string(forKey: Self.knownKey), let id = UUID(uuidString: s),
+           let last = central.retrievePeripherals(withIdentifiers: [id]).first {
+            log("bluetooth: reconnecting to \(last.name ?? "the last Mosaico")")
+            connect(last)
             return
         }
         central.scanForPeripherals(withServices: [Self.service])
@@ -102,6 +112,7 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     public func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
+        UserDefaults.standard.set(p.identifier.uuidString, forKey: Self.knownKey)
         log("bluetooth: connected to \(p.name ?? "?")")
         p.discoverServices([Self.service])
         watch("finding the Pixlz service")
@@ -118,6 +129,7 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     private func checkAlive() {
+        if peripheral == nil { scan(); return }   // still searching: try the known ways again
         guard listener != nil, let p = peripheral, Date().timeIntervalSince(lastHeard) > Self.silentLimit else { return }
         log("bluetooth: nothing from the Mosaico for \(Int(Date().timeIntervalSince(lastHeard))) s; reconnecting")
         central.cancelPeripheralConnection(p)
