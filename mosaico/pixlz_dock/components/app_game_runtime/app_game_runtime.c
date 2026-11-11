@@ -17,6 +17,16 @@ enum { DIM_HALF_TICKS = 2 * 60 * GAME_TICK_HZ, DIM_LOW_TICKS = 10 * 60 * GAME_TI
 /* Low battery (on battery only): warn at 25% and below, red and blinking at 10% and below. */
 enum { BATTERY_WARN = 25, BATTERY_CRITICAL = 10 };
 enum { MAX_EVENTS = 4, SPEECH_TICKS = 75, SPEECH_MAX = 40 };
+/* Slime trail (SPEC §12.3): a dot every few ticks while crawling, gone within 4 s (no burn-in). */
+enum { TRAIL_POINTS = 48, TRAIL_EVERY = 5, TRAIL_TICKS = 4 * GAME_TICK_HZ };
+/* Readers: the text area between the header and the hint. */
+enum { READ_TOP = 64, READ_BOTTOM = 446, READ_LEFT = 22, READ_WIDTH = 436 };
+
+typedef struct {
+    int16_t x, y;
+    uint8_t surface;
+    uint32_t tick;
+} trail_point_t;
 
 typedef struct {
     app_game_handle_t game;
@@ -29,6 +39,10 @@ typedef struct {
     char speech[SPEECH_MAX];
     uint32_t speech_until;
     int last_line;
+    uint32_t speech_from;
+    trail_point_t trail[TRAIL_POINTS];
+    int trail_next;
+    uint32_t feed_version;
     app_dock_event_t events[MAX_EVENTS];
 } host_state_t;
 
@@ -66,7 +80,7 @@ static app_game_config_t config_for(int look, uint32_t seed)
         pet->frames[PIXL_F_IDLE_0].w, pet->frames[PIXL_F_IDLE_0].h, seed,
         pet->movement == PIXL_MOVE_FLOAT ? APP_GAME_MOVE_FLOAT :
         pet->movement == PIXL_MOVE_WALK ? APP_GAME_MOVE_WALK : APP_GAME_MOVE_HOP,
-        pet->walk_speed,
+        pet->walk_speed, pet->sticky != 0,
     };
     return c;
 }
@@ -172,6 +186,7 @@ static void speak(host_state_t *state, app_game_say_t event, uint32_t tick)
     }
     state->last_line = pick;
     snprintf(state->speech, sizeof state->speech, "%s", lines[pick]);
+    state->speech_from = tick;
     state->speech_until = tick + SPEECH_TICKS;
 }
 
@@ -180,9 +195,11 @@ static void open_menu(host_state_t *state)
     const app_dock_status_t d = app_dock_status(state->dock);
     const app_game_snapshot_t s = app_game_read(state->game);
     const bool here = s.phase != APP_GAME_PET_ABSENT && s.phase != APP_GAME_PET_EXITING;
+    const app_dock_feed_t *feed = app_dock_feed(state->dock);
     const app_menu_context_t ctx = {
         d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
         d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT,
+        feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
     };
     app_menu_open(state->menu, &ctx);
 }
@@ -222,8 +239,23 @@ static void update(void *value)
     case APP_GAME_REQUEST_NONE: break;
     }
     apply_menu(state, app_menu_take_action(state->menu));
-    const uint32_t tick = app_game_read(state->game).tick;
+    const app_game_snapshot_t now = app_game_read(state->game);
+    const uint32_t tick = now.tick;
     speak(state, app_game_take_say(state->game), tick);
+    /* Slime: crawlers leave a short-lived trail where they've been. */
+    if (pixl_pets[state->look].movement == PIXL_MOVE_WALK && now.phase == APP_GAME_PET_MOVING && tick % TRAIL_EVERY == 0) {
+        trail_point_t *p = &state->trail[state->trail_next];
+        p->x = (int16_t)now.pet_x;
+        p->y = (int16_t)now.pet_y;
+        p->surface = (uint8_t)now.surface;
+        p->tick = tick ? tick : 1;
+        state->trail_next = (state->trail_next + 1) % TRAIL_POINTS;
+    }
+    const app_dock_feed_t *feed = app_dock_feed(state->dock);
+    if (feed && feed->version != state->feed_version) {
+        state->feed_version = feed->version;
+        app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
+    }
     int n = app_dock_poll(state->dock, state->events, MAX_EVENTS);
     for (int i = 0; i < n; i++) {
         switch (state->events[i].kind) {
@@ -302,33 +334,59 @@ static int fdiv(long a, long b)
     return (int)(a >= 0 ? a / b : -((-a + b - 1) / b));
 }
 
-/* One frame bottom-centred on the feet, mirrored when facing left, at a whole-number scale;
- * squash stretches pixel edges on whole pixels, so nothing is ever blurred. */
+/* A point in the Pixl's own frame (x right, y down, origin at the feet) on the screen, for a
+ * Pixl standing on `surface`: the floor as drawn, a wall turned a quarter, the ceiling upside down. */
+static void to_screen(int surface, int fx, int fy, int lx, int ly, int *sx, int *sy)
+{
+    switch (surface) {
+    case APP_GAME_SURFACE_RIGHT_WALL: *sx = fx + ly, *sy = fy - lx; break;
+    case APP_GAME_SURFACE_CEILING: *sx = fx - lx, *sy = fy - ly; break;
+    case APP_GAME_SURFACE_LEFT_WALL: *sx = fx - ly, *sy = fy + lx; break;
+    default: *sx = fx + lx, *sy = fy + ly; break;
+    }
+}
+
+/* One frame bottom-centred on the feet, mirrored when facing left, at a whole-number scale,
+ * turned to the edge it stands on; squash stretches pixel edges on whole pixels, so nothing is
+ * ever blurred. */
 static void draw_frame(const pixl_pet_t *pet, int frame, int fx, int fy, int facing, uint8_t scale,
-                       uint16_t squash_x, uint16_t squash_y, unsigned brightness)
+                       uint16_t squash_x, uint16_t squash_y, unsigned brightness, int surface)
 {
     const pixl_frame_t *f = &pet->frames[frame];
     long sx = (long)scale * squash_x; /* pixels per art pixel, in 1/1000 */
     long sy = (long)scale * squash_y;
-    long left = (long)fx * 1000 - (long)f->w * sx / 2;
-    long bottom = (long)fy * 1000;
+    long left = -(long)f->w * sx / 2;
     for (uint16_t i = 0; i < f->count; i++) {
         const pixl_run_t *r = &f->runs[i];
         int ax = facing < 0 ? f->w - r->x - r->len : r->x;
         int x0 = fdiv(left + ax * sx, 1000), x1 = fdiv(left + (ax + r->len) * sx, 1000);
-        int y0 = fdiv(bottom - (long)(f->h - r->y) * sy, 1000);
-        int y1 = fdiv(bottom - (long)(f->h - r->y - 1) * sy, 1000);
+        int y0 = fdiv(-(long)(f->h - r->y) * sy, 1000);
+        int y1 = fdiv(-(long)(f->h - r->y - 1) * sy, 1000);
         if (x1 <= x0 || y1 <= y0) {
             continue;
         }
+        int ax0, ay0, ax1, ay1;
+        to_screen(surface, fx, fy, x0, y0, &ax0, &ay0);
+        to_screen(surface, fx, fy, x1, y1, &ax1, &ay1);
+        int rx = ax0 < ax1 ? ax0 : ax1, ry = ay0 < ay1 ? ay0 : ay1;
+        int rw = ax0 < ax1 ? ax1 - ax0 : ax0 - ax1, rh = ay0 < ay1 ? ay1 - ay0 : ay0 - ay1;
         const uint8_t *c = pet->palette[r->colour];
-        DrawRectangle(x0, y0, x1 - x0, y1 - y0, shade(c[0], c[1], c[2], brightness));
+        DrawRectangle(rx, ry, rw, rh, shade(c[0], c[1], c[2], brightness));
     }
+}
+
+/* Where its head is on the screen (above the feet, whichever way it's turned). */
+static void head_point(const host_state_t *state, const app_game_snapshot_t *s, int *x, int *y)
+{
+    int h = pixl_pets[state->look].frames[PIXL_F_IDLE_0].h * state->scale;
+    to_screen(s->surface, s->pet_x, s->pet_y, 0, -h, x, y);
 }
 
 static int head_y(const host_state_t *state, const app_game_snapshot_t *s)
 {
-    return s->pet_y - pixl_pets[state->look].frames[PIXL_F_IDLE_0].h * state->scale;
+    int x, y;
+    head_point(state, s, &x, &y);
+    return y;
 }
 
 /* "…" above the head while a trip is pending; at an edge, on the inside. */
@@ -337,8 +395,10 @@ static void draw_waiting(const host_state_t *state, const app_game_snapshot_t *s
     const int scale = state->scale;
     int top = head_y(state, s) - 6 * scale;
     Color colour = shade(230, 230, 230, brightness);
-    int dot = 2 * scale, phase = (int)(s->tick / 8 % 3);
-    int cx = s->edge < 0 ? s->pet_x + 10 * dot : (s->edge > 0 ? s->pet_x - 10 * dot : s->pet_x);
+    int dot = 2 * scale, phase = (int)(s->tick / 8 % 3), hx, hy;
+    head_point(state, s, &hx, &hy);
+    int cx = s->edge < 0 ? s->pet_x + 10 * dot : (s->edge > 0 ? s->pet_x - 10 * dot : hx);
+    if (top < 8) top = hy + 6 * scale;   /* upside down on the ceiling: below the head */
     for (int i = 0; i < 3; i++) {
         int lift = i == phase ? scale : 0;
         DrawRectangle(cx - 4 * dot + i * 3 * dot, top - lift, dot, dot, colour);
@@ -349,33 +409,57 @@ static void draw_waiting(const host_state_t *state, const app_game_snapshot_t *s
 static void draw_zz(const host_state_t *state, const app_game_snapshot_t *s, unsigned brightness)
 {
     static const char *const letters[3] = {"z", "z", "Z"};
-    int base = head_y(state, s);
+    int hx, base;
+    head_point(state, s, &hx, &base);
+    /* rise from the head toward the middle of the screen (down, when it hangs from the ceiling) */
+    int dir = base < 60 ? 1 : -1;
     for (int i = 0; i < 3; i++) {
         uint32_t t = (s->tick + (uint32_t)i * 30) % 90;
-        int y = base - (int)t / 2 - 4;
-        int x = s->pet_x + s->facing * 18 + i * 10;
+        int y = base + dir * ((int)t / 2 + 4);
+        int x = hx + (hx > GAME_WIDTH / 2 ? -24 : 18) + i * 10;
         unsigned fade = t < 60 ? brightness : brightness * (90 - t) / 30;
         draw_text(letters[i], x, y, 2 + (i == 2), shade(160, 200, 255, fade));
     }
 }
 
-/* The species' own sound, in a paper bubble above the head (SPEC §11.6, voice). */
+/* The species' own sound, in a paper bubble by the head (SPEC §11.6, voice). A shy Pixl
+ * (pixl.json ui.shy: Boo) has no bubble: its sounds float up from its head and fade. */
 static void draw_speech(const host_state_t *state, const app_game_snapshot_t *s, unsigned brightness)
 {
     const int scale = 2, pad = 8;
+    int hx, hy;
+    head_point(state, s, &hx, &hy);
+    if (pixl_pets[state->look].shy) {
+        uint32_t age = s->tick - state->speech_from;
+        unsigned fade = age < SPEECH_TICKS / 2 ? brightness : brightness * (SPEECH_TICKS - age) / (SPEECH_TICKS / 2);
+        int w = text_width(state->speech, scale), x = hx - w / 2;
+        if (x < 8) x = 8;
+        if (x + w > GAME_WIDTH - 8) x = GAME_WIDTH - 8 - w;
+        draw_text(state->speech, x, hy - 24 - (int)age / 2, scale, shade(200, 215, 240, fade));
+        return;
+    }
     int w = text_width(state->speech, scale) + 2 * pad, h = PIXL_FONT_HEIGHT * scale + 2 * pad - 4;
-    int cx = s->pet_x, bottom = head_y(state, s) - 10;
+    int cx = hx, bottom = hy - 10;
     int x = cx - w / 2;
+    int y = bottom - h;
+    switch (s->surface) {   /* beside the head, toward the middle of the screen */
+    case APP_GAME_SURFACE_CEILING: y = hy + 10; break;
+    case APP_GAME_SURFACE_RIGHT_WALL: x = hx - 10 - w, y = hy - h / 2; break;
+    case APP_GAME_SURFACE_LEFT_WALL: x = hx + 10, y = hy - h / 2; break;
+    default: break;
+    }
     if (x < 8) x = 8;
     if (x + w > GAME_WIDTH - 8) x = GAME_WIDTH - 8 - w;
-    int y = bottom - h;
     if (y < 8) y = 8;
+    if (y + h > GAME_HEIGHT - 8) y = GAME_HEIGHT - 8 - h;
     Color ink = shade(27, 42, 26, brightness), paper = shade(255, 251, 242, brightness);
     DrawRectangle(x - 2, y - 2, w + 4, h + 4, ink);
     DrawRectangle(x, y, w, h, paper);
-    int tail = cx < x + 16 ? x + 16 : (cx > x + w - 16 ? x + w - 16 : cx);
-    for (int i = 0; i < 4; i++) {
-        DrawRectangle(tail - 4 + i, y + h + i * 2, 8 - 2 * i, 2, i == 0 ? paper : ink);
+    if (s->surface == APP_GAME_SURFACE_FLOOR) {
+        int tail = cx < x + 16 ? x + 16 : (cx > x + w - 16 ? x + w - 16 : cx);
+        for (int i = 0; i < 4; i++) {
+            DrawRectangle(tail - 4 + i, y + h + i * 2, 8 - 2 * i, 2, i == 0 ? paper : ink);
+        }
     }
     draw_text(state->speech, x + pad, y + pad - 2, scale, ink);
 }
@@ -433,6 +517,8 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_UNLOCK: return "Unlock";
     case APP_MENU_BUBBLE_NAP: return "Nap";
     case APP_MENU_BUBBLE_BACK: return "Back";
+    case APP_MENU_BUBBLE_ANSWERS: return "Answers";
+    case APP_MENU_BUBBLE_MEMORY: return "Memory";
     default: return "";
     }
 }
@@ -477,7 +563,7 @@ static void draw_swap(const app_menu_snapshot_t *m, uint32_t tick)
     }
     static const int loop[] = {PIXL_F_IDLE_0, PIXL_F_IDLE_0, PIXL_F_IDLE_1, PIXL_F_IDLE_2, PIXL_F_IDLE_2, PIXL_F_BLINK};
     int frame = loop[(tick / 10) % (sizeof loop / sizeof loop[0])];
-    draw_frame(pet, frame, cx, 310, 1, (uint8_t)scale, 1000, 1000, 100);
+    draw_frame(pet, frame, cx, 310, 1, (uint8_t)scale, 1000, 1000, 100, APP_GAME_SURFACE_FLOOR);
 
     Color grey = shade(120, 120, 120, 100);
     draw_text("<", 18, 200, 4, grey);
@@ -506,6 +592,105 @@ static void draw_swap(const app_menu_snapshot_t *m, uint32_t tick)
     DrawLineEx(q, r2, 8.0f, white);
 }
 
+/* The slime trail: dots on the edge it crawled, fading out. */
+static void draw_trail(const host_state_t *state, uint32_t tick, unsigned brightness)
+{
+    const int dot = state->scale * 2;
+    for (int i = 0; i < TRAIL_POINTS; i++) {
+        const trail_point_t *p = &state->trail[i];
+        if (!p->tick || tick - p->tick >= TRAIL_TICKS) {
+            continue;
+        }
+        unsigned fade = brightness * (TRAIL_TICKS - (tick - p->tick)) / TRAIL_TICKS / 2;
+        int x, y;
+        to_screen(p->surface, p->x, p->y, 0, -dot / 2, &x, &y);
+        DrawRectangle(x - dot / 2, y - dot / 2, dot, dot, shade(150, 205, 140, fade));
+    }
+}
+
+/* Word-wrapped text in raylib's font; draws when `draw` and returns the height used. */
+static int wrap_text(const char *text, int x, int y, int width, int scale, Color colour, bool draw)
+{
+    char line[96], candidate[96];
+    int used = 0, height = 0;
+    const int line_h = (PIXL_FONT_HEIGHT + 3) * scale;
+    const char *p = text;
+    while (*p) {
+        while (*p == ' ') p++;
+        const char *word = p;
+        while (*p && *p != ' ') p++;
+        int len = (int)(p - word);
+        if (!len) break;
+        int n = snprintf(candidate, sizeof candidate, "%s%s%.*s", used ? line : "", used ? " " : "", len, word);
+        if (n < (int)sizeof candidate && (!used || text_width(candidate, scale) <= width) &&
+                text_width(candidate, scale) <= width) {
+            snprintf(line, sizeof line, "%s", candidate);
+            used = 1;
+            continue;
+        }
+        if (used) {   /* the line is full: draw it and try the word again on a fresh line */
+            if (draw) draw_text(line, x, y + height, scale, colour);
+            height += line_h;
+            used = 0;
+            p = word;
+            continue;
+        }
+        /* a word wider than a whole line: as much as fits, then the rest */
+        int k = 1;
+        while (k < len && k < (int)sizeof line - 1) {
+            snprintf(candidate, sizeof candidate, "%.*s", k + 1, word);
+            if (text_width(candidate, scale) > width) break;
+            k++;
+        }
+        snprintf(line, sizeof line, "%.*s", k, word);
+        if (draw) draw_text(line, x, y + height, scale, colour);
+        height += line_h;
+        p = word + k;
+    }
+    if (used) {
+        if (draw) draw_text(line, x, y + height, scale, colour);
+        height += line_h;
+    }
+    return height;
+}
+
+/* Answers or Memory: one item at a time from the Mac, scrolled by dragging. */
+static void draw_reader(host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const bool answers = m->mode == APP_MENU_ANSWERS;
+    const app_dock_feed_t *feed = app_dock_feed(state->dock);
+    const uint8_t *accent = pixl_pets[state->look].accent;
+    Color head = shade(accent[0], accent[1], accent[2], 100), white = shade(240, 240, 235, 100);
+    Color grey = shade(120, 120, 120, 100);
+    char header[48];
+    if (m->read_count > 0) {
+        snprintf(header, sizeof header, "%s  %d/%d", answers ? "Answers" : "Memory", m->read_index + 1, m->read_count);
+    } else {
+        snprintf(header, sizeof header, "%s", answers ? "Answers" : "Memory");
+    }
+    draw_text_centred(header, GAME_WIDTH / 2, 26, 2, head);
+    if (m->read_count == 0 || !feed) {
+        const char *hint = answers ? "Nothing yet. Ask on your Mac and the answers show up here."
+                                   : "Nothing yet. Save highlights on your Mac and they show up here.";
+        wrap_text(hint, READ_LEFT + 20, 180, READ_WIDTH - 40, 2, white, true);
+        return;
+    }
+    const app_dock_feed_item_t *item = answers ? &feed->answers[m->read_index] : &feed->memory[m->read_index];
+    const int view = READ_BOTTOM - READ_TOP;
+    int title_h = item->title[0] ? wrap_text(item->title, READ_LEFT, 0, READ_WIDTH, 2, head, false) + 10 : 0;
+    int body_h = wrap_text(item->body, READ_LEFT, 0, READ_WIDTH, 2, white, false);
+    app_menu_set_read_extent(state->menu, title_h + body_h, view);
+    BeginScissorMode(READ_LEFT - 4, READ_TOP, READ_WIDTH + 8, view);
+    int y = READ_TOP - m->scroll;
+    if (item->title[0]) {
+        wrap_text(item->title, READ_LEFT, y, READ_WIDTH, 2, head, true);
+    }
+    wrap_text(item->body, READ_LEFT, y + title_h, READ_WIDTH, 2, white, true);
+    EndScissorMode();
+    draw_text_centred(m->read_count > 1 ? "swipe for more - tap to go back" : "tap to go back", GAME_WIDTH / 2,
+                      GAME_HEIGHT - 26, 1, grey);
+}
+
 static int render(void *value)
 {
     host_state_t *state = value;
@@ -528,12 +713,15 @@ static int render(void *value)
 
     if (m.mode == APP_MENU_SWAP) {
         draw_swap(&m, s.tick);
+    } else if (m.mode == APP_MENU_ANSWERS || m.mode == APP_MENU_MEMORY) {
+        draw_reader(state, &m);
     } else {
+        draw_trail(state, s.tick, m.mode == APP_MENU_CLOSED ? brightness : 45);
         if (s.phase != APP_GAME_PET_ABSENT) {
             /* Behind an open menu the Pixl is dimmed so the bubbles stand out. */
             unsigned b = m.mode == APP_MENU_CLOSED ? brightness : 45;
             draw_frame(&pixl_pets[state->look], (int)s.pose, s.pet_x, s.pet_y, s.facing, state->scale,
-                       s.squash_x, s.squash_y, b);
+                       s.squash_x, s.squash_y, b, (int)s.surface);
             if (s.asleep) {
                 draw_zz(state, &s, b);
             }
@@ -593,13 +781,13 @@ static int state_json(const void *value, char *output, size_t capacity)
     int size = snprintf(output, capacity,
                         "{\"phase\":\"%s\",\"tick\":%lu,\"pointer_x\":%ld,\"pointer_y\":%ld,"
                         "\"pointer_down\":%s,\"pet\":\"%s\",\"pose\":%d,\"pet_x\":%ld,\"pet_y\":%ld,"
-                        "\"look\":\"%s\",\"scale\":%u,\"asleep\":%s,\"menu\":%d,\"swap_index\":%d,"
+                        "\"look\":\"%s\",\"scale\":%u,\"asleep\":%s,\"surface\":%d,\"menu\":%d,\"swap_index\":%d,"
                         "\"speech\":\"%s\",\"waiting\":%s,\"macs\":%d,\"owns_pet\":%s,\"in_trip\":%s,"
                         "\"locked\":%s,\"battery\":%d,\"on_battery\":%s,\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick, (long)s.pointer_x,
                         (long)s.pointer_y, s.pointer_down ? "true" : "false", phase_name(s.phase), (int)s.pose,
                         (long)s.pet_x, (long)s.pet_y, pixl_pets[state->look].id, (unsigned)state->scale,
-                        s.asleep ? "true" : "false", (int)m.mode, m.pet_index,
+                        s.asleep ? "true" : "false", (int)s.surface, (int)m.mode, m.pet_index,
                         s.tick < state->speech_until ? state->speech : "",
                         (s.waiting || state->sending) ? "true" : "false", d.macs, d.owns_pet ? "true" : "false",
                         d.in_trip ? "true" : "false", d.locked ? "true" : "false", d.battery_percent,

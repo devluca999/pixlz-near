@@ -48,6 +48,7 @@ struct app_dock {
     int pending_count;
     /* Instance-owned scratch, so nothing large sits on the caller's task stack. */
     pt_outs_t outs;
+    app_dock_feed_t feed;
     uint8_t io[512];
     char hello[HELLO_MAX];
 };
@@ -280,10 +281,46 @@ static bool identify(app_dock_handle_t d, conn_t *c, const char *body, size_t le
     if (!pt_json_find(body, len, "from", &v) || !pt_json_string(v, c->peer.id, sizeof c->peer.id)) {
         return false;
     }
-    if (!pt_json_find(body, len, "payload.fromName", &v) || !pt_json_string(v, c->peer.name, sizeof c->peer.name)) {
+    if ((!pt_json_find(body, len, "payload.fromName", &v) && !pt_json_find(body, len, "fromName", &v)) ||
+            !pt_json_string(v, c->peer.name, sizeof c->peer.name)) {
         snprintf(c->peer.name, sizeof c->peer.name, "%s", c->peer.id);
     }
     return false;  /* an envelope: handle it as one too */
+}
+
+/* `{"feed":{"answers":[{"q","a"}…],"highlights":[{"title","text"}…]}}` from a Mac. */
+static void read_feed_list(pt_span_t feed, const char *path, const char *title_key, const char *body_key,
+                           app_dock_feed_item_t *items, int *count)
+{
+    pt_span_t list, item, v;
+    *count = 0;
+    if (!pt_json_find(feed.p, feed.len, path, &list)) {
+        return;
+    }
+    for (int i = 0; *count < APP_DOCK_FEED_ITEMS && pt_json_array_item(list, i, &item); i++) {
+        app_dock_feed_item_t *out = &items[*count];
+        out->title[0] = out->body[0] = 0;
+        if (pt_json_find(item.p, item.len, title_key, &v)) {
+            (void)pt_json_string(v, out->title, sizeof out->title);
+        }
+        if (pt_json_find(item.p, item.len, body_key, &v) && pt_json_string(v, out->body, sizeof out->body)) {
+            (*count)++;
+        }
+    }
+}
+
+static bool handle_feed(app_dock_handle_t d, const conn_t *c, const char *body, size_t len)
+{
+    pt_span_t feed;
+    if (!pt_json_find(body, len, "feed", &feed)) {
+        return false;
+    }
+    read_feed_list(feed, "answers", "q", "a", d->feed.answers, &d->feed.answers_count);
+    read_feed_list(feed, "highlights", "title", "text", d->feed.memory, &d->feed.memory_count);
+    d->feed.version++;
+    dock_platform_log("pixlz: feed from %s: %d answers, %d highlights", c->peer.name, d->feed.answers_count,
+                      d->feed.memory_count);
+    return true;
 }
 
 static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
@@ -302,6 +339,9 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             perform(d, &d->outs);
             return;
         }
+    }
+    if (handle_feed(d, c, body, len)) {
+        return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
     perform(d, &d->outs);
@@ -443,6 +483,11 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     s.on_battery = d->on_battery;
     s.locked = pt_node_locked(&d->node);
     return s;
+}
+
+const app_dock_feed_t *app_dock_feed(app_dock_handle_t d)
+{
+    return d ? &d->feed : NULL;
 }
 
 bool app_dock_set_locked(app_dock_handle_t d, bool locked)

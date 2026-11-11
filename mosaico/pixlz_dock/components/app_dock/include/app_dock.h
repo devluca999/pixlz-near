@@ -33,6 +33,20 @@ typedef struct {
     bool locked;         /**< The Pixl here is locked to this device (SPEC §10.6). */
 } app_dock_status_t;
 
+/** What the Mac shows on the Mosaico (SPEC §12.1: results only, no AI here): its latest Ask
+ * answers and saved highlights, plain ASCII, sent by the Mac when it connects. */
+enum { APP_DOCK_FEED_ITEMS = 6, APP_DOCK_FEED_TITLE = 80, APP_DOCK_FEED_BODY = 480 };
+typedef struct {
+    char title[APP_DOCK_FEED_TITLE];   /**< The question, or the highlight's page title. */
+    char body[APP_DOCK_FEED_BODY];     /**< The answer, or the highlighted text. */
+} app_dock_feed_item_t;
+typedef struct {
+    uint32_t version;                  /**< Goes up with every feed received. */
+    int answers_count, memory_count;
+    app_dock_feed_item_t answers[APP_DOCK_FEED_ITEMS];
+    app_dock_feed_item_t memory[APP_DOCK_FEED_ITEMS];
+} app_dock_feed_t;
+
 /** Loads the saved record and starts networking. Returns NULL on allocation failure. */
 app_dock_handle_t app_dock_create(void);
 /** Closes sockets and frees the dock; clears the handle. NULL is a no-op. */
@@ -42,6 +56,8 @@ int app_dock_poll(app_dock_handle_t dock, app_dock_event_t *events, int max);
 /** Send the Pixl to the connected Mac. The result arrives as LEFT or SHRUG events. */
 void app_dock_send_home(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
+/** The latest feed from a Mac; empty until one arrives. Valid until the next poll. */
+const app_dock_feed_t *app_dock_feed(app_dock_handle_t dock);
 /** Lock or unlock the Pixl here; saved at once. False if nothing changed. */
 bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
 /** The species ids this device can draw (the strings must outlive the dock). */

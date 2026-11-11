@@ -15,14 +15,17 @@ typedef struct app_menu *app_menu_handle_t;
 typedef enum {
     APP_MENU_CLOSED = 0,
     APP_MENU_PAGE_1,   /**< Send home · Trick · Swap · More */
-    APP_MENU_PAGE_2,   /**< Lock / Unlock · Nap · Back */
+    APP_MENU_PAGE_2,   /**< Answers · Memory · Lock / Unlock · Back */
     APP_MENU_SWAP,     /**< Swipe through the Pixls; red cancel, green confirm. */
+    APP_MENU_ANSWERS,  /**< Reading the Mac's Ask answers: swipe for the next, drag to scroll. */
+    APP_MENU_MEMORY,   /**< Reading the Mac's saved highlights, the same way. */
 } app_menu_mode_t;
 
 typedef enum {
     APP_MENU_BUBBLE_NONE = 0,
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
+    APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -49,6 +52,8 @@ typedef struct {
     bool has_pet;       /**< Trick and Nap need a Pixl here. */
     int pet_index;      /**< The current look, where the carousel starts. */
     int pet_count;      /**< How many Pixls the carousel offers, >= 1. */
+    int answers_count;  /**< Items the Mac has sent for the Answers and Memory readers. */
+    int memory_count;
 } app_menu_context_t;
 
 typedef struct {
@@ -67,6 +72,9 @@ typedef struct {
     int16_t offset_x;      /**< Swap: the carousel's horizontal slide, pixels. */
     int16_t cancel_x, confirm_x, buttons_y, button_radius;
     int8_t pressed;        /**< Swap: -1 cancel held, +1 confirm held, 0 none. */
+    int read_index;        /**< Answers/Memory: the item shown, and how many there are. */
+    int read_count;
+    int16_t scroll;        /**< Answers/Memory: pixels scrolled down. */
 } app_menu_snapshot_t;
 
 app_menu_handle_t app_menu_create(uint16_t width, uint16_t height);
@@ -78,6 +86,10 @@ bool app_menu_is_open(app_menu_handle_t menu);
 /** Feeds a touch. Returns true when the menu used it (the Pixl must not see it). */
 bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed);
 void app_menu_update(app_menu_handle_t menu);
+/** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
+void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
+/** New feed counts while a reader may be open (the Mac sends again). */
+void app_menu_set_counts(app_menu_handle_t menu, int answers_count, int memory_count);
 app_menu_snapshot_t app_menu_read(app_menu_handle_t menu);
 /** The chosen action, once. */
 app_menu_action_t app_menu_take_action(app_menu_handle_t menu);

@@ -9,7 +9,12 @@ The Mosaico's travel dock (D17): a TCP server for Macs on port 47860, PixlzCore'
 - Feed frames to the node and perform its outputs in order. A failed save stops the step, so
   nothing that depends on it is sent (SPEC §10.5).
 - Turn exits, entrances and shrugs into `app_dock_event_t` for the runtime.
-- `app_dock_send_home`: offer the Pixl to the connected Mac (the spike's tap).
+- `app_dock_send_home`: offer the Pixl to the connected Mac (a fling, or the menu's Home).
+- **Feed:** a `{"feed":{"answers":[{"q","a"}],"highlights":[{"title","text"}]},"from","fromName"}`
+  frame from a Mac (opt-in on the Mac: `PixlMemory.feedDevices`) fills `app_dock_feed`: up to 6
+  answers and 6 highlights, ASCII, for the Answers and Memory readers. Never passed to the trip node.
+- Lock/unlock (`app_dock_set_locked`, saved at once), the species list it can host, and the
+  device's chosen look (Pixl swap) in NVS.
 
 ## Dependencies
 

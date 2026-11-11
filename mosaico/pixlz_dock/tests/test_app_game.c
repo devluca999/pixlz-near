@@ -10,7 +10,7 @@ enum { HZ = 30 };
 
 static app_game_handle_t make_with(app_game_movement_t movement)
 {
-    app_game_config_t cfg = {480, 480, 2, 68, 48, 42, movement, 18.0f};
+    app_game_config_t cfg = {480, 480, 2, 68, 48, 42, movement, 18.0f, false};
     app_game_handle_t g = NULL;
     CHECK(app_game_create(&cfg, &g) == APP_GAME_OK);
     return g;
@@ -71,7 +71,7 @@ static void drag(app_game_handle_t g, int x, int y, int dx, int dy, int steps)
 
 static void test_create_and_arrive(void)
 {
-    app_game_config_t bad = {480, 480, 0, 68, 48, 1, APP_GAME_MOVE_HOP, 0};
+    app_game_config_t bad = {480, 480, 0, 68, 48, 1, APP_GAME_MOVE_HOP, 0, false};
     app_game_handle_t h = NULL;
     CHECK(app_game_create(&bad, &h) == APP_GAME_INVALID_ARGUMENT && !h);
 
@@ -358,10 +358,68 @@ static void test_walker_and_floater(void)
     app_game_destroy(&g);
 }
 
+static void test_edge_crawler(void)
+{
+    // A sticky walker (Slugg) crawls the whole edge: floor, right wall, ceiling, left wall.
+    app_game_config_t slug = {480, 480, 2, 64, 40, 7, APP_GAME_MOVE_WALK, 18.0f, true};
+    app_game_handle_t g = NULL;
+    CHECK(app_game_create(&slug, &g) == APP_GAME_OK);
+    app_game_pet_arrive(g);
+    CHECK(run_until(g, APP_GAME_PET_IDLE, 300));
+    CHECK(app_game_read(g).surface == APP_GAME_SURFACE_FLOOR);
+    bool seen[4] = {false};
+    for (int i = 0; i < MIN(60) && !(seen[0] && seen[1] && seen[2] && seen[3]); i++) {
+        if (i % MIN(2) == 0) app_game_set_pointer(g, 5, 5, true), app_game_set_pointer(g, 5, 5, false);  // keep it awake
+        app_game_update(g);
+        app_game_snapshot_t s = app_game_read(g);
+        if (s.phase == APP_GAME_PET_RESTING) continue;
+        seen[s.surface] = true;
+        // Feet on the edge it's on, inside the screen.
+        switch (s.surface) {
+        case APP_GAME_SURFACE_FLOOR: CHECK(s.pet_y == 480 && s.pet_x >= 63 && s.pet_x <= 417); break;
+        case APP_GAME_SURFACE_RIGHT_WALL: CHECK(s.pet_x == 480 && s.pet_y >= 63 && s.pet_y <= 417); break;
+        case APP_GAME_SURFACE_CEILING: CHECK(s.pet_y == 0 && s.pet_x >= 63 && s.pet_x <= 417); break;
+        case APP_GAME_SURFACE_LEFT_WALL: CHECK(s.pet_x == 0 && s.pet_y >= 63 && s.pet_y <= 417); break;
+        }
+        if (failures) break;
+    }
+    CHECK(seen[0] && seen[1] && seen[2] && seen[3]);
+
+    // Find it on the ceiling, idle: a poke there works (the hit area hangs down from the top).
+    bool on_ceiling = false;
+    for (int i = 0; i < MIN(60) && !on_ceiling; i++) {
+        if (i % MIN(2) == 0) app_game_set_pointer(g, 5, 5, true), app_game_set_pointer(g, 5, 5, false);
+        app_game_update(g);
+        app_game_snapshot_t s = app_game_read(g);
+        on_ceiling = s.surface == APP_GAME_SURFACE_CEILING && s.phase == APP_GAME_PET_IDLE;
+    }
+    CHECK(on_ceiling);
+    app_game_snapshot_t s = app_game_read(g);
+    tap(g, s.pet_x, 30);
+    app_game_update(g);
+    s = app_game_read(g);
+    CHECK(s.phase == APP_GAME_PET_POKED && s.surface == APP_GAME_SURFACE_CEILING && s.pet_y == 0);
+    CHECK(run_until(g, APP_GAME_PET_IDLE, 60));
+    CHECK(app_game_read(g).surface == APP_GAME_SURFACE_CEILING);   // still up there
+
+    // Peeled off the ceiling: held upright, dropped, lands on the floor.
+    app_game_set_pointer(g, s.pet_x, 30, true);
+    app_game_update(g);
+    app_game_set_pointer(g, s.pet_x, 120, true);
+    app_game_update(g);
+    s = app_game_read(g);
+    CHECK(s.phase == APP_GAME_PET_HELD && s.surface == APP_GAME_SURFACE_FLOOR);
+    app_game_set_pointer(g, s.pet_x, 120, false);
+    CHECK(run_until(g, APP_GAME_PET_IDLE, 150));
+    s = app_game_read(g);
+    CHECK(s.surface == APP_GAME_SURFACE_FLOOR && s.pet_y == 480);
+    app_game_destroy(&g);
+}
+
 static void test_swap_look(void)
 {
     app_game_handle_t g = idle_pet();
-    app_game_config_t kiti = {480, 480, 3, 45, 40, 1, APP_GAME_MOVE_HOP, 0};
+    app_game_config_t kiti = {480, 480, 3, 45, 40, 1, APP_GAME_MOVE_HOP, 0, false};
     app_game_set_look(g, &kiti);
     CHECK(app_game_read(g).phase == APP_GAME_PET_ENTERING);   // the new look drops in
     CHECK(run_until(g, APP_GAME_PET_IDLE, 300));
@@ -411,6 +469,7 @@ int main(void)
     test_sleep_and_wake();
     test_trick_and_mischief();
     test_walker_and_floater();
+    test_edge_crawler();
     test_swap_look();
     test_leave_and_wander();
     printf("%d checks, %d failed\n", checks, failures);

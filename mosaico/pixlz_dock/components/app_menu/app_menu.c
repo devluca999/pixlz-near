@@ -21,6 +21,9 @@ struct app_menu {
     int8_t pressed;
     int pet_index;
     float offset;
+    int read_index;
+    float scroll, scroll_at_down;
+    int scroll_max;
     app_menu_action_t action;
 };
 
@@ -52,6 +55,19 @@ static void show(app_menu_handle_t m, app_menu_mode_t mode)
     m->last_touch = m->tick;
     m->pressed = 0;
     m->offset = 0;
+    m->read_index = 0;
+    m->scroll = 0;
+    m->scroll_max = 0;
+}
+
+static bool reading(const app_menu_handle_t m)
+{
+    return m->mode == APP_MENU_ANSWERS || m->mode == APP_MENU_MEMORY;
+}
+
+static int read_count(const app_menu_handle_t m)
+{
+    return m->mode == APP_MENU_ANSWERS ? m->context.answers_count : m->mode == APP_MENU_MEMORY ? m->context.memory_count : 0;
 }
 
 void app_menu_open(app_menu_handle_t m, const app_menu_context_t *context)
@@ -106,8 +122,9 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         bubbles[2] = APP_MENU_BUBBLE_SWAP, enabled[2] = c->pet_count > 1;
         bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
     } else if (m->mode == APP_MENU_PAGE_2) {
-        bubbles[0] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[0] = c->has_pet;
-        bubbles[1] = APP_MENU_BUBBLE_NAP, enabled[1] = c->has_pet;
+        bubbles[0] = APP_MENU_BUBBLE_ANSWERS, enabled[0] = true;   /* empty: says how to fill it */
+        bubbles[1] = APP_MENU_BUBBLE_MEMORY, enabled[1] = true;
+        bubbles[2] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[2] = c->has_pet;
         bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
     }
 }
@@ -153,6 +170,8 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_UNLOCK: act(m, APP_MENU_ACTION_LOCK, 0); break;
     case APP_MENU_BUBBLE_MORE: show(m, APP_MENU_PAGE_2); break;
     case APP_MENU_BUBBLE_BACK: show(m, APP_MENU_PAGE_1); break;
+    case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
+    case APP_MENU_BUBBLE_MEMORY: show(m, APP_MENU_MEMORY); break;
     case APP_MENU_BUBBLE_SWAP:
         show(m, APP_MENU_SWAP);
         m->pet_index = m->context.pet_index;
@@ -222,6 +241,32 @@ static void swap_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
     }
 }
 
+/* Readers: drag up/down to scroll, swipe sideways for the next item, tap to go back. */
+static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    int32_t dx = x - m->down_x, dy = y - m->down_y;
+    if (pressed && !was_down) {
+        m->scroll_at_down = m->scroll;
+        return;
+    }
+    if (pressed) {
+        if (dy * dy > dx * dx) {
+            float s = m->scroll_at_down - (float)dy;
+            m->scroll = s < 0 ? 0 : (s > (float)m->scroll_max ? (float)m->scroll_max : s);
+        }
+        return;
+    }
+    const int n = read_count(m);
+    if (dx * dx >= dy * dy && (dx <= -SWIPE_MIN || dx >= SWIPE_MIN) && n > 1) {
+        int dir = dx < 0 ? 1 : -1;
+        m->read_index = ((m->read_index + dir) % n + n) % n;
+        m->scroll = 0;
+        m->scroll_max = 0;
+    } else if (dx * dx + dy * dy <= TAP_SLOP * TAP_SLOP) {
+        show(m, APP_MENU_PAGE_2);   /* a tap goes back to the page it came from */
+    }
+}
+
 bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
 {
     if (!m || m->mode == APP_MENU_CLOSED) {
@@ -238,6 +283,8 @@ bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
     m->last_touch = m->tick;
     if (m->mode == APP_MENU_SWAP) {
         swap_pointer(m, x, y, pressed, was_down);
+    } else if (reading(m)) {
+        read_pointer(m, x, y, pressed, was_down);
     } else if (!pressed && was_down) {
         int32_t dx = x - m->down_x, dy = y - m->down_y;
         if (dx * dx + dy * dy <= TAP_SLOP * TAP_SLOP) {
@@ -258,7 +305,7 @@ void app_menu_update(app_menu_handle_t m)
         return;
     }
     uint32_t idle = m->tick - m->last_touch;
-    if (!m->down && idle >= (m->mode == APP_MENU_SWAP ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
+    if (!m->down && idle >= (m->mode == APP_MENU_SWAP || reading(m) ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
         app_menu_close(m);   /* nothing static stays on the AMOLED (SPEC §12.1) */
         return;
     }
@@ -293,6 +340,9 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.buttons_y = (int16_t)(m->height - BUTTON_INSET);
     s.button_radius = BUTTON_RADIUS;
     s.pressed = m->pressed;
+    s.read_index = m->read_index;
+    s.read_count = read_count(m);
+    s.scroll = (int16_t)m->scroll;
     app_menu_bubble_t bubbles[APP_MENU_SLOTS];
     bool enabled[APP_MENU_SLOTS];
     page(m, bubbles, enabled);
@@ -305,6 +355,30 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
         s.slots[i].scale = t < start ? 0 : pop(t - start);
     }
     return s;
+}
+
+void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
+{
+    if (!m) {
+        return;
+    }
+    m->scroll_max = content_px > view_px ? content_px - view_px : 0;
+    if (m->scroll > (float)m->scroll_max) {
+        m->scroll = (float)m->scroll_max;
+    }
+}
+
+void app_menu_set_counts(app_menu_handle_t m, int answers_count, int memory_count)
+{
+    if (!m) {
+        return;
+    }
+    m->context.answers_count = answers_count;
+    m->context.memory_count = memory_count;
+    int n = read_count(m);
+    if (m->read_index >= n) {
+        m->read_index = n > 0 ? n - 1 : 0;
+    }
 }
 
 app_menu_action_t app_menu_take_action(app_menu_handle_t m)

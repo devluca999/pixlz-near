@@ -57,6 +57,12 @@ final class Link: @unchecked Sendable {
 
     func cancel() { conn.cancel() }
 
+    /// One framed JSON body that isn't an envelope (the Mosaico feed).
+    func sendBody(_ body: Data) {
+        var length = UInt32(body.count).bigEndian
+        sendFrame(Data(bytes: &length, count: 4) + body)
+    }
+
     /// Feeds one input to the node and performs its outputs in order (a save before any later send).
     func feed(_ input: TravelNode.Input) {
         reloadIfIdle()

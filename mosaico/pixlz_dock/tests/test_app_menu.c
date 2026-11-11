@@ -24,7 +24,7 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6};
+static const app_menu_context_t CTX = {true, false, true, 0, 6, 2, 3};
 
 static void test_pages(void)
 {
@@ -52,8 +52,8 @@ static void test_pages(void)
     // More → page 2 → Back → page 1.
     tap(m, s.slots[3].x, s.slots[3].y);
     s = app_menu_read(m);
-    CHECK(s.mode == APP_MENU_PAGE_2 && s.slots[0].bubble == APP_MENU_BUBBLE_LOCK);
-    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_NAP && s.slots[2].bubble == APP_MENU_BUBBLE_NONE);
+    CHECK(s.mode == APP_MENU_PAGE_2 && s.slots[0].bubble == APP_MENU_BUBBLE_ANSWERS);
+    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_MEMORY && s.slots[2].bubble == APP_MENU_BUBBLE_LOCK);
     CHECK(s.slots[3].bubble == APP_MENU_BUBBLE_BACK);
     tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
@@ -72,8 +72,8 @@ static void test_pages(void)
     locked.locked = true;
     app_menu_open(m, &locked);
     tap(m, s.slots[3].x, s.slots[3].y);
-    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_UNLOCK);
-    tap(m, 240, s.slots[0].y);
+    CHECK(app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_UNLOCK);
+    tap(m, 240, s.slots[2].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_LOCK && a.arg == 0);
 
@@ -170,10 +170,62 @@ static void test_swap(void)
     app_menu_destroy(&m);
 }
 
+static void test_readers(void)
+{
+    app_menu_handle_t m = app_menu_create(480, 480);
+    app_menu_open(m, &CTX);
+    app_menu_snapshot_t s = app_menu_read(m);
+    tap(m, s.slots[3].x, s.slots[3].y);      // More
+    tap(m, 240, s.slots[0].y);               // Answers
+    s = app_menu_read(m);
+    CHECK(s.mode == APP_MENU_ANSWERS && s.read_index == 0 && s.read_count == 2 && s.scroll == 0);
+    // Drag up to scroll, as far as the text goes and no further.
+    app_menu_set_read_extent(m, 600, 300);
+    app_menu_pointer(m, 240, 400, true);
+    app_menu_update(m);
+    app_menu_pointer(m, 240, 250, true);
+    CHECK(app_menu_read(m).scroll == 150);
+    app_menu_pointer(m, 240, -200, true);
+    CHECK(app_menu_read(m).scroll == 300);
+    app_menu_pointer(m, 240, -200, false);
+    CHECK(app_menu_read(m).mode == APP_MENU_ANSWERS);
+    // Swipe for the next one (wraps); scroll starts over.
+    swipe(m, 360, 200);
+    s = app_menu_read(m);
+    CHECK(s.read_index == 1 && s.scroll == 0);
+    swipe(m, 360, 200);
+    CHECK(app_menu_read(m).read_index == 0);
+    // New counts while reading keep the index in range.
+    swipe(m, 360, 200);
+    app_menu_set_counts(m, 1, 3);
+    CHECK(app_menu_read(m).read_index == 0 && app_menu_read(m).read_count == 1);
+    // A tap goes back to page 2; Memory reads its own list.
+    tap(m, 240, 240);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
+    tap(m, s.slots[1].x, s.slots[1].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_MEMORY && app_menu_read(m).read_count == 3);
+    // Readers stay open longer than the bubbles, then close.
+    run(m, 20 * 30);
+    CHECK(app_menu_is_open(m));
+    run(m, 11 * 30);
+    CHECK(!app_menu_is_open(m));
+    // Empty: still opens (the screen says how to fill it).
+    app_menu_context_t empty = CTX;
+    empty.answers_count = 0;
+    app_menu_open(m, &empty);
+    tap(m, s.slots[3].x, s.slots[3].y);
+    tap(m, 240, s.slots[0].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_ANSWERS && app_menu_read(m).read_count == 0);
+    swipe(m, 360, 200);
+    CHECK(app_menu_read(m).read_index == 0);
+    app_menu_destroy(&m);
+}
+
 int main(void)
 {
     test_pages();
     test_swap();
+    test_readers();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

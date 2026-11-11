@@ -10,7 +10,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PixlzSend",
-            dependencies: [.product(name: "PixlzCore", package: "PixlzCore")]
+            dependencies: [.product(name: "PixlzCore", package: "PixlzCore"),
+                           .product(name: "PixlTravel", package: "PixlzCore")]
         ),
     ],
     swiftLanguageModes: [.v5]

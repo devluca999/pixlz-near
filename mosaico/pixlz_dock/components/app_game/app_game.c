@@ -70,6 +70,8 @@ struct app_game {
     /* Walks and glides: start, target and length (ticks). */
     float from_x, from_y, to_x, to_y;
     uint32_t move_ticks;
+    /* Edge crawlers: distance along the screen's edge (SPEC §12.3), and a crawl's start/end. */
+    float perim, from_perim, to_perim;
 
     /* Its own life. */
     uint32_t last_touch, next_nap, next_trick, next_mischief, next_chat;
@@ -144,6 +146,60 @@ static float clampf(float v, float lo, float hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+/* ---- Edge crawling (a sticky walker: Slugg) ------------------------------------------------
+ * The feet follow the screen's edge counterclockwise as the distance grows: along the floor to
+ * the right, up the right wall, along the ceiling to the left (upside down), down the left wall.
+ * Each straight part keeps half a body clear of the corners. */
+static bool perimeter(app_game_handle_t g)
+{
+    return g->config.movement == APP_GAME_MOVE_WALK && g->config.sticky;
+}
+
+static void edge_lengths(app_game_handle_t g, float *across, float *up)
+{
+    float hw = half_width(g);
+    *across = (float)g->config.width - 2.0f * hw;
+    *up = (float)g->config.height - 2.0f * hw;
+}
+
+static void place_on_edge(app_game_handle_t g, float p)
+{
+    float across, up, hw = half_width(g), w = (float)g->config.width, h = (float)g->config.height;
+    edge_lengths(g, &across, &up);
+    float total = 2.0f * (across + up);
+    p = fmodf(p, total);
+    if (p < 0) {
+        p += total;
+    }
+    g->perim = p;
+    if (p < across) {
+        g->state.surface = APP_GAME_SURFACE_FLOOR, g->x = hw + p, g->y = h;
+    } else if (p < across + up) {
+        g->state.surface = APP_GAME_SURFACE_RIGHT_WALL, g->x = w, g->y = h - hw - (p - across);
+    } else if (p < 2.0f * across + up) {
+        g->state.surface = APP_GAME_SURFACE_CEILING, g->x = w - hw - (p - across - up), g->y = 0;
+    } else {
+        g->state.surface = APP_GAME_SURFACE_LEFT_WALL, g->x = 0, g->y = hw + (p - 2.0f * across - up);
+    }
+}
+
+/* Back on whatever it stands on: the floor, or (a crawler) its spot on the edge; floaters stay. */
+static void ground(app_game_handle_t g)
+{
+    if (floats(g)) {
+        return;
+    }
+    if (perimeter(g) && g->state.surface != APP_GAME_SURFACE_FLOOR) {
+        place_on_edge(g, g->perim);
+        return;
+    }
+    g->state.surface = APP_GAME_SURFACE_FLOOR;
+    g->y = floor_y(g);
+    if (perimeter(g)) {
+        g->perim = clampf(g->x - half_width(g), 0, (float)g->config.width - 2.0f * half_width(g));
+    }
+}
+
 static void say(app_game_handle_t g, app_game_say_t what)
 {
     g->say = what;
@@ -170,9 +226,7 @@ static void start_idle(app_game_handle_t g)
     set_phase(g, APP_GAME_PET_IDLE);
     g->hop = HOP_NONE;
     g->idle_tick = g->state.tick;
-    if (!floats(g)) {
-        g->y = floor_y(g);
-    }
+    ground(g);
     g->vx = g->vy = 0;
     g->next_blink = g->state.tick + random_ticks(g, BLINK_GAP_MIN, BLINK_GAP_MAX);
     g->next_wander = g->state.tick + random_ticks(g, WANDER_MIN, WANDER_MAX);
@@ -255,9 +309,21 @@ static bool touchable(app_game_handle_t g)
 
 static bool hits_pet(app_game_handle_t g, int32_t x, int32_t y)
 {
-    float hw = half_width(g), h = pet_height(g);
-    return touchable(g) && (float)x >= g->x - hw && (float)x <= g->x + hw && (float)y >= g->y - h &&
-           (float)y <= g->y;
+    float hw = half_width(g), h = pet_height(g), fx = (float)x, fy = (float)y;
+    if (!touchable(g)) {
+        return false;
+    }
+    switch (g->state.surface) {   /* the body sticks out from the edge it stands on */
+    case APP_GAME_SURFACE_RIGHT_WALL:
+        return fx >= g->x - h && fx <= g->x && fy >= g->y - hw && fy <= g->y + hw;
+    case APP_GAME_SURFACE_CEILING:
+        return fx >= g->x - hw && fx <= g->x + hw && fy >= g->y && fy <= g->y + h;
+    case APP_GAME_SURFACE_LEFT_WALL:
+        return fx >= g->x && fx <= g->x + h && fy >= g->y - hw && fy <= g->y + hw;
+    case APP_GAME_SURFACE_FLOOR:
+    default:
+        return fx >= g->x - hw && fx <= g->x + hw && fy >= g->y - h && fy <= g->y;
+    }
 }
 
 static void add_sample(app_game_handle_t g, float x, float y)
@@ -284,6 +350,12 @@ static void follow_finger(app_game_handle_t g, float fx, float fy)
 
 static void begin_hold(app_game_handle_t g)
 {
+    if (g->state.surface != APP_GAME_SURFACE_FLOOR) {
+        /* Peeled off the wall or ceiling: held upright, feet where the finger's below. */
+        g->state.surface = APP_GAME_SURFACE_FLOOR;
+        g->x = clampf((float)g->down_x, half_width(g), (float)g->config.width - half_width(g));
+        g->y = clampf((float)g->down_y + pet_height(g) / 2.0f, pet_height(g), floor_y(g));
+    }
     set_phase(g, APP_GAME_PET_HELD);
     g->hop = HOP_NONE;
     g->vx = g->vy = 0;
@@ -338,9 +410,7 @@ static void poke(app_game_handle_t g)
     g->poke_ticks[POKE_ANNOY_COUNT - 1] = g->state.tick;
     bool annoyed = g->poke_ticks[0] && g->state.tick - g->poke_ticks[0] <= POKE_ANNOY_TICKS;
     g->hop = HOP_NONE;
-    if (!floats(g)) {
-        g->y = floor_y(g);
-    }
+    ground(g);
     g->vx = g->vy = 0;
     if (annoyed) {
         g->poke_ticks[0] = 0;
@@ -453,6 +523,17 @@ static void begin_wander(app_game_handle_t g)
         break;
     case APP_GAME_MOVE_WALK: {
         float speed = px(g, g->config.walk_speed > 0 ? g->config.walk_speed : DEFAULT_WALK_SPEED);
+        if (perimeter(g)) {
+            /* On along the edge, usually the way it was already going (4 times in 5), so it does
+             * make it round corners, up the walls and across the ceiling. */
+            dir = (next_random(g) % 5u) ? (float)g->state.facing : -(float)g->state.facing;
+            float along = random_between(g, 100.0f, 360.0f) * dir;
+            g->from_perim = g->perim;
+            g->to_perim = g->perim + along;
+            g->move_ticks = (uint32_t)(fabsf(along) / speed * (float)TICK_HZ);
+            g->state.facing = (int8_t)dir;
+            break;
+        }
         begin_travel(g, target, floor_y(g), (uint32_t)(fabsf(target - g->x) / speed * (float)TICK_HZ));
         break;
     }
@@ -509,6 +590,10 @@ static bool travel_step(app_game_handle_t g)
 {
     uint32_t t = g->state.tick - g->stage_tick;
     float u = t >= g->move_ticks ? 1.0f : (float)t / (float)g->move_ticks;
+    if (perimeter(g)) {
+        place_on_edge(g, g->from_perim + (g->to_perim - g->from_perim) * u);
+        return t >= g->move_ticks;
+    }
     if (floats(g)) {
         u = u * u * (3.0f - 2.0f * u);
     }
@@ -898,6 +983,8 @@ void app_game_set_look(app_game_handle_t g, const app_game_config_t *config)
     g->config.pet_h = config->pet_h;
     g->config.movement = config->movement;
     g->config.walk_speed = config->walk_speed;
+    g->config.sticky = config->sticky;
+    g->state.surface = APP_GAME_SURFACE_FLOOR;
     if (present && g->state.phase != APP_GAME_PET_CLINGING && g->state.phase != APP_GAME_PET_EXITING) {
         app_game_pet_arrive(g);
     }
@@ -909,6 +996,7 @@ void app_game_pet_arrive(app_game_handle_t g)
         return;
     }
     set_phase(g, APP_GAME_PET_ENTERING);
+    g->state.surface = APP_GAME_SURFACE_FLOOR;
     g->x = (float)g->config.width / 2.0f;
     g->y = 0.0f;  /* feet at the top edge: the whole body starts above the screen */
     g->vx = g->vy = 0;
@@ -934,10 +1022,12 @@ void app_game_pet_leave(app_game_handle_t g)
     if (clinging) {
         dir = (float)g->state.edge;  /* out through the edge it holds */
     } else {
-        dir = g->x < (float)g->config.width / 2.0f ? -1.0f : 1.0f;  /* off the nearer side */
         if (!floats(g)) {
+            g->state.surface = APP_GAME_SURFACE_FLOOR;   /* a crawler drops off the wall first */
+            g->x = clampf(g->x, half_width(g), (float)g->config.width - half_width(g));
             g->y = floor_y(g);
         }
+        dir = g->x < (float)g->config.width / 2.0f ? -1.0f : 1.0f;  /* off the nearer side */
     }
     set_phase(g, APP_GAME_PET_EXITING);
     g->vx = dir * px(g, EXIT_SPEED);
@@ -965,9 +1055,7 @@ void app_game_pet_shrug(app_game_handle_t g)
         g->state.facing = (int8_t)inward;
         g->shrug_after_landing = true;
     } else if (touchable(g) && g->state.phase != APP_GAME_PET_HELD && g->state.phase != APP_GAME_PET_AIRBORNE) {
-        if (!floats(g)) {
-            g->y = floor_y(g);
-        }
+        ground(g);
         g->hop = HOP_NONE;
         set_phase(g, APP_GAME_PET_SHRUGGING);
         say(g, APP_GAME_SAY_SAD);

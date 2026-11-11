@@ -33,7 +33,13 @@ typedef struct {
     uint32_t seed;       /**< Random seed for blinks, hops and moods; any value. */
     app_game_movement_t movement;
     float walk_speed;    /**< apx/s for walkers (pixl.json physics.walkSpeed); 0 = 18. */
+    bool sticky;         /**< A sticky walker (Slugg) crawls the whole edge: walls and ceiling too. */
 } app_game_config_t;
+
+/** Which screen edge the Pixl stands on (SPEC §12.3). Drawn rotated so its feet face that edge. */
+typedef enum {
+    APP_GAME_SURFACE_FLOOR = 0, APP_GAME_SURFACE_RIGHT_WALL, APP_GAME_SURFACE_CEILING, APP_GAME_SURFACE_LEFT_WALL,
+} app_game_surface_t;
 
 typedef enum {
     APP_GAME_PET_ABSENT = 0,  /**< Not on this device; nothing drawn. */
@@ -96,6 +102,7 @@ typedef struct {
     bool waiting;         /**< A send was requested and the trip hasn't finished. */
     int8_t edge;          /**< While clinging: -1 left, +1 right; else 0. */
     bool asleep;          /**< Dozing or asleep: draw Zz. */
+    app_game_surface_t surface; /**< The edge under its feet; rotate the drawing to match. */
 } app_game_snapshot_t;
 
 /** Copy config and create a caller-owned model; arguments must be non-NULL.
