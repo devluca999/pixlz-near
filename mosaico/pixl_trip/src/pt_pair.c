@@ -157,11 +157,11 @@ void pt_pair_seen(const char *summary, const char *detail, char hex[65])
 size_t pt_pair_sign_decision(pt_pair_record_t *rec, const pt_device_t *me, const char *req, const char *behavior,
                              const char *summary, const char *detail, char *out, size_t cap)
 {
-    if (!rec->paired || (strcmp(behavior, "allow") != 0 && strcmp(behavior, "deny") != 0)) return 0;
+    if (!rec->paired || (strcmp(behavior, "allow") != 0 && strcmp(behavior, "deny") != 0 && strcmp(behavior, "reply") != 0)) return 0;
     for (const char *c = req; *c; c++) {   /* ids are the Mac's "req-N": nothing to escape */
         if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '-')) return 0;
     }
-    if (!req[0] || strlen(req) > 32) return 0;
+    if (!req[0] || strlen(req) > 48) return 0;
     static char msg[256];
     char seen[65], t[65];
     uint8_t mac[32];
@@ -176,4 +176,19 @@ size_t pt_pair_sign_decision(pt_pair_record_t *rec, const pt_device_t *me, const
                  "{\"agentDecision\":{\"behavior\":\"%s\",\"id\":\"%s\",\"n\":%u,\"seen\":\"%s\",\"tag\":\"%s\"}}",
                  behavior, req, (unsigned)rec->counter, seen, t);
     return n > 0 && (size_t)n < cap ? (size_t)n : 0;
+}
+
+size_t pt_pair_sign_reply(pt_pair_record_t *rec, const pt_device_t *me, const char *session, const char *text,
+                          char *out, size_t cap)
+{
+    for (const char *c = text; *c; c++) {   /* the quick replies: letters and spaces */
+        if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || *c == ' ')) return 0;
+    }
+    char signed_body[320];
+    size_t n = pt_pair_sign_decision(rec, me, session, "reply", "reply", text, signed_body, sizeof signed_body);
+    if (!n) return 0;
+    /* Same fields under "agentReply", with the text: {"agentReply":{"behavior":…,"text":"…"}} */
+    const char *inner = signed_body + strlen("{\"agentDecision\":");
+    int m = snprintf(out, cap, "{\"agentReply\":{\"text\":\"%s\",%s", text, inner + 1);
+    return m > 0 && (size_t)m < cap ? (size_t)m : 0;
 }

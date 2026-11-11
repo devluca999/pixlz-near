@@ -1,4 +1,5 @@
 import AppKit
+import PixlAgents
 import PixlMemoryKit
 import PixlTravel
 import PixlzCore
@@ -74,7 +75,7 @@ final class TravelController {
             let req = agents.hub.requests.first { $0.sessionID == s.id }
             return MosaicoFeed.AgentRow(id: s.id, project: s.project, doing: s.doing, request: req?.id,
                                         summary: req?.summary ?? "", detail: req?.detail ?? "",
-                                        answerable: req.map { agents.canAnswer($0.id) } ?? false)
+                                        answerable: req.map { agents.canAnswer($0.id) } ?? false, replyOpen: s.replyOpen)
         }
         let body = MosaicoFeed.agentsBody(rows, alerts: agents.alertsOn, from: me)
         for p in targets { r.transport.sendFrame(body, to: p) }
@@ -85,13 +86,27 @@ final class TravelController {
     /// Deny only: Allow from the Mosaico waits for pairing (D19), since the link isn't secured.
     func frame(_ body: Data, from peer: DeviceRef) {
         if pairingController.frame(body, from: peer) { return }
+        if let sid = MosaicoFeed.chatRequest(body) {
+            guard MosaicoFeed.devices().contains(peer.deviceId) else { return }
+            let (title, lines) = app.agents.chat(sid, limit: 12)
+            let roles: [ChatLine.Role: String] = [.you: "y", .claude: "c", .tool: "t"]
+            let out = MosaicoFeed.chatBody(id: sid, title: title, lines: lines.map { (roles[$0.role] ?? "t", $0.text) }, from: me)
+            runner?.transport.sendFrame(out, to: peer)
+            Debug.log("travel: chat for \(peer.deviceName): \(lines.count) lines, \(out.count) bytes")
+            return
+        }
+        if let r = pairingController.verifiedReply(body, from: peer) {
+            let ok = app.agents.reply(r.id, r.text)
+            Debug.log("travel: \(peer.deviceName) replied \"\(r.text)\" (\(ok ? "sent" : "session no longer open"))")
+            return
+        }
         guard let d = MosaicoFeed.agentDecision(body) else { return }
         guard MosaicoFeed.devices().contains(peer.deviceId) else {
             Debug.log("travel: agent decision from \(peer.deviceName) ignored (not a feed device)")
             return
         }
         // Signed by a paired device (D20): Allow or Deny, over what it showed.
-        if let v = pairingController.verified(body, from: peer) {
+        if let v = pairingController.verified(body, from: peer), v.behavior == "allow" || v.behavior == "deny" {
             Debug.log("travel: \(peer.deviceName) \(v.behavior == "allow" ? "allowed" : "denied") \(v.id) (signed)")
             app.agents.decide(v.id, v.behavior == "allow" ? .allow : .deny)
             return

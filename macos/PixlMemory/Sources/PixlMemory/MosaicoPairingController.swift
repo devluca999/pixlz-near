@@ -129,6 +129,15 @@ final class MosaicoPairingController {
         return (ok.id, ok.behavior)
     }
 
+    /// A signed quick reply from a paired device (only the known replies pass).
+    func verifiedReply(_ body: Data, from peer: DeviceRef) -> (id: String, text: String)? {
+        guard var paired = Self.load(peer.deviceId),
+              let ok = MosaicoPairing.verifyReply(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last) else { return nil }
+        paired.last = ok.n
+        Self.save(peer.deviceId, paired)
+        return (ok.id, ok.text)
+    }
+
     // MARK: Keychain
 
     struct Paired: Codable { var name: String; var key: Data; var last: UInt32 }

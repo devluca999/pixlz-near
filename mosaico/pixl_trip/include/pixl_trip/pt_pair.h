@@ -79,6 +79,11 @@ void pt_pair_seen(const char *summary, const char *detail, char hex[65]);
 size_t pt_pair_sign_decision(pt_pair_record_t *rec, const pt_device_t *me, const char *req, const char *behavior,
                              const char *summary, const char *detail, char *out, size_t cap);
 
+/// A signed quick reply to a session: {"agentReply":{"id","text","n","seen","tag"}}, signed like a
+/// decision with behavior "reply" over ("reply", text). 0 when not paired or `text` isn't plain.
+size_t pt_pair_sign_reply(pt_pair_record_t *rec, const pt_device_t *me, const char *session, const char *text,
+                          char *out, size_t cap);
+
 #ifdef __cplusplus
 }
 #endif

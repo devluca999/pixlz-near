@@ -669,6 +669,14 @@ static void test_pairing(void)
     CHECK(k7.counter == 1);
     CHECK(strstr(body, "\"seen\":\"f4a7c5a915b6f3223411f488a0e8979c2ce7f037124601058f3f56ffafa45305\"") != NULL);
     CHECK(strstr(body, "\"tag\":\"1ca12bc426098c0d24618af80088564b59e9cec06a131461f282b08032ae0bfe\"") != NULL);
+    // A quick reply, as PairingTests.verifyReply checks it (n = 2 after the decision above).
+    k7.counter = 0;
+    const char *sid = "0d5c1f5e-1111-4222-8333-944455556666";
+    CHECK(pt_pair_sign_reply(&k7, &me, sid, "Run the tests", body, sizeof body) > 0);
+    CHECK(strncmp(body, "{\"agentReply\":{\"text\":\"Run the tests\",\"behavior\":\"reply\"", 51) == 0);
+    CHECK(strstr(body, "\"seen\":\"39167a70b8bc685f4ef3bbcf52243f4af2befe26da4c88734383ff0b92150dfc\"") != NULL);
+    CHECK(strstr(body, "\"tag\":\"a4ef693ac6022fd8e6ed1c91f3431177ca56354e73eaef9030d6bb4e4e37fbfc\"") != NULL);
+    CHECK(pt_pair_sign_reply(&k7, &me, sid, "rm -rf /", body, sizeof body) == 0);
     CHECK(pt_pair_sign_decision(&k7, &me, "req\"x", "allow", "a", "b", body, sizeof body) == 0);
     CHECK(pt_pair_sign_decision(&k7, &me, "req-3", "maybe", "a", "b", body, sizeof body) == 0);
 }

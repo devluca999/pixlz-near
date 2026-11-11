@@ -193,6 +193,18 @@ import CryptoKit
         #expect(n.user(false).contains { if case .cancelled = $0 { true } else { false } })
     }
 
+    @Test func quickRepliesVerifyLikeTheMosaicoSignsThem() {
+        // The body pt_pair_sign_reply writes for key 07…, n = 1 (see test_pixl_trip.c).
+        let sid = "0d5c1f5e-1111-4222-8333-944455556666"
+        let body = #"{"agentReply":{"text":"Run the tests","behavior":"reply","id":"0d5c1f5e-1111-4222-8333-944455556666","n":1,"seen":"39167a70b8bc685f4ef3bbcf52243f4af2befe26da4c88734383ff0b92150dfc","tag":"a4ef693ac6022fd8e6ed1c91f3431177ca56354e73eaef9030d6bb4e4e37fbfc"}}"#
+        let key = Data(repeating: 7, count: 32)
+        let ok = MosaicoPairing.verifyReply(Data(body.utf8), deviceId: "MOSAICO-1", key: key, lastCounter: 0)
+        #expect(ok?.id == sid && ok?.text == "Run the tests" && ok?.n == 1)
+        #expect(MosaicoPairing.verifyReply(Data(body.utf8), deviceId: "MOSAICO-1", key: key, lastCounter: 1) == nil)   // replayed
+        let other = body.replacingOccurrences(of: "Run the tests", with: "Yes")
+        #expect(MosaicoPairing.verifyReply(Data(other.utf8), deviceId: "MOSAICO-1", key: key, lastCounter: 0) == nil)   // text swapped
+    }
+
     @Test func decisionsVerifyOnlyWithKeySeenAndANewNumber() throws {
         let key = Data(repeating: 7, count: 32)
         let seen = MosaicoPairing.seen(summary: "Run ls", detail: "ls -la")

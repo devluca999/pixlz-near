@@ -115,6 +115,20 @@ public struct MosaicoPairing {
         return (id, behavior, n)
     }
 
+    /// A quick reply from a paired Mosaico: `{"agentReply":{"id","text","n","seen","tag"}}`, signed
+    /// like a decision with behavior "reply" over ("reply", text). Only the known quick replies pass.
+    public static func verifyReply(_ body: Data, deviceId: String, key: Data, lastCounter: UInt32) -> (id: String, text: String, n: UInt32)? {
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let r = o["agentReply"] as? [String: Any], let id = r["id"] as? String, let text = r["text"] as? String,
+              MosaicoFeed.quickReplies.contains(text) else { return nil }
+        var d = r
+        d["behavior"] = "reply"
+        guard let wrapped = try? JSONSerialization.data(withJSONObject: ["agentDecision": d]),
+              let ok = verifyDecision(wrapped, deviceId: deviceId, key: key, lastCounter: lastCounter, summary: "reply", detail: text),
+              ok.id == id else { return nil }
+        return (id, text, ok.n)
+    }
+
     public static func seen(summary: String, detail: String) -> String {
         Data(SHA256.hash(data: Data((summary + "\n" + detail).utf8))).hex
     }

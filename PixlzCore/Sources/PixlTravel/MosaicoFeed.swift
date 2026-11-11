@@ -45,10 +45,11 @@ public enum MosaicoFeed {
         public var request: String?      // a waiting request's id
         public var summary, detail: String
         public var answerable: Bool      // Pixlz holds it: Deny on the Mosaico answers it
+        public var replyOpen: Bool       // finished and held open for a reply
         public init(id: String, project: String, doing: String, request: String? = nil, summary: String = "",
-                    detail: String = "", answerable: Bool = false) {
+                    detail: String = "", answerable: Bool = false, replyOpen: Bool = false) {
             self.id = id; self.project = project; self.doing = doing; self.request = request
-            self.summary = summary; self.detail = detail; self.answerable = answerable
+            self.summary = summary; self.detail = detail; self.answerable = answerable; self.replyOpen = replyOpen
         }
     }
     public static let maxAgents = 6
@@ -62,6 +63,7 @@ public enum MosaicoFeed {
                 "alerts": alerts,
                 "sessions": r.map { a -> [String: Any] in
                     var o: [String: Any] = ["id": ascii(a.id, 40), "project": ascii(a.project, 24), "doing": ascii(a.doing, 60)]
+                    if a.replyOpen { o["reply"] = true }
                     if let req = a.request {
                         o["req"] = ascii(req, 15)
                         o["summary"] = ascii(a.summary, 60)
@@ -79,6 +81,32 @@ public enum MosaicoFeed {
             if data.count <= maxBytes || r.isEmpty { return data }
             r.removeLast()
         }
+    }
+
+    /// The quick replies a paired Mosaico can send (its four bubbles), in order.
+    public static let quickReplies = ["Continue", "Yes", "No", "Run the tests"]
+
+    /// A session's chat for the Mosaico's reader: `{"chat":{"id","title","lines":[{"r":"y|c|t","t"}]}}`,
+    /// newest last, oldest dropped until it fits `maxBytes`.
+    public static func chatBody(id: String, title: String?, lines: [(role: String, text: String)], from: DeviceRef? = nil) -> Data {
+        var l = Array(lines.suffix(12))
+        while true {
+            var json: [String: Any] = ["chat": [
+                "id": ascii(id, 40), "title": ascii(title ?? "", 60),
+                "lines": l.map { ["r": $0.role, "t": ascii($0.text, 290)] },
+            ]]
+            if let from { json["from"] = from.deviceId; json["fromName"] = from.deviceName }
+            let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+            if data.count <= maxBytes || l.isEmpty { return data }
+            l.removeFirst()
+        }
+    }
+
+    /// `{"agentChat":{"id"}}`: the Mosaico wants that session's chat.
+    public static func chatRequest(_ body: Data) -> String? {
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let c = o["agentChat"] as? [String: Any] else { return nil }
+        return c["id"] as? String
     }
 
     /// The Mosaico's answer to a request: `{"agentDecision":{"id","behavior"}}`. Nil otherwise.
