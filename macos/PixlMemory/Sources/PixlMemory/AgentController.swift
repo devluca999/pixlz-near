@@ -165,6 +165,8 @@ final class AgentController {
             Debug.log("agents: \(hub.sessions[event.sessionID]?.project ?? "?") finished; queued reply delivered")
             hub.setReplyOpen(event.sessionID, false)
             finish(fd, reply: AgentHub.stopReply(waiting))
+            app.notify(.agents("Delivered to \(hub.sessions[event.sessionID]?.project ?? "Claude"): \(waiting.prefix(40))"))
+            onDelivered?(event.sessionID)
             changed()
             return
         }
@@ -214,6 +216,8 @@ final class AgentController {
     enum ReplyResult { case sent, queued, failed }
     /// Replies waiting for their session to finish (it was working, or its window had closed).
     private(set) var queued: [String: String] = [:]
+    /// A queued reply just went to its session (session id): tell whoever sent it.
+    var onDelivered: (@MainActor (String) -> Void)?
 
     /// Your next message for a session: now, if it's finished and held open; otherwise it waits
     /// here and goes the moment that session next finishes (its Stop hook answers it at once,
