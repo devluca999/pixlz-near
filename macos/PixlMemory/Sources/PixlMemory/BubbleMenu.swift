@@ -1,4 +1,5 @@
 import AppKit
+import PixlAgents
 import PixlMemoryKit
 import PixlzCore
 import PixlBridge
@@ -331,7 +332,8 @@ final class BubbleMenu {
             let s = Int(Date().timeIntervalSince(d))
             return s < 60 ? "now" : s < 3600 ? "\(s / 60) min" : "\(s / 3600) h"
         }
-        var rows: [ListMenuView.Row] = agents.hub.requests.map { r in
+        var rows: [ListMenuView.Row] = [Self.apiChatRow(app.apiChat)]
+        rows += agents.hub.requests.map { r in
             ListMenuView.Row(id: "req.\(r.id)", title: "\(r.project): \(r.summary)", icon: "warn", trailing: "needs you")
         }
         let waiting = Set(agents.hub.requests.map(\.sessionID))
@@ -357,6 +359,7 @@ final class BubbleMenu {
             switch row.id {
             case let id where id.hasPrefix("req."): self.showRequest(String(id.dropFirst(4)))
             case let id where id.hasPrefix("ses."): self.closeList(); self.showChat(String(id.dropFirst(4)))
+            case "apichat": self.closeList(); self.showAPIChat()
             case "reply": agents.replyHere.toggle(); self.showAgents(near: nil)
             case "update": self.closeList(); self.showConnectAgents(near: nil)
             case "answer": agents.answerHere.toggle(); self.showAgents(near: nil)
@@ -416,9 +419,44 @@ final class BubbleMenu {
         }
     }
 
+    static func apiChatRow(_ chat: APIChatController) -> ListMenuView.Row {
+        ListMenuView.Row(id: "apichat", title: chat.lines.isEmpty ? "Chat with Claude (API key)" : "Your chat with Claude (API key)",
+                         icon: "agents", trailing: chat.busy ? "thinking" : (chat.hasKey ? "Haiku" : "no key"))
+    }
+
+    /// "Chat with Claude": a conversation through the Anthropic API, paid by the key in
+    /// .env.local, not your Claude account. Redraws as replies come in.
+    func showAPIChat() {
+        let chat = app.apiChat
+        let card = ChatCard(title: "Claude · \(APIChat.model) · API key", lines: chat.lines, replyOpen: !chat.busy, replyNote: "",
+                            look: cardLook,
+                            emptyNote: chat.hasKey ? "Ask Claude anything. This uses the Anthropic API key in .env.local, not your Claude account."
+                                                   : APIChat.Failure.noKey.message,
+                            footer: chat.busy ? ("Wait", "Claude is thinking…") : ("Send", chat.lines.isEmpty ? "Esc closes" : "Esc closes · clear: send /new"),
+                            placeholder: chat.lines.isEmpty ? "Ask Claude…" : "Reply to Claude…")
+        card.fit()
+        card.onClose = { [weak self] in self?.chatSession = nil; chat.onChange = nil; self?.closeCard() }
+        card.onReply = { [weak self] text in
+            guard let self, !chat.busy else { return }
+            if text == "/new" { chat.reset(); return }
+            chat.send(text) { [weak self] failure in
+                if let failure, self?.chatSession != "apichat" { self?.app.notify(.agentsError(failure.message)) }
+            }
+        }
+        showCard(card, name: "chat")
+        chatSession = "apichat"
+        card.scrollToEnd()
+        cardPanel?.makeFirstResponder(card.field)
+        chat.onChange = { [weak self] in
+            guard let self, self.chatSession == "apichat", self.cardPanel != nil else { return }
+            self.showAPIChat()
+        }
+    }
+
     /// The user's yes before Pixlz writes to Claude Code's settings (D19).
     func showConnectAgents(near slot: String?) {
-        let rows = [ListMenuView.Row(id: "info", title: "Agent mode watches your Claude Code sessions.", icon: "info", enabled: false),
+        let rows = [Self.apiChatRow(app.apiChat),
+                    ListMenuView.Row(id: "info", title: "Agent mode watches your Claude Code sessions.", icon: "info", enabled: false),
                     ListMenuView.Row(id: "info2", title: "It adds Pixlz hooks to ~/.claude/settings.json.", icon: nil, enabled: false),
                     ListMenuView.Row(id: "connect", title: "Connect Claude Code", icon: "agents", trailing: "↵"),
                     ListMenuView.Row(id: "cancel", title: "Not now", icon: nil, trailing: "esc")]
@@ -426,6 +464,7 @@ final class BubbleMenu {
         showList(rows, near: slot) { [weak self] row in
             guard let self else { return }
             self.closeList()
+            if row.id == "apichat" { self.showAPIChat(); return }
             guard row.id == "connect" else { return }
             if let why = self.app.agents.installHooks() {
                 self.app.notify(.agentsError(why))

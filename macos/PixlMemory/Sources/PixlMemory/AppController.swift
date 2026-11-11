@@ -73,6 +73,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
     lazy var agents = AgentController(app: self)
+    /// Agent mode's "Chat with Claude" through the Anthropic API (the key in .env.local).
+    let apiChat = APIChatController()
     lazy var presence = PresenceController(app: self)
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
