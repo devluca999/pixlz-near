@@ -55,6 +55,13 @@ static pt_device_t s_me;
 static record_blob_t s_blob;       /* single owner: the dock loop */
 static wifi_config_t s_wifi_config; /* kept off the stack */
 
+static void on_time_sync(struct timeval *tv)
+{
+    char date[25];
+    pt_format_date((int64_t)tv->tv_sec * 1000 + tv->tv_usec / 1000, date);
+    ESP_LOGI(TAG, "clock set from SNTP: %s", date);
+}
+
 static void advertise(void)
 {
     esp_err_t err = mdns_init();
@@ -89,7 +96,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "Wi-Fi ready: " IPSTR ", trips on port %d", IP2STR(&ip->ip_info.ip), APP_DOCK_PORT);
         if (!s_sntp_started) {
             esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+            config.sync_cb = on_time_sync;
             s_sntp_started = esp_netif_sntp_init(&config) == ESP_OK;
+            ESP_LOGI(TAG, "SNTP %s", s_sntp_started ? "started" : "failed to start");
         }
         advertise();
         atomic_store(&s_net_ready, true);
@@ -155,7 +164,11 @@ void dock_platform_start(const pt_device_t *me)
             esp_wifi_set_storage(WIFI_STORAGE_RAM) != ESP_OK || esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK ||
             esp_wifi_set_config(WIFI_IF_STA, &s_wifi_config) != ESP_OK || esp_wifi_start() != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi start failed");
+        return;
     }
+    /* Plugged in (the spike has no battery rules yet, SPEC §12.1): no modem sleep, so a Mac's
+     * connection and trip messages aren't delayed by power-save beacons. */
+    (void)esp_wifi_set_ps(WIFI_PS_NONE);
 }
 
 void dock_platform_stop(void)
@@ -171,6 +184,19 @@ bool dock_platform_net_ready(void)
 bool dock_platform_clock_ok(void)
 {
     return s_store_ok && time(NULL) > CLOCK_VALID_AFTER;
+}
+
+void dock_platform_offer_clock(int64_t unix_ms)
+{
+    if (time(NULL) > CLOCK_VALID_AFTER || unix_ms / 1000 <= CLOCK_VALID_AFTER) {
+        return; /* SNTP (or an earlier Mac) already set it, or the offer is nonsense */
+    }
+    struct timeval tv = {.tv_sec = (time_t)(unix_ms / 1000), .tv_usec = (suseconds_t)(unix_ms % 1000) * 1000};
+    if (settimeofday(&tv, NULL) == 0) {
+        char date[25];
+        pt_format_date(unix_ms, date);
+        ESP_LOGI(TAG, "clock set from the Mac's hello: %s (SNTP will refine it)", date);
+    }
 }
 
 int64_t dock_platform_now_ms(void)

@@ -7,6 +7,8 @@ struct Hello: Codable {
     struct Body: Codable {
         var deviceId: String
         var deviceName: String
+        /// The sender's clock, so a Mosaico without internet time can still run trips.
+        var unixMs: Int64?
     }
 
     var hello: Body
@@ -85,7 +87,8 @@ final class Link: @unchecked Sendable {
 
     private func sayHello() {
         let me = node.me
-        guard let body = try? JSONEncoder().encode(Hello(hello: .init(deviceId: me.deviceId, deviceName: me.deviceName))) else { return }
+        guard let body = try? JSONEncoder().encode(Hello(hello: .init(deviceId: me.deviceId, deviceName: me.deviceName,
+                                                                         unixMs: Int64(Date().timeIntervalSince1970 * 1000)))) else { return }
         var length = UInt32(body.count).bigEndian
         sendFrame(Data(bytes: &length, count: 4) + body)
     }

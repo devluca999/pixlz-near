@@ -15,6 +15,8 @@ void dock_platform_start(const pt_device_t *me);
 void dock_platform_stop(void);
 bool dock_platform_net_ready(void);
 bool dock_platform_clock_ok(void);
+/** The Mac's time from its hello; sets the clock only if nothing better (SNTP) has. */
+void dock_platform_offer_clock(int64_t unix_ms);
 int64_t dock_platform_now_ms(void);
 void dock_platform_random(void *ctx, uint8_t *out, size_t n);
 /** This device's stable id and name. */

@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "../pixl_trip/include/pixl_trip/pt_frame.h"
+#include "../pixl_trip/include/pixl_trip/pt_json.h"
 #include "../pixl_trip/include/pixl_trip/pt_trip.h"
 #include "private/app_dock_platform.h"
 
@@ -263,7 +264,13 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             return;
         }
         c->hello = true;
-        dock_platform_log("pixlz: %s connected", c->peer.name);
+        pt_span_t ms_span;
+        int64_t mac_ms = 0;
+        if (pt_json_find(body, len, "hello.unixMs", &ms_span) && pt_json_int(ms_span, &mac_ms)) {
+            dock_platform_offer_clock(mac_ms);
+        }
+        dock_platform_log("pixlz: %s connected (clock %s)", c->peer.name,
+                          dock_platform_clock_ok() ? "set" : "not set");
         pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
         perform(d, &d->outs);
         return;

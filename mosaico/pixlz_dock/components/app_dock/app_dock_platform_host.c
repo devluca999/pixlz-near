@@ -55,6 +55,11 @@ bool dock_platform_clock_ok(void)
     return true;
 }
 
+void dock_platform_offer_clock(int64_t unix_ms)
+{
+    (void)unix_ms; /* the Mac's own clock */
+}
+
 int64_t dock_platform_now_ms(void)
 {
     struct timeval tv;
