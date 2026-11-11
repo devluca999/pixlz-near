@@ -24,7 +24,9 @@
 static const char *TAG = "pixlz_mic";
 
 enum { CLIP_MAX = APP_AUDIO_RATE * APP_AUDIO_MAX_SECONDS / 2, READ_SAMPLES = 512 };
-#define CODEC_ADDR 0x32   /* ES8311 at 7-bit 0x19 (the library takes the 8-bit form) */
+#define CODEC_ADDR 0x32
+/* 30 dB clipped normal speech at arm's length (peaks at full scale); 18 dB leaves headroom. */
+#define MIC_GAIN_DB 18.0f   /* ES8311 at 7-bit 0x19 (the library takes the 8-bit form) */
 
 static struct {
     i2s_chan_handle_t rx;
@@ -129,7 +131,7 @@ static void record_task(void *arg)
                     atomic_store(&s.recording, false);
                     break;
                 }
-                (void)esp_codec_dev_set_in_gain(s.dev, 30.0f);
+                (void)esp_codec_dev_set_in_gain(s.dev, MIC_GAIN_DB);
                 s.len = 0;   /* drop the silence */
                 pt_adpcm_init(&s.adpcm);
                 continue;
@@ -167,7 +169,7 @@ bool app_audio_start(void)
         ESP_LOGE(TAG, "microphone didn't open");
         return false;
     }
-    (void)esp_codec_dev_set_in_gain(s.dev, 30.0f);
+    (void)esp_codec_dev_set_in_gain(s.dev, MIC_GAIN_DB);
     s.len = 0;
     pt_adpcm_init(&s.adpcm);
     atomic_store(&s.recording, true);

@@ -106,6 +106,7 @@ static int s_power_save = -1; /* last Wi-Fi power-save mode applied: -1 none yet
 #define GAUGE_VOLTAGE 0x08
 #define GAUGE_FLAGS 0x0a
 #define GAUGE_SOC 0x2c
+#define GAUGE_AVG_CURRENT 0x0c   /* signed mA: + charging, - discharging (standard read-only command) */
 #define GAUGE_FLAG_DSG (1u << 0)     /* discharging */
 #define GAUGE_FLAG_BATTPRES (1u << 3)
 static pt_device_t s_me;
@@ -486,6 +487,16 @@ bool dock_platform_battery(int *percent, bool *on_battery)
     }
     *percent = soc;
     *on_battery = (flags & GAUGE_FLAG_DSG) != 0;
+    /* Once a minute: what it's doing with power, for diagnosing drain (read-only). */
+    static int64_t next_log_us;
+    const int64_t now_us = esp_timer_get_time();
+    if (now_us >= next_log_us) {
+        next_log_us = now_us + 60LL * 1000000;
+        uint16_t raw = 0;
+        const int ma = gauge_word(GAUGE_AVG_CURRENT, &raw) ? (int)(int16_t)raw : 0;
+        ESP_LOGI(TAG, "battery %u%%, %u mV, %d mA (%s), flags 0x%04x", (unsigned)soc, (unsigned)mv, ma,
+                 ma > 0 ? "charging" : ma < 0 ? "draining" : "idle", (unsigned)flags);
+    }
     /* Unplugged: let Wi-Fi sleep between beacons (trips get slower, the battery lasts).
      * Plugged in: no power save, so trips stay snappy on a weak signal. */
     int mode = *on_battery ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE;
