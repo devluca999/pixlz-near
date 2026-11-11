@@ -70,4 +70,30 @@ struct BonjourTripTests {
         let second = ThisDevice.ref(defaults: d, env: ["PIXL_DEVICE_ID": "copy-2", "PIXL_DEVICE_NAME": "Second copy"])
         #expect(second == DeviceRef(deviceId: "copy-2", deviceName: "Second copy"))
     }
+
+    @Test func manualPeersParseFromDefaults() throws {
+        let p = try #require(ManualPeer("MOSAICO-D1199C|Mosaico 199C|10.0.30.13|47860"))
+        #expect(p.ref == DeviceRef(deviceId: "MOSAICO-D1199C", deviceName: "Mosaico 199C"))
+        #expect(p.host == "10.0.30.13" && p.port == 47860)
+        #expect(ManualPeer("id||host|1")?.ref.deviceName == "id")          // a missing name falls back to the id
+        for bad in ["", "a|b|c", "a|b||1", "|b|c|1", "a|b|c|0", "a|b|c|port", "a|b|c|70000"] {
+            #expect(ManualPeer(bad) == nil, "\(bad)")
+        }
+        let d = try #require(UserDefaults(suiteName: "pixl-peers-\(UUID())"))
+        d.set(["MOSAICO-1|Mosaico|10.0.0.5|47860", "junk"], forKey: ManualPeer.defaultsKey)
+        #expect(ManualPeer.fromDefaults(d).map(\.ref.deviceId) == ["MOSAICO-1"])
+    }
+
+    @Test func manualPeersShowUpAsReachableDevices() async throws {
+        let t = BonjourTransport(me: device("Mac"))
+        var seen: [DeviceRef] = []
+        t.onPeers = { seen = $0 }
+        let mosaico = DeviceRef(deviceId: "MOSAICO-TEST", deviceName: "Mosaico")
+        t.setManualPeers([ManualPeer(ref: mosaico, host: "127.0.0.1", port: 47860),
+                          ManualPeer(ref: t.me, host: "127.0.0.1", port: 1)])   // never ourselves
+        #expect(await waitUntil(2) { seen == [mosaico] })
+        #expect(t.peers == [mosaico])
+        t.setManualPeers([])
+        #expect(await waitUntil(2) { seen.isEmpty })
+    }
 }

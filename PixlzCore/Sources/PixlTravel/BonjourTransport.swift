@@ -23,8 +23,10 @@ public final class BonjourTransport: @unchecked Sendable {
     private let queue = DispatchQueue(label: "pixl.travel")
     private var listener: NWListener?
     private var browser: NWBrowser?
-    /// Discovered services by device id (from the TXT record).
+    /// Reachable devices by id: Bonjour results, plus manual peers Bonjour doesn't see.
     private var found: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
+    private var bonjour: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
+    private var manual: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
     /// Open connections by device id.
     private var conns: [String: NWConnection] = [:]
     private var decoders: [ObjectIdentifier: Framing.Decoder] = [:]
@@ -69,7 +71,7 @@ public final class BonjourTransport: @unchecked Sendable {
             listener?.cancel(); listener = nil
             browser?.cancel(); browser = nil
             conns.values.forEach { $0.cancel() }; conns.removeAll()
-            found.removeAll()
+            found.removeAll(); bonjour.removeAll(); manual.removeAll()
         }
     }
 
@@ -79,7 +81,23 @@ public final class BonjourTransport: @unchecked Sendable {
             guard case .bonjour(let txt) = r.metadata, let id = txt["id"], let name = txt["name"], id != me.deviceId else { continue }
             next[id] = (DeviceRef(deviceId: id, deviceName: name), r.endpoint)
         }
-        found = next.mapValues { (ref: $0.0, endpoint: $0.1) }
+        bonjour = next.mapValues { (ref: $0.0, endpoint: $0.1) }
+        publish()
+    }
+
+    /// Devices to reach by address when Bonjour can't see them, e.g. on a Wi-Fi that drops
+    /// multicast. Bonjour wins when it finds the same device id.
+    public func setManualPeers(_ peers: [ManualPeer]) {
+        queue.async {
+            self.manual = Dictionary(peers.filter { $0.ref.deviceId != self.me.deviceId }.map {
+                ($0.ref.deviceId, (ref: $0.ref, endpoint: NWEndpoint.hostPort(host: .init($0.host), port: .init(rawValue: $0.port)!)))
+            }, uniquingKeysWith: { a, _ in a })
+            self.publish()
+        }
+    }
+
+    private func publish() {
+        found = manual.merging(bonjour) { _, b in b }
         let list = found.values.map(\.ref).sorted { $0.deviceName < $1.deviceName }
         DispatchQueue.main.async { self.onPeers?(list) }
     }
@@ -151,6 +169,33 @@ public final class BonjourTransport: @unchecked Sendable {
         decoders[id] = nil
         if let peer = inboundPeer.removeValue(forKey: id), conns[peer.deviceId] === c { conns[peer.deviceId] = nil }
         c.cancel()
+    }
+}
+
+/// A device reached by address instead of Bonjour.
+public struct ManualPeer: Equatable, Sendable {
+    public var ref: DeviceRef
+    public var host: String
+    public var port: UInt16
+
+    public init(ref: DeviceRef, host: String, port: UInt16) {
+        self.ref = ref
+        self.host = host
+        self.port = port
+    }
+
+    /// `id|name|host|port`, e.g. `MOSAICO-D1199C|Mosaico 199C|10.0.30.13|47860`. Nil if malformed.
+    public init?(_ text: String) {
+        let parts = text.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 4, !parts[0].isEmpty, !parts[2].isEmpty, let port = UInt16(parts[3]), port > 0 else { return nil }
+        self.init(ref: DeviceRef(deviceId: parts[0], deviceName: parts[1].isEmpty ? parts[0] : parts[1]), host: parts[2], port: port)
+    }
+
+    /// The defaults key the apps read: an array of `id|name|host|port` strings.
+    public static let defaultsKey = "PixlMemory.manualPeers"
+
+    public static func fromDefaults(_ defaults: UserDefaults = .standard) -> [ManualPeer] {
+        (defaults.stringArray(forKey: defaultsKey) ?? []).compactMap(ManualPeer.init)
     }
 }
 

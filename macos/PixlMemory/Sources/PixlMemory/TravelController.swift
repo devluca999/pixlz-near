@@ -57,6 +57,13 @@ final class TravelController {
             if s.hasPrefix("browser") { self?.localNetworkBlocked = s.contains("PolicyDenied") }
         }
         do { try r.start() } catch { Debug.log("travel: couldn't start Bonjour: \(error)") }
+        // Devices Bonjour can't see (a Wi-Fi that drops multicast), e.g. a Mosaico:
+        // defaults write <app> PixlMemory.manualPeers -array "MOSAICO-D1199C|Mosaico 199C|10.0.30.13|47860"
+        let manual = ManualPeer.fromDefaults()
+        if !manual.isEmpty {
+            r.transport.setManualPeers(manual)
+            Debug.log("travel: manual peers \(manual.map { "\($0.ref.deviceName) @ \($0.host)" })")
+        }
         runner = r
         Debug.log("travel: I'm \(me.deviceName) (\(me.deviceId.prefix(8)))")
         // away on another device since last time (or never had it): stay hidden until it comes
