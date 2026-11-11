@@ -34,7 +34,20 @@ platform file:
   nothing large on the caller's stack.
 - **Clock.** Trips need a set wall clock (SNTP). Until then the dock declines offers (`busy`)
   and a tap shrugs `noClock`.
-- **Never erases.** If the app NVS can't initialise, trips are disabled and it says so.
+- **Never erases.** If the app NVS can't initialise, trips are disabled and it says so. A record
+  that exists but can't be read is kept (copied to `record_bad` on the device, renamed aside in the
+  simulator); offers are declined (`busy`) and the screen says so until the forget RPC clears it.
+- **Record format.** `PXL2` (adds the holder's or sender's id); `PXL1` records still load.
+- **Saved first.** A failed save reloads the record from storage, ends any trip (`abort`
+  `saveFailed`) and shrugs `saveFailed`. Lock, restyle, forget, pairing and unpairing change
+  memory only once saved.
+- **Connections.** A Mac that identifies again replaces its older Wi-Fi connection. Wi-Fi
+  connections use TCP keepalive and close after 5 minutes without a byte. The agents list, its
+  chat and the feed are cleared when the Mac that sent them goes. While a Pixl is pending, every
+  connected Mac is asked `status` each minute.
+- **Who.** Call goes only to the device holding the Pixl; Send home goes to the paired Mac, else
+  the one whose agents are shown, else the latest. Agent answers go only to the Mac the sessions
+  came from, by session and request id.
 
 ## Usage
 

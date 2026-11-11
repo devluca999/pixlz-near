@@ -10,17 +10,29 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "private/app_dock_platform.h"
 
-enum { RECORD_MAGIC = 0x50584C31 }; /* "PXL1" */
+enum { RECORD_MAGIC_V1 = 0x50584C31, RECORD_MAGIC = 0x50584C32 }; /* "PXL1" (still read), "PXL2" */
+
+/* PXL1: no holder id. */
+typedef struct {
+    uint32_t magic;
+    uint32_t kind;
+    int64_t epoch;
+    char pet_id[PT_ID_MAX];
+    char away_name[PT_NAME_MAX];
+    uint32_t state_len;
+} record_header_v1_t;
 
 typedef struct {
     uint32_t magic;
     uint32_t kind;
     int64_t epoch;
     char pet_id[PT_ID_MAX];
+    char away_id[PT_ID_MAX];
     char away_name[PT_NAME_MAX];
     uint32_t state_len;
 } record_header_t;
@@ -88,28 +100,66 @@ void dock_platform_device(pt_device_t *me)
     snprintf(me->name, sizeof me->name, "%s", name && *name ? name : "Mosaico (sim)");
 }
 
-bool dock_platform_load(pt_record_t *r)
+int64_t dock_platform_uptime_ms(void)
 {
-    char path[600];
-    record_path(path, sizeof path);
-    FILE *f = fopen(path, "rb");
-    if (!f) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* Reads one record file: PXL2, or PXL1 (no holder id). False when it isn't one. */
+static bool read_record(FILE *f, pt_record_t *r)
+{
+    uint32_t magic = 0;
+    if (fread(&magic, sizeof magic, 1, f) != 1 || fseek(f, 0, SEEK_SET) != 0) {
         return false;
     }
     record_header_t h;
-    bool ok = fread(&h, sizeof h, 1, f) == 1 && h.magic == RECORD_MAGIC && h.state_len <= PT_STATE_MAX &&
-              h.kind <= PT_REC_AWAY && fread(r->state, 1, h.state_len, f) == h.state_len;
-    fclose(f);
-    if (!ok) {
+    memset(&h, 0, sizeof h);
+    if (magic == RECORD_MAGIC_V1) {
+        record_header_v1_t v1;
+        if (fread(&v1, sizeof v1, 1, f) != 1) {
+            return false;
+        }
+        h.kind = v1.kind;
+        h.epoch = v1.epoch;
+        memcpy(h.pet_id, v1.pet_id, sizeof h.pet_id);
+        memcpy(h.away_name, v1.away_name, sizeof h.away_name);
+        h.state_len = v1.state_len;
+    } else if (magic != RECORD_MAGIC || fread(&h, sizeof h, 1, f) != 1) {
+        return false;
+    }
+    if (h.state_len > PT_STATE_MAX || h.kind > PT_REC_AWAY || fread(r->state, 1, h.state_len, f) != h.state_len ||
+            fgetc(f) != EOF) {
         return false;
     }
     r->kind = (pt_rec_kind_t)h.kind;
     r->epoch = h.epoch;
     memcpy(r->pet_id, h.pet_id, sizeof r->pet_id);
+    memcpy(r->away_id, h.away_id, sizeof r->away_id);
     memcpy(r->away_name, h.away_name, sizeof r->away_name);
-    r->pet_id[PT_ID_MAX - 1] = r->away_name[PT_NAME_MAX - 1] = 0;
+    r->pet_id[PT_ID_MAX - 1] = r->away_id[PT_ID_MAX - 1] = r->away_name[PT_NAME_MAX - 1] = 0;
     r->state_len = h.state_len;
     return true;
+}
+
+dock_load_t dock_platform_load(pt_record_t *r)
+{
+    char path[600], aside[640];
+    record_path(path, sizeof path);
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return DOCK_LOAD_NONE;
+    }
+    bool ok = read_record(f, r);
+    fclose(f);
+    if (ok) {
+        return DOCK_LOAD_OK;
+    }
+    /* Unreadable: move it aside (never deleted), so a later save doesn't write over it. */
+    snprintf(aside, sizeof aside, "%.590s.bad-%ld", path, (long)time(NULL));
+    dock_platform_log("pixlz: saved record unreadable; moved to %s (%s)", aside, rename(path, aside) == 0 ? "ok" : "failed");
+    return DOCK_LOAD_BAD;
 }
 
 bool dock_platform_save(const pt_record_t *r)
@@ -123,6 +173,7 @@ bool dock_platform_save(const pt_record_t *r)
     h.kind = (uint32_t)r->kind;
     h.epoch = r->epoch;
     memcpy(h.pet_id, r->pet_id, sizeof h.pet_id);
+    memcpy(h.away_id, r->away_id, sizeof h.away_id);
     memcpy(h.away_name, r->away_name, sizeof h.away_name);
     h.state_len = (uint32_t)r->state_len;
     FILE *f = fopen(tmp, "wb");

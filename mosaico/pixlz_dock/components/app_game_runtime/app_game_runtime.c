@@ -37,7 +37,9 @@ typedef struct {
     uint32_t last_touch_tick;
     bool sending;             /* a menu "Send home" is waiting on the trip */
     uint32_t exit_tick;       /* Exit: when to leave for Vibe Mode (0 = not leaving) */
-    bool exited;              /* the switch is scheduled: the device restarts shortly */
+    uint32_t exit_cap;        /* Exit: leave by then even mid-trip (the trip is aborted) */
+    bool exited;              /* the switch is scheduled: the device restarts shortly; the dock is done */
+    app_menu_agent_row_t rows[APP_MENU_AGENT_MAX];   /* the sessions, as the menu gets them */
     char speech[SPEECH_MAX];
     uint32_t speech_until;
     int last_line;
@@ -54,6 +56,7 @@ typedef struct {
 } host_state_t;
 
 static const char *s_species[PIXL_PET_COUNT];
+enum { PIXL_ID_CAP = 64 };   /* a species id as the record may hold it */
 
 /* ---------------------------------------------------------------------------------------- */
 /* Looks */
@@ -92,20 +95,28 @@ static app_game_config_t config_for(int look, uint32_t seed)
     return c;
 }
 
-/* The saved swap choice, else the visiting Pixl's own species, else Frogg. */
+/* The record says what the Pixl is (here, arriving or away); the saved swap choice only when
+ * there's none; else Frogg. Nothing is restyled here. */
 static int initial_look(host_state_t *state)
 {
-    char id[24] = "";
-    app_dock_load_look(id, sizeof id);
-    int i = look_index(id);
-    /* The Pixl here travels as the one on screen: a swap made before swaps travelled. */
-    if (i >= 0 && app_dock_status(state->dock).owns_pet) {
-        (void)app_dock_restyle(state->dock, pixl_pets[i].id, pixl_pets[i].name);
-    }
-    if (i < 0 && app_dock_pet_species(state->dock, id, sizeof id)) {
+    char id[PIXL_ID_CAP] = "";
+    int i = app_dock_pet(state->dock, id, sizeof id, NULL, 0) ? look_index(id) : -1;
+    if (i < 0) {
+        app_dock_load_look(id, sizeof id);
         i = look_index(id);
     }
     return i < 0 ? 0 : i;
+}
+
+/* The Pixl's own name from its record (a swap or the Mac may have named it), else the look's. */
+static const char *pet_name(const host_state_t *state)
+{
+    static char name[96];
+    char species[PIXL_ID_CAP];
+    if (app_dock_pet(state->dock, species, sizeof species, name, sizeof name) && name[0]) {
+        return name;
+    }
+    return pixl_pets[state->look].name;
 }
 
 /* ---------------------------------------------------------------------------------------- */
@@ -201,34 +212,51 @@ static void speak(host_state_t *state, app_game_say_t event, uint32_t tick)
     state->speech_until = tick + SPEECH_TICKS;
 }
 
+/* The sessions to the menu, by id, so open views follow their session. */
+static void push_agents(host_state_t *state)
+{
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    int n = 0;
+    for (int i = 0; ag && i < ag->count && n < APP_MENU_AGENT_MAX; i++, n++) {
+        app_menu_agent_row_t *r = &state->rows[n];
+        snprintf(r->id, sizeof r->id, "%.*s", (int)sizeof r->id - 1, ag->items[i].id);
+        snprintf(r->req, sizeof r->req, "%.*s", (int)sizeof r->req - 1, ag->items[i].req);
+    }
+    app_menu_set_agents(state->menu, state->rows, n);
+}
+
 static void open_menu(host_state_t *state)
 {
     const app_dock_status_t d = app_dock_status(state->dock);
     const app_game_snapshot_t s = app_game_read(state->game);
     const bool here = s.phase != APP_GAME_PET_ABSENT && s.phase != APP_GAME_PET_EXITING;
     const app_dock_feed_t *feed = app_dock_feed(state->dock);
-    app_menu_context_t ctx = {
-        d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
-        d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT, d.can_call && !d.in_trip,
-        feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
-        d.can_bring && !here, 0, 0, d.macs > 0, false, false,
-    };
+    app_menu_context_t ctx;
+    memset(&ctx, 0, sizeof ctx);
+    ctx.can_send = d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here;
+    ctx.locked = d.locked;
+    ctx.has_pet = d.owns_pet && here;
+    ctx.pet_index = state->look;
+    ctx.pet_count = PIXL_PET_COUNT;
+    ctx.can_call = d.can_call && !d.in_trip;
+    ctx.answers_count = feed ? feed->answers_count : 0;
+    ctx.memory_count = feed ? feed->memory_count : 0;
+    ctx.can_bring = d.can_bring && !here;
+    ctx.agents_connected = d.macs > 0;
     ctx.agents_paired = d.agents_paired;
     ctx.paired = d.paired;
-    const app_dock_agents_t *ag = app_dock_agents(state->dock);
-    if (ag) {
-        ctx.agents_count = ag->count;
-        for (int i = 0; i < ag->count && i < 32; i++) {
-            ctx.agents_waiting |= ag->items[i].req[0] ? 1u << i : 0;
-        }
-    }
+    ctx.can_swap = d.owns_pet && !d.in_trip && here;   /* the record changes with the look */
     app_menu_open(state->menu, &ctx);
+    push_agents(state);
 }
 
+/* A line across the top; it wakes the screen so it can be read. */
 static void say_banner(host_state_t *state, const char *text)
 {
-    snprintf(state->banner, sizeof state->banner, "%s", text);
-    state->banner_until = app_game_read(state->game).tick + 4 * 30;
+    const uint32_t tick = app_game_read(state->game).tick;
+    snprintf(state->banner, sizeof state->banner, "%.*s", (int)sizeof state->banner - 1, text);
+    state->banner_until = tick + 4 * 30;
+    state->last_touch_tick = tick;
 }
 
 static void apply_menu(host_state_t *state, app_menu_action_t a)
@@ -239,33 +267,38 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         app_dock_send_home(state->dock);
         break;
     case APP_MENU_ACTION_TRICK: app_game_trick(state->game); break;
-    case APP_MENU_ACTION_CALL: (void)app_dock_call(state->dock); break;
-    case APP_MENU_ACTION_BRING: (void)app_dock_bring(state->dock); break;
+    case APP_MENU_ACTION_CALL:
+        if (!app_dock_call(state->dock)) {
+            say_banner(state, "Its Mac isn't connected");
+        }
+        break;
+    case APP_MENU_ACTION_BRING:
+        if (!app_dock_bring(state->dock)) {
+            say_banner(state, "Couldn't bring it back");
+        }
+        break;
     case APP_MENU_ACTION_AGENT_DENY:
     case APP_MENU_ACTION_AGENT_ALLOW: {
+        /* The request the view was opened on, by id; never another row or another Mac. */
         const bool allow = a.kind == APP_MENU_ACTION_AGENT_ALLOW;
-        const app_dock_agents_t *ag = app_dock_agents(state->dock);
-        if (ag && a.arg >= 0 && a.arg < ag->count && ag->items[a.arg].req[0]) {
-            const bool sent = ag->items[a.arg].answerable && app_dock_agent_decide(state->dock, a.arg, allow);
-            say_banner(state, sent ? (allow ? "Allowed" : "Denied") : "Answer it in the terminal");
+        switch (app_dock_agent_decide(state->dock, a.id, a.req, allow)) {
+        case APP_DOCK_ANSWER_SENT: say_banner(state, allow ? "Allowed" : "Denied"); break;
+        case APP_DOCK_ANSWER_GONE: say_banner(state, "That request is gone"); break;
+        case APP_DOCK_ANSWER_TERMINAL: say_banner(state, "Answer it in the terminal"); break;
+        case APP_DOCK_ANSWER_FAILED: say_banner(state, "Couldn't tell your Mac"); break;
         }
         break;
     }
     case APP_MENU_ACTION_AGENT_CHAT:
-        (void)app_dock_agent_chat(state->dock, a.arg);
+        if (!app_dock_agent_chat(state->dock, a.id)) {
+            say_banner(state, "Couldn't ask your Mac");
+            app_menu_back_to_agents(state->menu);
+        }
         break;
     case APP_MENU_ACTION_AGENT_REPLY: {
         static const char *const quick[4] = {"Continue", "Yes", "No", "Run the tests"};
-        const app_dock_agents_t *ag = app_dock_agents(state->dock);
-        const app_dock_chat_t *ch = app_dock_chat(state->dock);
-        int row = a.arg / 16, q = a.arg % 16;
-        /* The list may have moved since the chat opened: find that session by id. */
-        for (int i = 0; ag && ch && i < ag->count; i++) {
-            if (strcmp(ag->items[i].id, ch->id) == 0) {
-                row = i;
-            }
-        }
-        const bool sent = q >= 0 && q < 4 && app_dock_agent_reply(state->dock, row, quick[q]);
+        const int q = a.arg % 16;
+        const bool sent = q >= 0 && q < 4 && app_dock_agent_reply(state->dock, a.id, quick[q]);
         say_banner(state, sent ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
         break;
     }
@@ -274,31 +307,44 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         say_banner(state, a.arg ? "Now confirm on your Mac" : "Pairing cancelled");
         break;
     case APP_MENU_ACTION_UNPAIR:
-        app_dock_unpair(state->dock);
-        say_banner(state, "Unpaired. Allow is off here.");
+        say_banner(state, app_dock_unpair(state->dock) ? "Unpaired. Allow is off here." : "Couldn't unpair. Try again.");
         break;
     case APP_MENU_ACTION_EXIT: {
         /* With a Mac to go to, the Pixl hops home first, so it isn't left on a device that
-         * stops running Pixlz; locked, it stays. Leave when the trip ends, or after 8 s. */
+         * stops running Pixlz; locked, it stays. Leave once no trip is running (at most 15 s). */
         const app_dock_status_t d = app_dock_status(state->dock);
         const app_game_snapshot_t s = app_game_read(state->game);
         const bool here = s.phase != APP_GAME_PET_ABSENT && s.phase != APP_GAME_PET_EXITING;
         if (d.owns_pet && here && d.macs > 0 && !d.locked && !d.in_trip) {
             state->sending = true;
             app_dock_send_home(state->dock);
-            state->exit_tick = s.tick + 8 * 30;
-        } else {
-            state->exit_tick = s.tick + 30;   /* a moment to read "See you soon" */
         }
+        state->exit_tick = s.tick + 30;   /* a moment to read "See you soon" */
+        state->exit_cap = s.tick + 15 * 30;
         break;
     }
     case APP_MENU_ACTION_NAP: app_game_nap(state->game); break;
-    case APP_MENU_ACTION_LOCK: (void)app_dock_set_locked(state->dock, a.arg != 0); break;
+    case APP_MENU_ACTION_LOCK:
+        if (!app_dock_set_locked(state->dock, a.arg != 0)) {
+            say_banner(state, "Couldn't save that. Nothing changed.");
+        }
+        break;
     case APP_MENU_ACTION_SWAP:
         if (a.arg >= 0 && a.arg < PIXL_PET_COUNT && a.arg != state->look) {
+            /* The record is the truth: the look changes only once the Pixl travels as it. Same
+             * species: it keeps its own name; another species: that one's name. */
+            char species[PIXL_ID_CAP], own[96];
+            const char *name = pixl_pets[a.arg].name;
+            if (app_dock_pet(state->dock, species, sizeof species, own, sizeof own) &&
+                    strcmp(species, pixl_pets[a.arg].id) == 0 && own[0]) {
+                name = own;
+            }
+            if (!app_dock_restyle(state->dock, pixl_pets[a.arg].id, name)) {
+                say_banner(state, "Can't swap right now");
+                break;
+            }
             state->look = a.arg;
-            app_dock_save_look(pixl_pets[a.arg].id);
-            (void)app_dock_restyle(state->dock, pixl_pets[a.arg].id, pixl_pets[a.arg].name);   /* it travels as this one */
+            (void)app_dock_save_look(pixl_pets[a.arg].id);
             const app_game_config_t c = config_for(a.arg, 0);
             state->scale = c.scale;
             state->last_line = -1;
@@ -319,11 +365,7 @@ static void agents_update(host_state_t *state, uint32_t tick)
     }
     if (ag->version != state->agents_version) {
         state->agents_version = ag->version;
-        uint32_t mask = 0;
-        for (int i = 0; i < ag->count && i < 32; i++) {
-            mask |= ag->items[i].req[0] ? 1u << i : 0;
-        }
-        app_menu_set_agents(state->menu, ag->count, mask);
+        push_agents(state);
         if (!ag->waiting) {
             state->next_alert = 0;
         }
@@ -337,9 +379,78 @@ static void agents_update(host_state_t *state, uint32_t tick)
         first = ag->items[i].req[0] ? &ag->items[i] : NULL;
     }
     speak(state, APP_GAME_SAY_ALERT, tick);
-    snprintf(state->banner, sizeof state->banner, "%s needs you", first ? first->project : "Claude Code");
+    snprintf(state->banner, sizeof state->banner, "%.*s needs you", (int)sizeof first->project - 1,
+             first ? first->project : "Claude Code");
     state->banner_until = tick + 5 * 30;
     state->last_touch_tick = tick;   /* wake the screen */
+}
+
+/* A dock event, as the screen shows it. */
+static void on_event(host_state_t *state, const app_dock_event_t *e, uint32_t tick)
+{
+    switch (e->kind) {
+    case APP_DOCK_EVENT_ARRIVED: {
+        /* The Pixl shows as what it is (a swap on another device travels with it). */
+        char id[PIXL_ID_CAP] = "";
+        if (app_dock_pet(state->dock, id, sizeof id, NULL, 0) && look_index(id) >= 0 && look_index(id) != state->look) {
+            (void)app_dock_save_look(id);
+            state->look = look_index(id);
+            const app_game_config_t c = config_for(state->look, 0);
+            state->scale = c.scale;
+            app_game_set_look(state->game, &c);
+        }
+        app_game_pet_arrive(state->game);
+        break;
+    }
+    case APP_DOCK_EVENT_LEFT:
+        state->sending = false;
+        app_game_pet_leave(state->game);
+        if (state->exit_tick) {
+            state->exit_tick = tick + 45;   /* let him hop off first */
+        }
+        break;
+    case APP_DOCK_EVENT_PAIR_CODE:
+        snprintf(state->pair_code, sizeof state->pair_code, "%.6s", e->reason);
+        app_menu_open_pair(state->menu);
+        state->last_touch_tick = tick;   /* wake the screen */
+        break;
+    case APP_DOCK_EVENT_PAIRED: {
+        char line[64];
+        snprintf(line, sizeof line, "Paired with %.40s", e->reason);
+        say_banner(state, line);
+        if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
+            app_menu_close(state->menu);
+        }
+        break;
+    }
+    case APP_DOCK_EVENT_PAIR_ENDED:
+        if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
+            app_menu_close(state->menu);
+        }
+        say_banner(state, strcmp(e->reason, "saveFailed") == 0 ? "Couldn't save the pairing" : "Pairing cancelled");
+        break;
+    case APP_DOCK_EVENT_SHRUG:
+        state->sending = false;
+        if (strcmp(e->reason, "gaveWay") == 0) {
+            /* A newer copy is elsewhere: this one walks off (below), it doesn't shrug and stay. */
+            const app_dock_status_t d = app_dock_status(state->dock);
+            char line[64];
+            snprintf(line, sizeof line, "%.24s has the newer %.24s", d.away_on[0] ? d.away_on : "Your Mac",
+                     pet_name(state));
+            say_banner(state, line);
+            break;
+        }
+        if (strcmp(e->reason, "alreadyHere") == 0) {
+            say_banner(state, "Already there. Sorting out the copies.");
+        } else if (strcmp(e->reason, "saveFailed") == 0) {
+            say_banner(state, "Couldn't save. Nothing changed.");
+        }
+        app_game_pet_shrug(state->game);
+        if (state->exit_tick) {
+            state->exit_tick = tick + 30;   /* he stays here, saved */
+        }
+        break;
+    }
 }
 
 static void update(void *value)
@@ -347,6 +458,9 @@ static void update(void *value)
     host_state_t *state = value;
     app_game_update(state->game);
     app_menu_update(state->menu);
+    if (state->exited) {
+        return;   /* leaving for Vibe Mode: the dock is closed; nothing more to do */
+    }
     switch (app_game_take_request(state->game)) {
     case APP_GAME_REQUEST_SEND_HOME: app_dock_send_home(state->dock); break;
     case APP_GAME_REQUEST_MENU: open_menu(state); break;
@@ -370,87 +484,38 @@ static void update(void *value)
         state->feed_version = feed->version;
         app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
     }
-    agents_update(state, tick);
-    {   /* the open chat takes a reply from here: held open on the Mac, and paired with it */
-        const app_dock_agents_t *ag = app_dock_agents(state->dock);
-        const app_dock_chat_t *ch = app_dock_chat(state->dock);
-        bool ok = false;
-        for (int i = 0; ag && ch && i < ag->count; i++) {
-            ok |= strcmp(ag->items[i].id, ch->id) == 0 && ag->items[i].reply_open;
-        }
-        app_menu_set_chat(state->menu, ok && app_dock_status(state->dock).agents_paired);
-    }
     {
         const app_dock_status_t ds = app_dock_status(state->dock);
         app_menu_set_paired(state->menu, ds.paired, ds.agents_paired);
     }
     int n = app_dock_poll(state->dock, state->events, MAX_EVENTS);
     for (int i = 0; i < n; i++) {
-        switch (state->events[i].kind) {
-        case APP_DOCK_EVENT_ARRIVED: {
-            /* The Pixl shows as what it is (a swap on another device travels with it). */
-            char id[24] = "";
-            if (app_dock_pet_species(state->dock, id, sizeof id) && look_index(id) >= 0 && look_index(id) != state->look) {
-                app_dock_save_look(id);
-                state->look = look_index(id);
-                const app_game_config_t c = config_for(state->look, 0);
-                state->scale = c.scale;
-                app_game_set_look(state->game, &c);
-            }
-            app_game_pet_arrive(state->game);
-            break;
-        }
-        case APP_DOCK_EVENT_LEFT:
-            state->sending = false;
-            app_game_pet_leave(state->game);
-            if (state->exit_tick) {
-                state->exit_tick = tick + 45;   /* let him hop off first */
-            }
-            break;
-        case APP_DOCK_EVENT_PAIR_CODE:
-            snprintf(state->pair_code, sizeof state->pair_code, "%s", state->events[i].reason);
-            app_menu_open_pair(state->menu);
-            state->last_touch_tick = tick;   /* wake the screen */
-            break;
-        case APP_DOCK_EVENT_PAIRED: {
-            char line[64];
-            snprintf(line, sizeof line, "Paired with %.40s", state->events[i].reason);
-            say_banner(state, line);
-            if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
-                app_menu_close(state->menu);
-            }
-            break;
-        }
-        case APP_DOCK_EVENT_PAIR_ENDED:
-            if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
-                app_menu_close(state->menu);
-            }
-            say_banner(state, "Pairing cancelled");
-            break;
-        case APP_DOCK_EVENT_SHRUG:
-            if (strcmp(state->events[i].reason, "alreadyHere") == 0) {
-                say_banner(state, "Already there. Sorting out the copies.");
-            }
-            state->sending = false;
-            app_game_pet_shrug(state->game);
-            if (state->exit_tick) {
-                state->exit_tick = tick + 30;   /* he stays here, saved */
-            }
-            break;
-        }
+        on_event(state, &state->events[i], tick);
     }
-    /* Another device owns the Pixl now (its Mac brought it back while this one was off): it
-     * isn't here any more, so it walks off instead of lingering as a copy. */
+    /* After the poll, so the menu's rows match the list it draws from. */
+    agents_update(state, tick);
+    {   /* the open chat takes a reply from here: that session held open on the Mac, and paired */
+        const app_dock_agent_t *a = app_dock_agent_find(state->dock, app_menu_read(state->menu).agent_id);
+        app_menu_set_chat(state->menu, a && a->reply_open && app_dock_status(state->dock).agents_paired);
+    }
+    /* Not in a trip and not here: nothing is being sent any more (it gave way, or it left). */
     const app_dock_status_t d = app_dock_status(state->dock);
+    if (!d.in_trip && !d.owns_pet) {
+        state->sending = false;
+    }
+    /* Another device owns the Pixl now (its Mac brought it back while this one was off, or a
+     * newer copy turned up): it isn't here any more, so it walks off instead of lingering. */
     const app_game_snapshot_t after = app_game_read(state->game);
     if (!d.owns_pet && !d.in_trip && !state->sending && after.phase != APP_GAME_PET_ABSENT &&
             after.phase != APP_GAME_PET_EXITING) {
         app_game_pet_leave(state->game);
     }
-    if (state->exit_tick && !state->exited && tick >= state->exit_tick) {
+    /* Leave once no trip is running; at the cap, the dock aborts the trip on the way out. */
+    if (state->exit_tick && tick >= state->exit_tick && (!d.in_trip || tick >= state->exit_cap)) {
         state->exited = app_dock_exit(state->dock);
         if (!state->exited) {
             state->exit_tick = 0;   /* couldn't switch: stay in the app */
+            say_banner(state, "Couldn't open Vibe Mode");
         }
     }
 }
@@ -854,11 +919,10 @@ static void draw_agents(const host_state_t *state, const app_menu_snapshot_t *m)
 /* One request: what it wants to run, red Deny, green Allow greyed until pairing (D19). */
 static void draw_agent(const host_state_t *state, const app_menu_snapshot_t *m)
 {
-    const app_dock_agents_t *ag = app_dock_agents(state->dock);
-    if (!ag || m->agent_first >= ag->count) {
+    const app_dock_agent_t *a = app_dock_agent_find(state->dock, m->agent_id);   /* the one opened, by id */
+    if (!a) {
         return;
     }
-    const app_dock_agent_t *a = &ag->items[m->agent_first];
     Color white = shade(240, 240, 235, 100), grey = shade(140, 140, 140, 100), amber = shade(255, 176, 60, 100);
     draw_text_centred(a->project, GAME_WIDTH / 2, 30, 3, amber);
     int h = wrap_text(a->summary, 40, 82, GAME_WIDTH - 80, 2, white, true);
@@ -891,18 +955,12 @@ static void draw_agent(const host_state_t *state, const app_menu_snapshot_t *m)
 static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
 {
     const app_dock_chat_t *ch = app_dock_chat(state->dock);
-    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    const app_dock_agent_t *a = app_dock_agent_find(state->dock, m->agent_id);
     Color white = shade(240, 240, 235, 100), grey = shade(130, 130, 130, 100), amber = shade(255, 176, 60, 100);
-    const char *project = "Session";
-    bool reply_open = false;
-    for (int i = 0; ag && ch && i < ag->count; i++) {
-        if (strcmp(ag->items[i].id, ch->id) == 0) {
-            project = ag->items[i].project;
-            reply_open = ag->items[i].reply_open;
-        }
-    }
+    const char *project = a ? a->project : "Session";
+    const bool reply_open = a && a->reply_open;
     draw_text_centred(project, GAME_WIDTH / 2, 22, 2, amber);
-    if (!ch || ch->count < 0) {
+    if (!ch || ch->count < 0 || strcmp(ch->id, m->agent_id) != 0) {   /* not this session's yet */
         draw_text_centred("Loading the chat...", GAME_WIDTH / 2, 200, 2, grey);
         return;
     }
@@ -959,15 +1017,16 @@ static void draw_pair(const host_state_t *state, const app_menu_snapshot_t *m)
     draw_buttons(m);
 }
 
-/* A line across the top (an agent waiting, "Denied"), over everything. */
-static void draw_banner(const host_state_t *state, uint32_t tick)
+/* A line across the top (an agent waiting, "Denied"), over everything, at the screen's brightness. */
+static void draw_banner(const host_state_t *state, uint32_t tick, unsigned brightness)
 {
     if (tick >= state->banner_until || !state->banner[0]) {
         return;
     }
     const int w = text_width(state->banner, 2) + 32;
-    DrawRectangleRounded((Rectangle){(float)(GAME_WIDTH - w) / 2, 10, (float)w, 34}, 0.5f, 8, shade(70, 48, 16, 100));
-    draw_text_centred(state->banner, GAME_WIDTH / 2, 20, 2, shade(255, 200, 110, 100));
+    DrawRectangleRounded((Rectangle){(float)(GAME_WIDTH - w) / 2, 10, (float)w, 34}, 0.5f, 8,
+                         shade(70, 48, 16, brightness));
+    draw_text_centred(state->banner, GAME_WIDTH / 2, 20, 2, shade(255, 200, 110, brightness));
 }
 
 /* "Leave Pixlz?" with what happens to the Pixl, over the red and green buttons. */
@@ -976,14 +1035,14 @@ static void draw_exit(const host_state_t *state, const app_menu_snapshot_t *m)
     const app_dock_status_t d = app_dock_status(state->dock);
     const app_game_snapshot_t s = app_game_read(state->game);
     const bool here = d.owns_pet && s.phase != APP_GAME_PET_ABSENT;
-    const char *name = pixl_pets[state->look].name;
+    const char *name = pet_name(state);
     char line[128];
     Color white = shade(255, 255, 255, 100), grey = shade(170, 170, 170, 100);
     draw_text_centred("Leave Pixlz?", GAME_WIDTH / 2, 110, 4, white);
     if (here && d.macs > 0 && !d.locked) {
-        snprintf(line, sizeof line, "%s hops home to your Mac first.", name);
+        snprintf(line, sizeof line, "%.60s hops home to your Mac first.", name);
     } else if (here) {
-        snprintf(line, sizeof line, "%s stays here, saved.", name);
+        snprintf(line, sizeof line, "%.60s stays here, saved.", name);
     } else {
         snprintf(line, sizeof line, "Nothing is lost.");
     }
@@ -1001,6 +1060,7 @@ static void draw_empty(const host_state_t *state, uint32_t tick, unsigned bright
     const int dx = (int)((tick / 600) % 5) * 8 - 16, dy = (int)((tick / 900) % 5) * 8 - 16;
     const int cx = GAME_WIDTH / 2 + dx, y = 180 + dy;
     const pixl_pet_t *pet = &pixl_pets[state->look];
+    const char *name = pet_name(state);
     Color title = shade(pet->accent[0], pet->accent[1], pet->accent[2], brightness);
     Color body = shade(200, 200, 200, brightness), hint = shade(130, 130, 130, brightness);
     char line[128];
@@ -1008,17 +1068,32 @@ static void draw_empty(const host_state_t *state, uint32_t tick, unsigned bright
         draw_text_centred("See you soon", cx, y + 30, 3, body);
         return;
     }
+    if (d.store_bad) {
+        draw_text_centred("Saved Pixl unreadable", cx, y, 2, body);
+        draw_text_centred("It's kept, not lost", cx, y + 30, 2, title);
+        draw_text_centred("Forget it over USB to start again", cx, y + 80, 1, hint);
+        return;
+    }
+    if (d.arriving) {   /* received, waiting for the sender to commit */
+        snprintf(line, sizeof line, "%.40s is arriving", name);
+        draw_text_centred(line, cx, y, 2, body);
+        snprintf(line, sizeof line, "from %.60s...", d.arriving_from);
+        draw_text_centred(line, cx, y + 30, 2, title);
+        return;
+    }
     if (d.in_trip) {
-        snprintf(line, sizeof line, "%s is on the way...", pet->name);
+        snprintf(line, sizeof line, "%.60s is on the way...", name);
         draw_text_centred(line, cx, y + 30, 2, body);
         return;
     }
     if (d.away_on[0]) {
-        snprintf(line, sizeof line, "%s is on", pet->name);
+        snprintf(line, sizeof line, "%.60s is on", name);
         draw_text_centred(line, cx, y, 2, body);
         draw_text_centred(d.away_on, cx, y + 30, 2, title);
+        snprintf(line, sizeof line, "Waiting for %.60s", d.away_on);
         draw_text_centred(d.can_call ? "Double-tap, then Call" :
-                          d.can_bring ? "Mac off? Double-tap, then Bring" : "Waiting for your Mac",
+                          d.can_bring ? "Mac off? Double-tap, then Bring" :
+                          d.can_reclaim && !d.online ? "Mosaico is offline" : line,
                           cx, y + 80, 1, hint);
     } else {
         draw_text_centred("No Pixl here yet", cx, y, 2, body);
@@ -1184,7 +1259,7 @@ static int render(void *value)
             draw_menu(state, &m);
         }
     }
-    draw_banner(state, s.tick);
+    draw_banner(state, s.tick, brightness);
     const app_dock_status_t dock = app_dock_status(state->dock);
     if (!dock.network_ready) {   /* offline: no trips, no agents; say so (drifts with the empty screen's rule) */
         draw_text("no Wi-Fi", 14 + (int)((s.tick / 900) % 3) * 4, 14, 1, shade(200, 120, 90, brightness < 50 ? 50 : brightness));

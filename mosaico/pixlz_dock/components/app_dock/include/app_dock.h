@@ -14,10 +14,11 @@ typedef struct app_dock *app_dock_handle_t;
 typedef enum {
     APP_DOCK_EVENT_ARRIVED = 1,  /**< The Pixl is owned here now: play the entrance. */
     APP_DOCK_EVENT_LEFT,         /**< Committed: play the exit. */
-    APP_DOCK_EVENT_SHRUG,        /**< The trip didn't happen; `reason` says why. */
+    APP_DOCK_EVENT_SHRUG,        /**< The trip didn't happen; `reason` says why ("gaveWay": a newer
+                                      copy is elsewhere and this one stepped aside; "saveFailed"). */
     APP_DOCK_EVENT_PAIR_CODE,    /**< A Mac wants to pair: show `reason` (6 digits) and ask. */
-    APP_DOCK_EVENT_PAIRED,       /**< Paired; `reason` is the Mac's name (cut to fit). */
-    APP_DOCK_EVENT_PAIR_ENDED,   /**< The pairing stopped without pairing. */
+    APP_DOCK_EVENT_PAIRED,       /**< Paired and saved; `reason` is the Mac's name (cut to fit). */
+    APP_DOCK_EVENT_PAIR_ENDED,   /**< The pairing stopped without pairing ("saveFailed": it couldn't be saved). */
 } app_dock_event_kind_t;
 
 typedef struct {
@@ -27,6 +28,7 @@ typedef struct {
 
 typedef struct {
     bool network_ready;  /**< Wi-Fi has an address (always true in the simulator). */
+    bool online;         /**< Wi-Fi up, or the Bluetooth link connected. */
     bool clock_ok;       /**< Wall clock set (SNTP); trips need it. */
     int macs;            /**< Connected Macs that said hello. */
     bool in_trip;
@@ -34,9 +36,13 @@ typedef struct {
     int battery_percent; /**< 0..100, or -1 when unknown. */
     bool on_battery;     /**< Unplugged (discharging). */
     bool locked;         /**< The Pixl here is locked to this device (SPEC §10.6). */
-    bool can_call;       /**< It knows a Pixl that's away, and a Mac is connected to ask. */
-    bool can_bring;      /**< Away, no Mac connected, and a safety copy here (app_dock_bring). */
+    bool can_call;       /**< Away, and the device that holds it is connected to ask. */
+    bool can_reclaim;    /**< Away with a safety copy here (Bring, once online). */
+    bool can_bring;      /**< can_reclaim, online, and its holder isn't connected (app_dock_bring). */
     char away_on[96];    /**< Where the Pixl is when it's away ("" otherwise). */
+    bool arriving;       /**< Received and saved, waiting for the sender's commit. */
+    char arriving_from[96];
+    bool store_bad;      /**< A saved Pixl couldn't be read: kept aside; offers are declined. */
     bool paired;         /**< Paired with a Mac (D20): Allow works here for that Mac's agents. */
     bool agents_paired;  /**< The agents list came from the paired Mac. */
     char paired_with[96];
@@ -57,7 +63,7 @@ typedef struct {
 } app_dock_feed_t;
 
 /** Agent mode (SPEC §16.3): the Claude Code sessions on the Mac, as it last sent them (waiting
- * ones first). Empty while no Mac is connected. Read-only here; Deny goes back to the Mac. */
+ * ones first). Cleared when the Mac that sent them goes. Read-only here; Deny goes back to the Mac. */
 enum { APP_DOCK_AGENTS = 6 };
 typedef struct {
     char id[44];
@@ -96,46 +102,58 @@ app_dock_handle_t app_dock_create(void);
 void app_dock_destroy(app_dock_handle_t *handle);
 /** Nonblocking network and timer work; writes up to `max` events, returns how many. */
 int app_dock_poll(app_dock_handle_t dock, app_dock_event_t *events, int max);
-/** Send the Pixl to the connected Mac. The result arrives as LEFT or SHRUG events. */
+/** Send the Pixl home: to the paired Mac if connected, else the Mac whose agents are shown,
+ * else the one that connected last. The result arrives as LEFT or SHRUG events. */
 void app_dock_send_home(app_dock_handle_t dock);
-/** Ask the connected Mac to send the Pixl here ("Call"). Arrives as ARRIVED, or nothing. */
+/** Ask the device that holds the Pixl to send it here ("Call"); never another Mac. False when
+ * that device isn't connected. Arrives as ARRIVED, or nothing. */
 bool app_dock_call(app_dock_handle_t dock);
 /** Its Mac is off: bring the Pixl back from the copy kept here. Arrives as ARRIVED. When that
  * Mac comes back it gives way, and the Pixl's time there is lost (SPEC §10.5). */
 bool app_dock_bring(app_dock_handle_t dock);
-/** Leave for Vibe Mode: the device restarts into it. Whatever is here stays saved (the screen
- * sends the Pixl home first when a Mac is connected). */
+/** Leave for Vibe Mode: ends any trip (abort), switches, then closes connections. False when it
+ * can't switch (nothing is closed then). After true, poll does nothing. */
 bool app_dock_exit(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
-/** The latest feed from a Mac; empty until one arrives. Valid until the next poll. */
+/** The latest feed from a Mac; empty until one arrives, cleared when that Mac goes. */
 const app_dock_feed_t *app_dock_feed(app_dock_handle_t dock);
+/** The sessions from one Mac; cleared when that Mac goes. Reading never changes them. */
 const app_dock_agents_t *app_dock_agents(app_dock_handle_t dock);
-/** Deny a waiting request on the Mac. False when no Mac is connected to tell. Allow isn't
- * offered here until pairing (D19). */
+/** The session with this id, or NULL. */
+const app_dock_agent_t *app_dock_agent_find(app_dock_handle_t dock, const char *session_id);
+/** Deny a waiting request, unsigned, on the Mac the sessions came from (never another). */
 bool app_dock_agent_deny(app_dock_handle_t dock, const char *req);
-/** Answer a waiting request: signed with the pairing key when paired with the Mac that sent the
+typedef enum {
+    APP_DOCK_ANSWER_SENT = 0,
+    APP_DOCK_ANSWER_GONE,       /**< That session or request isn't there any more. */
+    APP_DOCK_ANSWER_TERMINAL,   /**< The Mac doesn't hold it: answer in the terminal. */
+    APP_DOCK_ANSWER_FAILED,     /**< Not paired (Allow), or it couldn't be sent. */
+} app_dock_answer_t;
+/** Answer request `req` of session `session_id`: signed when paired with the Mac that sent the
  * list (Allow needs that); otherwise only Deny, unsigned. */
-bool app_dock_agent_decide(app_dock_handle_t dock, int index, bool allow);
-/** Ask the Mac for that session's chat; it arrives in app_dock_chat(). */
-bool app_dock_agent_chat(app_dock_handle_t dock, int index);
+app_dock_answer_t app_dock_agent_decide(app_dock_handle_t dock, const char *session_id, const char *req, bool allow);
+/** Ask the Mac for that session's chat; it arrives in app_dock_chat(). False: not asked. */
+bool app_dock_agent_chat(app_dock_handle_t dock, const char *session_id);
 const app_dock_chat_t *app_dock_chat(app_dock_handle_t dock);
 /** A quick reply to a session held open for one: signed, so only when paired with that Mac. */
-bool app_dock_agent_reply(app_dock_handle_t dock, int index, const char *text);
+bool app_dock_agent_reply(app_dock_handle_t dock, const char *session_id, const char *text);
 /** The user's answer to the pairing code on screen. */
 void app_dock_pair_answer(app_dock_handle_t dock, bool accept);
-/** Forget the paired Mac (Allow turns off here). */
-void app_dock_unpair(app_dock_handle_t dock);
-/** Lock or unlock the Pixl here; saved at once. False if nothing changed. */
+/** Forget the paired Mac (Allow turns off here). False if it couldn't be saved (still paired). */
+bool app_dock_unpair(app_dock_handle_t dock);
+/** Lock or unlock the Pixl here; saved at once. False if nothing changed or it couldn't be saved. */
 bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
 /** The species ids this device can draw (the strings must outlive the dock). */
 void app_dock_set_known_species(app_dock_handle_t dock, const char *const *ids, int count);
-/** The species of the Pixl here (from its state), or false when none. */
-bool app_dock_pet_species(app_dock_handle_t dock, char *out, int cap);
-/** A swap while the Pixl is here: it travels as that species from now on. */
+/** The Pixl's species and name from its record: here, arriving, or the copy kept when it left.
+ * False when none is known (`name` may be "" when the state has none). */
+bool app_dock_pet(app_dock_handle_t dock, char *species, int species_cap, char *name, int name_cap);
+/** A swap while the Pixl is here (owned, no trip): it travels as that species and name from now
+ * on. True once saved, or when it already is that; false otherwise (nothing changes). */
 bool app_dock_restyle(app_dock_handle_t dock, const char *species, const char *name);
 /** The look chosen on this device (Pixl swap), saved across restarts; "" when none. */
 void app_dock_load_look(char *out, int cap);
-void app_dock_save_look(const char *id);
+bool app_dock_save_look(const char *id);
 
 #ifdef __cplusplus
 }
