@@ -160,6 +160,7 @@
     ],
     "shy": true,
     "sounds": {
+      "alert": ["…!", "boo!", "…!!"],
       "greet": [
         "boo",
         "..."

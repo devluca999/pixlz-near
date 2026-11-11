@@ -154,6 +154,7 @@
       "guarding the warm spot"
     ],
     "sounds": {
+      "alert": ["meow? meow!", "MRAOW!", "mrrp!? mrrp!"],
       "greet": [
         "meow!",
         "mrrp?"

@@ -862,6 +862,41 @@ Platform tests (manual each milestone): Instruments CPU/energy check against §1
 
 ---
 
+## 16. Agent mode (D19)
+
+### 16.1 Where sessions come from
+
+Claude Code hooks, installed in `~/.claude/settings.json` by Pixlz (with the user's yes), POST each event to the Pixlz app on `127.0.0.1` (a random port and a token, written to the hook config):
+
+| Hook | What Pixlz learns |
+|---|---|
+| `SessionStart` / `SessionEnd` | A session appears or goes (id, project folder) |
+| `UserPromptSubmit` | What it was asked (first line) |
+| `PreToolUse` / `PostToolUse` | What it's doing now ("Running tests", "Editing App.swift") |
+| `Stop` | Finished; waiting for your next prompt |
+| `PermissionRequest` | It needs your OK: tool, command or file, the session |
+
+- Hooks are fire-and-forget except `PermissionRequest`, which waits for an answer (up to 55 s) and returns `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny"}}}`. No answer = no decision: the terminal prompt appears as usual. Pixlz never answers on its own.
+- A session not heard from for 30 min drops off the list. Nothing is stored beyond the running app.
+- Cloud sessions (claude.ai/code) aren't visible: Agent mode offers "Open claude.ai/code".
+
+### 16.2 On the Mac
+
+- **Agents bubble** in the option bubbles, with a count when something waits. It opens a list: one row per session (project, what it's doing, how long ago); waiting ones on top in the accent colour.
+- A **request card** shows the session, the tool and the exact command or file, with **Allow** and **Deny** (and "Always allow in this project" later). It closes when answered here, in the terminal, or when the hook gives up.
+- **Agent alerts** toggle (Agent list header and Pixl settings, off by default). While anything waits: the Pixl turns toward you and, every 20 s, says its alert line in a bubble with the session's name ("wan! wan! pixlz needs you"). Tapping the Pixl opens the oldest request. "Snooze 10 min" on the card.
+
+### 16.3 On the Mosaico
+
+- Page 1: Home · **Agents** · Swap · More. Agents lists sessions (four rows per screen, swipe for more); a waiting one opens its request with the big red and green buttons.
+- Alerts work the same, with the screen waking from its dim.
+- Until pairing (D9): Deny only; Allow is greyed with "Allow on your Mac".
+- The Mac sends the session list in the feed frame (`"agents":[{id, project, doing, waiting, request}]`) and the Mosaico answers with `{"agentDecision":{"id","behavior"}}`.
+
+### 16.4 Voice (later)
+
+Hold on the Pixl to talk (Mosaico microphone): audio to the Mac, transcribed on the Mac, then sent to a session Pixlz starts or resumes headlessly. The transcript is shown for a yes before anything runs.
+
 ## 15. Open questions for the owner
 
 1. Are energy / fun / affection the right needs (§2)? Is the offline floor of 20 right?

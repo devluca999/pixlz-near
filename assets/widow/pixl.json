@@ -163,6 +163,7 @@
       "checking the threads"
     ],
     "sounds": {
+      "alert": ["tk tk tk!", "TK TK!", "tk! tk!"],
       "greet": [
         "tk tk"
       ],

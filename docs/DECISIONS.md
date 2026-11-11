@@ -221,3 +221,15 @@ The Mosaico is a first-class home for a Pixl, like the iPhone (D8): the Pixl can
   4. *Failures are more likely.* A Mosaico that is unplugged or a Mac that is asleep makes autonomous trips fail often. Each failure costs an `annoyed` shrug the user didn't cause.
   - The field and the rules are specified now, so v1 PetState files already carry it and no migration is needed later.
 - D10's non-goal "Pixls roaming across displays on their own" is split in two: walking across displays stays out (D11); free roam between devices moves to v1.1.
+
+## D19. Agent mode (2026-11-10)
+
+A Pixl can watch your coding agents. **Agent mode** is a front-page entry in the Pixl's menu, on the Mac and on the Mosaico: it lists the Claude Code sessions running on this Mac, what each is doing, and the ones waiting on you, and lets you answer their permission requests with Allow / Deny. SPEC §16 has the details.
+
+- **Local sessions only.** Claude Code's hooks report sessions on this Mac (start, prompt, tool use, finish) and the `PermissionRequest` hook fires only when a permission prompt would be shown; Pixlz answers it with allow or deny. If nobody answers in time, Claude Code's own terminal prompt appears as usual, so an agent never waits on a Pixl that isn't there. Cloud sessions (claude.ai/code) have no local API: Agent mode can only open them in the browser.
+- **Agent alerts** (a toggle, off by default): while a session waits on you, the Pixl keeps calling for attention in its own voice, with a bubble naming the session, until you answer or snooze it. Mochi barks, Frogg ribbits, Kiti meows, Boo's "…!" floats by. The lines are per-species data (`pixl.json` `ui.sounds.alert`).
+- **Approvals from the Mosaico need pairing first.** A device on the Wi-Fi that can Allow can run commands on the Mac, and the spike link isn't paired or encrypted. Until pairing exists (D9), the Mosaico shows sessions and alerts and can **Deny**; **Allow** works on the Mac only.
+- **Menus:** Mac option bubbles get an Agents bubble; Mosaico page 1 becomes Home · Agents · Swap · More, and Trick moves to page 2 (Answers · Memory · Trick · More, with Lock and Back on page 3). Tapping the Pixl while an agent waits opens the request directly.
+- **Voice later:** the Mosaico has a microphone (ES8311). Dictation goes to the Mac, which transcribes it on the Mac and starts or resumes a session it runs itself (headless `claude -p --resume`), since no supported API types into a running terminal session.
+- **Installing the hooks** writes to the user's global Claude Code settings (`~/.claude/settings.json`). Pixlz asks before doing it and can remove them again.
+- Order: Mac (sessions, approvals, alerts) → Mosaico (list, alerts, Deny) → pairing (then Allow on the Mosaico) → voice.
