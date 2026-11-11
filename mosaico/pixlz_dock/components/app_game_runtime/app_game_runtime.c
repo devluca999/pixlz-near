@@ -113,6 +113,12 @@ static int frame_for(app_game_pose_t pose)
     case APP_GAME_POSE_AIR: return FROGG_MOVE_1;
     case APP_GAME_POSE_LAND: return FROGG_MOVE_2;
     case APP_GAME_POSE_ANNOYED: return FROGG_EMOTION_ANNOYED;
+    case APP_GAME_POSE_POKE_0: return FROGG_POKE_0;
+    case APP_GAME_POSE_POKE_1: return FROGG_POKE_1;
+    case APP_GAME_POSE_POKE_2: return FROGG_POKE_2;
+    case APP_GAME_POSE_GRAB_0: return FROGG_GRAB_0;
+    case APP_GAME_POSE_GRAB_1: return FROGG_GRAB_1;
+    case APP_GAME_POSE_HAPPY: return FROGG_EMOTION_HAPPY;
     case APP_GAME_POSE_IDLE_0:
     default: return FROGG_IDLE_0;
     }
@@ -149,6 +155,53 @@ static void draw_pet(const app_game_snapshot_t *s, uint8_t scale, unsigned brigh
     }
 }
 
+/* Low battery (on battery only): warn at 25% and below, red and blinking at 10% and below. */
+enum { BATTERY_WARN = 25, BATTERY_CRITICAL = 10 };
+
+/* 3x5 pixel digits and '%', one bit per pixel, rows top to bottom. */
+static const uint8_t DIGITS[11][5] = {
+    {7, 5, 5, 5, 7}, {2, 6, 2, 2, 7}, {7, 1, 7, 4, 7}, {7, 1, 3, 1, 7}, {5, 5, 7, 1, 1},
+    {7, 4, 7, 1, 7}, {7, 4, 7, 5, 7}, {7, 1, 1, 2, 2}, {7, 5, 7, 5, 7}, {7, 5, 7, 1, 7},
+    {5, 1, 2, 4, 5},
+};
+
+static void draw_glyph(int index, int x, int y, int px, Color colour)
+{
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; col < 3; col++) {
+            if (DIGITS[index][row] & (4 >> col)) {
+                DrawRectangle(x + col * px, y + row * px, px, px, colour);
+            }
+        }
+    }
+}
+
+/* A small battery with its level and the percentage, at the top. It drifts a few pixels each
+ * minute so it never burns into the AMOLED (SPEC §12.1). */
+static void draw_battery(int percent, uint32_t tick, unsigned brightness)
+{
+    bool critical = percent <= BATTERY_CRITICAL;
+    if (critical && (tick / 15) % 2) {
+        return; /* blink at 1 Hz */
+    }
+    const unsigned char r = critical ? 230 : 245, g = critical ? 70 : 180, b = critical ? 60 : 40;
+    Color colour = {(unsigned char)(r * brightness / 100), (unsigned char)(g * brightness / 100),
+                    (unsigned char)(b * brightness / 100), 255};
+    const int px = 3, w = 36, h = 18;
+    int x = GAME_WIDTH / 2 - 44 + (int)((tick / (60 * GAME_TICK_HZ)) % 5) * 4 - 8, y = 24;
+    DrawRectangleLines(x, y, w, h, colour);
+    DrawRectangle(x + w, y + 5, 3, h - 10, colour);
+    int fill = (w - 6) * (percent < 0 ? 0 : percent) / 100;
+    DrawRectangle(x + 3, y + 3, fill > 1 ? fill : 1, h - 6, colour);
+    int tx = x + w + 10;
+    if (percent >= 10) {
+        draw_glyph(percent / 10 % 10, tx, y + 2, px, colour);
+        tx += 4 * px;
+    }
+    draw_glyph(percent % 10, tx, y + 2, px, colour);
+    draw_glyph(10, tx + 4 * px, y + 2, px, colour);
+}
+
 /* "…" above the head while a trip is pending. */
 static void draw_waiting(const app_game_snapshot_t *s, uint8_t scale, unsigned brightness)
 {
@@ -156,9 +209,11 @@ static void draw_waiting(const app_game_snapshot_t *s, uint8_t scale, unsigned b
     unsigned char v = (unsigned char)(230 * brightness / 100);
     Color colour = {v, v, v, 255};
     int dot = 2 * scale, phase = (int)(s->tick / 8 % 3);
+    /* At an edge the head is half off screen: put the dots on the inside. */
+    int cx = s->edge < 0 ? s->pet_x + 10 * dot : (s->edge > 0 ? s->pet_x - 10 * dot : s->pet_x);
     for (int i = 0; i < 3; i++) {
         int lift = i == phase ? scale : 0;
-        DrawRectangle(s->pet_x - 4 * dot + i * 3 * dot, top - lift, dot, dot, colour);
+        DrawRectangle(cx - 4 * dot + i * 3 * dot, top - lift, dot, dot, colour);
     }
 }
 
@@ -183,13 +238,18 @@ static int render(void *value)
             draw_waiting(&s, state->scale, brightness);
         }
     }
+    const app_dock_status_t dock = app_dock_status(state->dock);
+    if (dock.on_battery && dock.battery_percent >= 0 && dock.battery_percent <= BATTERY_WARN) {
+        draw_battery(dock.battery_percent, s.tick, brightness < 50 ? 50 : brightness);
+    }
     EndDrawing();
     return 0;
 }
 
 static const char *phase_name(app_game_pet_phase_t p)
 {
-    static const char *const names[] = {"absent", "entering", "idle", "hopping", "exiting", "shrugging"};
+    static const char *const names[] = {"absent", "entering", "idle", "hopping", "exiting", "shrugging",
+                                        "poked", "happy", "held", "airborne", "clinging"};
     return (unsigned)p < sizeof names / sizeof names[0] ? names[p] : "?";
 }
 
@@ -220,11 +280,13 @@ static int state_json(const void *value, char *output, size_t capacity)
                         "{\"phase\":\"%s\",\"tick\":%lu,\"pointer_x\":%ld,\"pointer_y\":%ld,"
                         "\"pointer_down\":%s,\"pet\":\"%s\",\"pose\":%d,\"pet_x\":%ld,\"pet_y\":%ld,"
                         "\"scale\":%u,\"waiting\":%s,\"macs\":%d,\"owns_pet\":%s,\"in_trip\":%s,"
+                        "\"battery\":%d,\"on_battery\":%s,"
                         "\"state_hash\":\"%08lx\"}",
                         s.paused ? "paused" : "running", (unsigned long)s.tick, (long)s.pointer_x,
                         (long)s.pointer_y, s.pointer_down ? "true" : "false", phase_name(s.phase), (int)s.pose,
                         (long)s.pet_x, (long)s.pet_y, (unsigned)state->scale, s.waiting ? "true" : "false",
                         d.macs, d.owns_pet ? "true" : "false", d.in_trip ? "true" : "false",
+                        d.battery_percent, d.on_battery ? "true" : "false",
                         (unsigned long)state_hash(value));
     return size < 0 || (size_t)size >= capacity ? -1 : size;
 }

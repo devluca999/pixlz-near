@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_FRAMES = ["idle_0", "idle_1", "idle_2", "blink", "move_0", "move_1", "move_2", "emotion_annoyed"]
+DEFAULT_FRAMES = ["idle_0", "idle_1", "idle_2", "blink", "move_0", "move_1", "move_2", "emotion_annoyed",
+                  "poke_0", "poke_1", "poke_2", "grab_0", "grab_1", "emotion_happy"]
 
 
 def rgb(hex_colour: str) -> tuple[int, int, int]:

@@ -28,6 +28,8 @@ typedef struct {
     int macs;            /**< Connected Macs that said hello. */
     bool in_trip;
     bool owns_pet;
+    int battery_percent; /**< 0..100, or -1 when unknown. */
+    bool on_battery;     /**< Unplugged (discharging). */
 } app_dock_status_t;
 
 /** Loads the saved record and starts networking. Returns NULL on allocation failure. */

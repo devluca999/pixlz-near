@@ -26,3 +26,9 @@ bool dock_platform_load(pt_record_t *record);
 /** Saves the record atomically; false on failure. */
 bool dock_platform_save(const pt_record_t *record);
 void dock_platform_log(const char *fmt, ...);
+/** Battery charge (0..100) and whether it is running on battery; false = unknown.
+ * Also adapts power use: Wi-Fi power saving on battery, off on USB. Call every few seconds. */
+bool dock_platform_battery(int *percent, bool *on_battery);
+/** True once after the maintenance "forget" request arrived (ESP-Iris RPC over USB, device only).
+ * The dock honours it only when it doesn't hold a Pixl. */
+bool dock_platform_take_forget_request(void);

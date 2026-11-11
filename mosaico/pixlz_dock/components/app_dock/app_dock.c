@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -40,6 +41,9 @@ struct app_dock {
     conn_t conns[MAX_CONNS];
     bool send_requested;
     bool started;
+    int battery_percent;
+    bool on_battery;
+    int64_t next_battery_ms;
     app_dock_event_t pending[8];
     int pending_count;
     /* Instance-owned scratch, so nothing large sits on the caller's task stack. */
@@ -181,6 +185,7 @@ app_dock_handle_t app_dock_create(void)
         d->node.record.kind = PT_REC_NONE;
     }
     d->listen_fd = -1;
+    d->battery_percent = -1;
     for (int i = 0; i < MAX_CONNS; i++) {
         d->conns[i].fd = -1;
     }
@@ -247,33 +252,56 @@ static void accept_new(app_dock_handle_t d)
         set_nonblocking(fd);
         c->fd = fd;
         c->hello = false;
+        memset(&c->peer, 0, sizeof c->peer);
         c->tx_len = 0;
         pt_framer_init(&c->framer, c->rx, sizeof c->rx);
+        /* No greeting: a spike client (PixlzSend) says hello first and gets one back; the Mac
+         * app's BonjourTransport sends envelopes straight away and never expects a hello. */
+    }
+}
+
+/* The first frame says who the client is: a spike hello, or an envelope's `from` and
+ * `payload.fromName` (how the Mac app's BonjourTransport identifies itself). */
+static bool identify(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
+{
+    if (pt_hello_parse(body, len, &c->peer)) {
         size_t n = pt_hello_encode(&d->node.me, d->hello, sizeof d->hello);
         if (n) {
             enqueue(c, d->hello, n);
         }
-    }
-}
-
-static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
-{
-    if (!c->hello) {
-        if (!pt_hello_parse(body, len, &c->peer)) {
-            close_conn(c, "didn't say hello");
-            return;
-        }
-        c->hello = true;
         pt_span_t ms_span;
         int64_t mac_ms = 0;
         if (pt_json_find(body, len, "hello.unixMs", &ms_span) && pt_json_int(ms_span, &mac_ms)) {
             dock_platform_offer_clock(mac_ms);
         }
+        return true;
+    }
+    pt_span_t v;
+    if (!pt_json_find(body, len, "from", &v) || !pt_json_string(v, c->peer.id, sizeof c->peer.id)) {
+        return false;
+    }
+    if (!pt_json_find(body, len, "payload.fromName", &v) || !pt_json_string(v, c->peer.name, sizeof c->peer.name)) {
+        snprintf(c->peer.name, sizeof c->peer.name, "%s", c->peer.id);
+    }
+    return false;  /* an envelope: handle it as one too */
+}
+
+static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
+{
+    if (!c->hello) {
+        bool was_hello = identify(d, c, body, len);
+        if (!c->peer.id[0]) {
+            close_conn(c, "didn't say who it is");
+            return;
+        }
+        c->hello = true;
         dock_platform_log("pixlz: %s connected (clock %s)", c->peer.name,
                           dock_platform_clock_ok() ? "set" : "not set");
-        pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
-        perform(d, &d->outs);
-        return;
+        if (was_hello) {
+            pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
+            perform(d, &d->outs);
+            return;
+        }
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
     perform(d, &d->outs);
@@ -316,6 +344,28 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
         return 0;
     }
     d->node.can_host = dock_platform_clock_ok();
+    if (dock_platform_take_forget_request()) {
+        pt_rec_kind_t kind = d->node.record.kind;
+        if (kind == PT_REC_AWAY || kind == PT_REC_NONE) {
+            d->node.record.kind = PT_REC_NONE;
+            d->node.record.state_len = 0;
+            d->node.record.pet_id[0] = 0;
+            dock_platform_log("pixlz: forgot the away record (%s)",
+                              dock_platform_save(&d->node.record) ? "saved" : "not saved");
+        } else {
+            dock_platform_log("pixlz: refused to forget: a Pixl is here");
+        }
+    }
+    int64_t now = dock_platform_now_ms();
+    if (now >= d->next_battery_ms) {
+        d->next_battery_ms = now + 5000;
+        int pct;
+        bool on_battery;
+        if (dock_platform_battery(&pct, &on_battery)) {
+            d->battery_percent = pct;
+            d->on_battery = on_battery;
+        }
+    }
     if (dock_platform_net_ready()) {
         if (d->listen_fd < 0) {
             open_listener(d);
@@ -389,5 +439,7 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     }
     s.in_trip = pt_node_in_trip(&d->node);
     s.owns_pet = d->node.record.kind == PT_REC_OWNED;
+    s.battery_percent = d->battery_percent;
+    s.on_battery = d->on_battery;
     return s;
 }

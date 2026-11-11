@@ -128,6 +128,23 @@ bool dock_platform_save(const pt_record_t *r)
     return ok && rename(tmp, path) == 0;
 }
 
+bool dock_platform_battery(int *percent, bool *on_battery)
+{
+    /* PIXLZ_SIM_BATTERY="18" simulates 18% on battery; unset = plugged in, unknown. */
+    const char *env = getenv("PIXLZ_SIM_BATTERY");
+    if (!env || !*env) {
+        return false;
+    }
+    *percent = atoi(env);
+    *on_battery = true;
+    return true;
+}
+
+bool dock_platform_take_forget_request(void)
+{
+    return false; /* in the simulator, delete the record file instead */
+}
+
 void dock_platform_log(const char *fmt, ...)
 {
     va_list ap;

@@ -12,7 +12,10 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "driver/i2c_master.h"
+#include "esp_board_manager.h"
 #include "esp_event.h"
+#include "esp_iris.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -50,8 +53,42 @@ typedef struct {
 } record_blob_t;
 
 static atomic_bool s_net_ready;
+static atomic_bool s_forget_requested;
+
+/* Maintenance over USB (python mosaico.py iris rpc 0x5058 1): forget a record of a Pixl that
+ * isn't here (an "away" record blocks hosting a different Pixl). Runs on the Iris task, so it
+ * only raises a flag; the dock loop decides, and never drops a Pixl it holds. */
+#define FORGET_SERVICE_ID 0x5058 /* "PX" */
+#define FORGET_METHOD_ID 1
+
+static esp_err_t forget_rpc(const esp_iris_rpc_request_t *request, uint8_t *response, size_t capacity,
+                            size_t *response_size, void *ctx)
+{
+    (void)request;
+    (void)ctx;
+    atomic_store(&s_forget_requested, true);
+    static const char reply[] = "queued";
+    size_t n = sizeof reply - 1 < capacity ? sizeof reply - 1 : capacity;
+    memcpy(response, reply, n);
+    *response_size = n;
+    return ESP_OK;
+}
 static bool s_started, s_store_ok, s_sntp_started, s_service_added;
 static esp_netif_t *s_netif;
+static i2c_master_dev_handle_t s_gauge;
+static bool s_gauge_failed;
+static int s_power_save = -1; /* last Wi-Fi power-save mode applied: -1 none yet */
+
+/* BQ27220 fuel gauge on the board's shared I2C bus (the touch controller's bus). Read-only:
+ * the standard commands Vibe Mode reads, never a control or configuration write, so the gauge
+ * profile Vibe Mode maintains is left alone. */
+#define GAUGE_ADDR 0x55
+#define GAUGE_SPEED_HZ 400000
+#define GAUGE_VOLTAGE 0x08
+#define GAUGE_FLAGS 0x0a
+#define GAUGE_SOC 0x2c
+#define GAUGE_FLAG_DSG (1u << 0)     /* discharging */
+#define GAUGE_FLAG_BATTPRES (1u << 3)
 static pt_device_t s_me;
 static record_blob_t s_blob;       /* single owner: the dock loop */
 static wifi_config_t s_wifi_config; /* kept off the stack */
@@ -158,6 +195,10 @@ void dock_platform_start(const pt_device_t *me)
     }
     s_started = true;
     s_me = *me;
+    esp_err_t rpc = esp_iris_rpc_register(FORGET_SERVICE_ID, FORGET_METHOD_ID, forget_rpc, NULL);
+    if (rpc != ESP_OK) {
+        ESP_LOGW(TAG, "maintenance RPC unavailable: %s", esp_err_to_name(rpc));
+    }
     esp_err_t err = nvs_flash_init();
     s_store_ok = err == ESP_OK;
     if (!s_store_ok) {
@@ -284,6 +325,58 @@ bool dock_platform_save(const pt_record_t *r)
     bool ok = nvs_set_blob(h, STORE_KEY, &s_blob, sizeof *hd + r->state_len) == ESP_OK && nvs_commit(h) == ESP_OK;
     nvs_close(h);
     return ok;
+}
+
+static bool gauge_word(uint8_t command, uint16_t *out)
+{
+    uint8_t bytes[2];
+    if (i2c_master_transmit_receive(s_gauge, &command, 1, bytes, 2, 100) != ESP_OK) {
+        return false;
+    }
+    *out = (uint16_t)bytes[0] | (uint16_t)bytes[1] << 8;
+    return true;
+}
+
+bool dock_platform_battery(int *percent, bool *on_battery)
+{
+    if (!s_gauge && !s_gauge_failed) {
+        i2c_master_bus_handle_t bus = NULL;
+        const i2c_device_config_t config = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = GAUGE_ADDR,
+            .scl_speed_hz = GAUGE_SPEED_HZ,
+        };
+        if (esp_board_manager_get_periph_handle("i2c_master", (void **)&bus) != ESP_OK || !bus ||
+                i2c_master_bus_add_device(bus, &config, &s_gauge) != ESP_OK) {
+            s_gauge_failed = true;
+            ESP_LOGW(TAG, "battery gauge unavailable; no low-battery warning");
+            return false;
+        }
+    }
+    if (!s_gauge) {
+        return false;
+    }
+    uint16_t mv = 0, flags = 0, soc = 0;
+    if (!gauge_word(GAUGE_VOLTAGE, &mv) || !gauge_word(GAUGE_FLAGS, &flags) || !gauge_word(GAUGE_SOC, &soc) ||
+            !(flags & GAUGE_FLAG_BATTPRES) || mv == 0 || soc > 100) {
+        return false;
+    }
+    *percent = soc;
+    *on_battery = (flags & GAUGE_FLAG_DSG) != 0;
+    /* Unplugged: let Wi-Fi sleep between beacons (trips get slower, the battery lasts).
+     * Plugged in: no power save, so trips stay snappy on a weak signal. */
+    int mode = *on_battery ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE;
+    if (mode != s_power_save && esp_wifi_set_ps((wifi_ps_type_t)mode) == ESP_OK) {
+        s_power_save = mode;
+        ESP_LOGI(TAG, "%s (%d%%, %u mV): Wi-Fi power save %s", *on_battery ? "on battery" : "plugged in",
+                 *percent, mv, *on_battery ? "on" : "off");
+    }
+    return true;
+}
+
+bool dock_platform_take_forget_request(void)
+{
+    return atomic_exchange(&s_forget_requested, false);
 }
 
 void dock_platform_log(const char *fmt, ...)
