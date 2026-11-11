@@ -126,7 +126,8 @@ final class TravelController {
             return
         }
         if let r = pairingController.verifiedReply(body, from: peer) {
-            let result = app.agents.reply(r.id, r.text)
+            let via = MosaicoFeed.quickReplies.contains(r.text) ? "quick reply on the Mosaico" : "dictated on the Mosaico"
+            let result = app.agents.reply(r.id, r.text, via: via)
             if result == .queued { queuedFrom[r.id] = peer }   // tell it when it's delivered
             let state = result == .sent ? "sent" : result == .queued ? "queued" : "failed"
             Debug.log("travel: \(peer.deviceName) replied \"\(r.text.prefix(40))\" (\(state))")
