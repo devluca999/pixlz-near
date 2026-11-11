@@ -442,11 +442,25 @@ static void test_agents(void)
     CHECK(app_menu_pointer(m, c.cancel_x, c.buttons_y, true));
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_DICTATE_START && a.arg == 1);
-    app_menu_pointer(m, c.cancel_x, c.buttons_y - 150, true);   // dragging while holding: no scroll
-    CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
-    app_menu_pointer(m, c.cancel_x, c.buttons_y - 150, false);
+    app_menu_pointer(m, c.cancel_x + 10, c.buttons_y - 20, true);   // a little drift while holding: no scroll
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT && !app_menu_read(m).mic_off);
+    app_menu_pointer(m, c.cancel_x + 10, c.buttons_y - 20, false);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_DICTATE_STOP && app_menu_is_open(m));
+    // Slide well away from the mic and let go: cancelled; slide back first and it sends.
+    app_menu_pointer(m, c.cancel_x, c.buttons_y, true);
+    (void)app_menu_take_action(m);
+    app_menu_pointer(m, c.cancel_x + 200, c.buttons_y - 200, true);
+    CHECK(app_menu_read(m).mic_off);
+    app_menu_pointer(m, c.cancel_x + 200, c.buttons_y - 200, false);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_DICTATE_CANCEL && app_menu_read(m).mode == APP_MENU_CHAT && !app_menu_read(m).mic_off);
+    app_menu_pointer(m, c.cancel_x, c.buttons_y, true);
+    (void)app_menu_take_action(m);
+    app_menu_pointer(m, c.cancel_x + 200, c.buttons_y - 200, true);
+    app_menu_pointer(m, c.cancel_x + 5, c.buttons_y, true);
+    app_menu_pointer(m, c.cancel_x + 5, c.buttons_y, false);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_DICTATE_STOP);
     // The transcript arrives: red goes back to the chat, green sends.
     app_menu_open_heard(m);
     CHECK(app_menu_read(m).mode == APP_MENU_HEARD && app_menu_read(m).agent_first == 1);

@@ -34,6 +34,7 @@ struct app_menu {
     char opened_req[APP_MENU_REQ_MAX];  /* the request opened (Agent) */
     bool chat_reply_ok;
     bool to_end;           /* chat: jump to the newest turn once its size is known */
+    bool mic_off;          /* holding the mic, finger slid away from it */
     app_menu_action_t action;
 };
 
@@ -457,10 +458,14 @@ static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
             return;
         }
         if (m->pressed < 0) {
+            /* Sliding well away from the mic arms "cancel"; coming back disarms it. */
+            int32_t mx = x - m->down_x, my = y - m->down_y;
+            m->mic_off = mx * mx + my * my > (BUTTON_RADIUS + 40) * (BUTTON_RADIUS + 40);
             if (!pressed) {
                 m->pressed = 0;
-                m->action.kind = APP_MENU_ACTION_DICTATE_STOP;
+                m->action.kind = m->mic_off ? APP_MENU_ACTION_DICTATE_CANCEL : APP_MENU_ACTION_DICTATE_STOP;
                 m->action.arg = m->agent;
+                m->mic_off = false;
             }
             return;   /* holding: no scrolling */
         }
@@ -586,6 +591,7 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.buttons_y = (int16_t)(m->height - BUTTON_INSET);
     s.button_radius = BUTTON_RADIUS;
     s.pressed = m->pressed;
+    s.mic_off = m->mic_off;
     s.read_index = m->read_index;
     s.read_count = read_count(m);
     s.scroll = (int16_t)m->scroll;

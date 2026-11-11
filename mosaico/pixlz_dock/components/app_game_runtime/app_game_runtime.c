@@ -319,6 +319,14 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
             state->dictation_ready = true;
         }
         break;
+    case APP_MENU_ACTION_DICTATE_CANCEL:
+        if (state->dictating) {
+            app_audio_stop();   /* the clip is dropped: nothing is sent */
+            state->dictating = false;
+        }
+        state->dictation_ready = false;
+        say_banner(state, "Cancelled. Hold to talk to start over.");
+        break;
     case APP_MENU_ACTION_DICTATE_SEND:
         say_banner(state, app_dock_transcript_reply(state->dock) ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
         break;
@@ -1049,8 +1057,13 @@ static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
             DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius + 6 + ring, shade(120, 80, 200, 60));
         }
         DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius, live ? shade(170, 110, 255, 100) : shade(120, 80, 200, 100));
-        draw_text_centred(live ? "Listening" : "Hold", m->cancel_x, m->buttons_y - PIXL_FONT_HEIGHT - 6, 2, white);
-        draw_text_centred(live ? "let go to send" : "to talk", m->cancel_x, m->buttons_y + 10, 1, white);
+        if (live && m->mic_off) {   /* slid away: letting go throws it away */
+            DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius, shade(205, 52, 52, 100));
+        }
+        draw_text_centred(live ? (m->mic_off ? "Cancel" : "Listening") : "Hold", m->cancel_x,
+                          m->buttons_y - PIXL_FONT_HEIGHT - 6, 2, white);
+        draw_text_centred(live ? (m->mic_off ? "let go to cancel" : "slide off to cancel") : "to talk", m->cancel_x,
+                          m->buttons_y + 10, 1, white);
         DrawCircle(m->confirm_x, m->buttons_y, (float)m->button_radius, shade(58, 170, 82, 100));
         draw_text_centred("Reply", m->confirm_x, m->buttons_y - PIXL_FONT_HEIGHT, 2, white);
         if (tr && tr->pending) {
@@ -1072,7 +1085,7 @@ static void draw_heard(host_state_t *state, const app_menu_snapshot_t *m)
     wrap_text(tr && tr->text[0] ? tr->text : "(nothing heard)", 40, 90, GAME_WIDTH - 80, 2, white, true);
     EndScissorMode();
     draw_buttons(m);
-    draw_text_centred("Discard", m->cancel_x, m->buttons_y + m->button_radius + 6, 1, grey);
+    draw_text_centred("Cancel", m->cancel_x, m->buttons_y + m->button_radius + 6, 1, grey);
     draw_text_centred("Send", m->confirm_x, m->buttons_y + m->button_radius + 6, 1, grey);
 }
 

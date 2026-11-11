@@ -60,6 +60,7 @@ typedef enum {
     APP_MENU_ACTION_AGENT_REPLY,/**< arg: row * 16 + quick reply (0..3) */
     APP_MENU_ACTION_DICTATE_START, /**< the mic button went down in a chat (menu stays open) */
     APP_MENU_ACTION_DICTATE_STOP,  /**< it came up: send what was said */
+    APP_MENU_ACTION_DICTATE_CANCEL,/**< it came up after sliding off the mic: throw it away */
     APP_MENU_ACTION_DICTATE_SEND,  /**< green on the heard screen */
 } app_menu_action_kind_t;
 
@@ -118,6 +119,7 @@ typedef struct {
     int agent_first;       /**< Agents: the first row shown; Agent: the row opened. */
     int agent_count;
     int16_t rows_y, row_h; /**< Agents: where the rows start and their height. */
+    bool mic_off;          /**< Chat: holding the mic but the finger slid off it (let go = cancel). */
     char agent_id[APP_MENU_ID_MAX];   /**< Agent, Chat, Quick: the session opened (draw it by id). */
     char agent_req[APP_MENU_REQ_MAX]; /**< Agent: its request. */
 } app_menu_snapshot_t;
