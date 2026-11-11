@@ -21,8 +21,11 @@ public final class TripRunner {
     /// Tests: capture sends instead of the network.
     var sender: ((Envelope, DeviceRef) -> Void)?
 
-    /// The Pixl left (committed, or this copy gave way): play the exit toward this device.
+    /// The Pixl left (committed): play the exit toward this device.
     public var onExit: ((DeviceRef) -> Void)?
+    /// Two copies met and the one here was older: it leaves for the device that has it.
+    /// Falls back to `onExit` when unset.
+    public var onGaveWay: ((DeviceRef) -> Void)?
     /// The Pixl arrived and is owned here now: play the entrance.
     public var onEntrance: ((PetState) -> Void)?
     /// The trip didn't happen; the Pixl stays.
@@ -180,6 +183,7 @@ public final class TripRunner {
     /// is back to what's on disk and the trip (if any) was aborted.
     @discardableResult
     private func perform(_ outs: [TravelNode.Output], before: TravelNode) -> Bool {
+        var lastSaved: StoredPet?
         for o in outs {
             switch o {
             case .saved(let rec):                                   // before anything after it
@@ -187,9 +191,12 @@ public final class TripRunner {
                     saveFailed(error, before: before)
                     return false
                 }
+                lastSaved = rec
                 onRecord?(rec)
             case .send(let env, let to): deliver(env, to: to)
-            case .playExit(let to): onExit?(to)
+            case .playExit(let to):
+                // a trip keeps a safety copy; a copy that gave way keeps none
+                if case .away(_, _, _, _, nil)? = lastSaved, let onGaveWay { onGaveWay(to) } else { onExit?(to) }
             case .playEntrance: if let s = owned { onEntrance?(s) }
             case .shrug(let why): onShrug?(why)
             }

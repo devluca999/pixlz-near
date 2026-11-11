@@ -128,6 +128,17 @@ struct TripRunnerTests {
         #expect(r2.trusted.contains(other.deviceId))
     }
 
+    // M8: a copy that gives way says so (not "left for").
+    @Test func givingWayIsNotATrip() {
+        let r = runner(FlakyStore(.owned(pixl(owner: me, epoch: 3)))) { _ in }
+        var exits: [String] = []
+        r.onExit = { _ in exits.append("exit") }
+        r.onGaveWay = { _ in exits.append("gave way") }
+        r.feed(.connected(other))
+        r.feed(.received(env(.statusReply, epoch: 5, payload: Payload(held: .owned, inTrip: false)), from: other))
+        #expect(exits == ["gave way"] && r.owned == nil)
+    }
+
     // P6: a pending arrival asks every reachable device again.
     @Test func pendingArrivalRechecks() {
         var sent: [(Envelope, DeviceRef)] = []
