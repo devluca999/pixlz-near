@@ -328,6 +328,7 @@ final class BubbleMenu {
         if agents.hub.sessions.isEmpty {
             rows.append(ListMenuView.Row(id: "none", title: "No Claude Code sessions right now", icon: "info", enabled: false))
         }
+        rows += agents.extraRows?() ?? []
         rows += [ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
                  ListMenuView.Row(id: "alerts", title: "Agent alerts", icon: nil, trailing: agents.alertsOn ? "on" : "off"),
                  ListMenuView.Row(id: "cloud", title: "Cloud sessions: open claude.ai/code", icon: nil),
@@ -344,7 +345,7 @@ final class BubbleMenu {
                 self.closeList()
                 if let why = agents.removeHooks() { self.app.notify(.agentsError(why)) }
                 else { self.app.notify(.agents("Claude Code disconnected. Its settings are back as they were.")) }
-            default: break
+            default: agents.onExtraRow?(row.id)
             }
         }
         agents.onChange = { [weak self] in
