@@ -559,7 +559,7 @@ enum StoredPet {
   - the menu-bar icon offers "Call <name> back" while away;
   - Ask answers "what screens are available?" and "jump to <device or display>" on the Mac itself, with no model involved.
 - **Tested** by two transports in one process over real Bonjour.
-- **Next:** code pairing (6-digit code + TLS-PSK, `Pairing.deriveKey` exists), then a relay for devices on other networks (Windows, a phone on cellular, a Mosaico away from home).
+- **Next:** code pairing, then devices on other networks (Windows, a phone on cellular, a Mosaico away from home). Both are planned through an iroh spike (`IOS-PLAN.md`): peers dialled by public key, direct or relayed, with a `P2PTransport` beside the Bonjour one. The 6-digit code + TLS-PSK design below is the fallback if iroh doesn't work out.
 - **TXT record** (all devices): `id`, `name`, `kind` (`mac` | `iphone` | `mosaico`), `proto` (protocol version, §10.3 below), and from v1.1 `use` (`active` | `idle`) and `focus` (`1` during a Focus session) for free roam (§10.6). The Mosaico advertises `kind=mosaico` and browses only for `kind=mac`.
 
 ```swift
