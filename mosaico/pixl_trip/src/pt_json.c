@@ -129,6 +129,38 @@ bool pt_json_find(const char *json, size_t len, const char *path, pt_span_t *out
     return true;
 }
 
+bool pt_json_array_item(pt_span_t array, int index, pt_span_t *out)
+{
+    const char *s = array.p;
+    size_t n = array.len, i = 0;
+    skip_ws(s, n, &i);
+    if (index < 0 || i >= n || s[i] != '[') {
+        return false;
+    }
+    i++;
+    for (int k = 0;; k++) {
+        skip_ws(s, n, &i);
+        if (i >= n || s[i] == ']') {
+            return false;
+        }
+        size_t start = i;
+        if (!skip_value(s, n, &i)) {
+            return false;
+        }
+        if (k == index) {
+            out->p = s + start;
+            out->len = i - start;
+            return true;
+        }
+        skip_ws(s, n, &i);
+        if (i < n && s[i] == ',') {
+            i++;
+        } else {
+            return false;
+        }
+    }
+}
+
 static int hexval(char c)
 {
     if (c >= '0' && c <= '9') return c - '0';

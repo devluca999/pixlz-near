@@ -183,6 +183,17 @@ static void test_json(void)
     char tiny[3];
     CHECK(!pt_json_string(v, tiny, sizeof tiny));
 
+    const char *arr = "{\"a\":[ {\"t\":\"x\"}, 2 ,[3]],\"e\":[]}";
+    pt_span_t list, item;
+    CHECK(pt_json_find(arr, strlen(arr), "a", &list));
+    CHECK(pt_json_array_item(list, 0, &item) && item.len == 9);
+    CHECK(pt_json_array_item(list, 1, &item) && item.len == 1 && item.p[0] == '2');
+    CHECK(pt_json_array_item(list, 2, &item) && item.len == 3);
+    CHECK(!pt_json_array_item(list, 3, &item));
+    CHECK(!pt_json_array_item(list, -1, &item));
+    CHECK(pt_json_find(arr, strlen(arr), "e", &list) && !pt_json_array_item(list, 0, &item));
+    CHECK(pt_json_find(arr, strlen(arr), "a.0", &list) == false);
+
     char buf[64] = "{\"epoch\":7,\"x\":1}";
     size_t len = strlen(buf);
     CHECK(pt_json_find(buf, len, "epoch", &v));

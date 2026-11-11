@@ -21,6 +21,9 @@ typedef struct {
 /// Keys are compared byte for byte (the protocol's keys have no escapes).
 bool pt_json_find(const char *json, size_t len, const char *path, pt_span_t *out);
 
+/// The `index`-th element (0-based) of the array `array`. False if it isn't an array or is shorter.
+bool pt_json_array_item(pt_span_t array, int index, pt_span_t *out);
+
 /// Decodes a JSON string value into `out` (UTF-8, terminated). False if it isn't a string or doesn't fit.
 bool pt_json_string(pt_span_t v, char *out, size_t cap);
 
