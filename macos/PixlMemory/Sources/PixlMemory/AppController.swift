@@ -33,6 +33,13 @@ final class KeyPanel: OverlayPanel {
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// Opening the app again (its icon on the Desktop, Spotlight, Finder) while it runs: the Pixl
+    /// comes out, or, when it's away on another device, the offer to call it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        summon()
+        return false
+    }
+
     enum Mode { case perched, held, airborne, dropping }
 
     var settings = PixlSettings.load() { didSet { PixlSkins.displayName = settings.name } }
@@ -1880,9 +1887,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// a visible one opens its bubbles.
     func summon() {
         if let away = awayOn {
-            menu.showList([ListMenuView.Row(id: "call", title: "Call \(settings.name) back from \(away)", icon: nil, trailing: "↵")], near: nil) { [weak self] _ in
+            var rows = [ListMenuView.Row(id: "call", title: "Call \(settings.name) back from \(away)", icon: nil, trailing: "↵")]
+            if travel.runner?.canReclaim == true {
+                rows.append(ListMenuView.Row(id: "reclaim", title: "\(away) is off? Bring \(settings.name) back anyway", icon: nil, trailing: nil))
+            }
+            menu.showList(rows, near: nil) { [weak self] row in
                 self?.menu.closeList()
-                self?.travel.callBack()
+                if row.id == "reclaim" { self?.travel.reclaim() } else { self?.travel.callBack() }
             }
             return
         }

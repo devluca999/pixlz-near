@@ -67,6 +67,9 @@ public final class TripRunner {
 
     public func send(to peer: DeviceRef) { feed(.send(to: peer)) }
     public func callBack(from owner: DeviceRef) { feed(.call(owner: owner)) }
+    /// Brings the Pixl back from the safety copy while its holder is unreachable (SPEC §10.5).
+    public func reclaim() { feed(.reclaim) }
+    public var canReclaim: Bool { node.canReclaim }
 
     private func incoming(_ env: Envelope, from peer: DeviceRef) {
         // first contact: an offer from a device the user hasn't trusted waits for a yes

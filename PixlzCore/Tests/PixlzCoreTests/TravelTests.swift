@@ -220,6 +220,31 @@ struct TravelSim {
         #expect(sim.owned(mac)?.epoch == 3)   // tombstone epoch 2, +1
     }
 
+    @Test func reclaimWhileTheHolderIsAwayThenItGivesWay() throws {
+        var sim = TravelSim()
+        sim.input(mac, .send(to: phone))
+        sim.drain()
+        #expect(sim.owners == [phone])
+        #expect(sim[mac].canReclaim)
+        // The phone goes dark (battery, left at the office). The Mac brings Frogg back anyway.
+        sim.crash(phone)
+        sim.violations = []
+        sim.input(mac, .reclaim)
+        #expect(sim.owned(mac)?.epoch == 4)            // phone holds epoch 2
+        #expect(sim.events.last == "Luca's Mac: entrance")
+        #expect(!sim[mac].canReclaim)
+        // Both think they have him until they meet; then the phone gives way.
+        sim.violations = []
+        sim.reconnect(); sim.drain()
+        #expect(sim.owners == [mac])
+        #expect(sim.owned(mac)?.epoch == 4)
+        guard case .away? = sim[phone].record else { Issue.record("phone should have let go"); return }
+        // Nothing to reclaim when the Pixl is here or there's no safety copy.
+        var fresh = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", tombstone: nil))
+        fresh.input(phone, .reclaim)
+        #expect(fresh.owners == [mac] && !fresh[phone].canReclaim && !fresh[mac].canReclaim)
+    }
+
     /// SPEC §14: kill either process (or both) between any two messages, and right after any save,
     /// then reconnect. The invariant holds throughout and exactly one device ends up with the Pixl.
     @Test func crashAtEveryStep() {

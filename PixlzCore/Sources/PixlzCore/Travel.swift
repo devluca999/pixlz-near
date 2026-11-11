@@ -21,6 +21,10 @@ public struct TravelNode: Sendable {
         case connected(DeviceRef)
         /// The timer for `nextDeadline` fired.
         case tick
+        /// The user brings the Pixl back while the device holding it is off or out of reach: restore
+        /// the safety copy (the tombstone) here, two epochs up. When that device returns, the status
+        /// exchange makes it give way (higher epoch wins, SPEC §10.5). Time it spent there is lost.
+        case reclaim
     }
 
     public enum Output: Equatable, Sendable {
@@ -85,6 +89,7 @@ public struct TravelNode: Sendable {
             guard let r = record else { return [] }
             return [.send(envelope(.status, to: peer, petId: r.petId, epoch: r.epoch, at: now), to: peer)]
         case .tick: return tick(at: now)
+        case .reclaim: return reclaim(at: now)
         }
     }
 
@@ -286,6 +291,24 @@ public struct TravelNode: Sendable {
             session = nil
             return [.saved(record!)]
         }
+    }
+
+    // MARK: Reclaim
+
+    /// Whether `reclaim` can bring the Pixl back: it's away and this device kept its safety copy.
+    public var canReclaim: Bool {
+        if case .away(_, _, _, _?)? = record, session == nil { return true }
+        return false
+    }
+
+    private mutating func reclaim(at now: Date) -> [Output] {
+        guard session == nil, case .away(_, let e, _, let tombstone?)? = record else { return [] }
+        var restored = tombstone
+        restored.epoch = e + 2       // above the holder's epoch, even after one more hop it made
+        restored.owner = me
+        restored.savedAt = now
+        record = .owned(restored)
+        return [.saved(record!), .playEntrance]
     }
 
     // MARK: Timers

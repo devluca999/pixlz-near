@@ -172,6 +172,33 @@ final class TravelController {
         }
         r.callBack(from: owner)
         app.notify(.callingFrom(ownerName))
+        // A device added by address is listed even when it's off: if no trip starts soon, say so
+        // and offer to bring the Pixl back from the safety copy.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, let r = self.runner, !r.node.inTrip, case .away? = r.record else { return }
+            self.offerReclaim(because: "\(ownerName) didn't answer. It may be off or out of reach.")
+        }
+    }
+
+    /// Bring the Pixl back here while its holder is unreachable (SPEC §10.5): from the copy this
+    /// Mac kept when it left. When the holder comes back it gives way; its time there is lost.
+    func reclaim() {
+        guard let r = runner, r.canReclaim else { return }
+        Debug.log("travel: reclaim (\(app.awayOn ?? "?") unreachable)")
+        r.reclaim()
+    }
+
+    func offerReclaim(because why: String) {
+        guard let r = runner, r.canReclaim, let away = app.awayOn else { return }
+        let name = app.settings.name
+        app.menu.showList([ListMenuView.Row(id: "info", title: why, icon: nil, trailing: nil),
+                           ListMenuView.Row(id: "reclaim", title: "Bring \(name) back anyway (time on \(away) is lost)", icon: nil, trailing: "↵"),
+                           ListMenuView.Row(id: "wait", title: "Wait for \(away)", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
+            guard let self else { return }
+            if row.id == "info" { return }
+            self.app.menu.closeList()
+            if row.id == "reclaim" { self.reclaim() }
+        }
     }
 
     // MARK: "what screens are available?" / "jump to my phone" (answered on the Mac, no AI)
