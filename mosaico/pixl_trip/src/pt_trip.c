@@ -1,5 +1,6 @@
 #include "../include/pixl_trip/pt_trip.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -266,7 +267,9 @@ void pt_node_init(pt_node_t *n, const pt_device_t *me, pt_random_fn random, void
     n->me = *me;
     n->record.kind = PT_REC_NONE;
     n->can_host = true;
-    n->known_species = "frogg";
+    static const char *const frogg_only[] = {"frogg"};
+    n->known_species = frogg_only;
+    n->known_count = 1;
     n->random = random;
     n->random_ctx = random_ctx;
 }
@@ -292,6 +295,34 @@ bool pt_node_locked(const pt_node_t *n)
     pt_span_t v;
     return n->record.kind == PT_REC_OWNED &&
            pt_json_find(n->record.state, n->record.state_len, "policy.locked", &v) && pt_json_is_true(v);
+}
+
+bool pt_node_set_locked(pt_node_t *n, bool locked)
+{
+    pt_record_t *r = &n->record;
+    if (r->kind != PT_REC_OWNED || pt_node_locked(n) == locked) return false;
+    pt_span_t policy, v;
+    bool has_policy = pt_json_find(r->state, r->state_len, "policy", &policy);
+    bool free_roam = has_policy && pt_json_find(policy.p, policy.len, "freeRoam", &v) && pt_json_is_true(v);
+    if (!has_policy) {
+        /* "policy" sorts right after "petId" (SPEC §10.1): insert it after petId's value. */
+        pt_span_t pet;
+        if (!pt_json_find(r->state, r->state_len, "petId", &pet)) return false;
+        static const char add[] = ",\"policy\":{\"locked\":true}";
+        pt_span_t at = {pet.p + pet.len, 0};
+        return pt_json_replace(r->state, &r->state_len, PT_STATE_MAX, at, add, sizeof add - 1);
+    }
+    if (locked || free_roam) {
+        const char *value = locked ? (free_roam ? "{\"freeRoam\":true,\"locked\":true}" : "{\"locked\":true}")
+                                   : "{\"freeRoam\":true}";
+        return pt_json_replace(r->state, &r->state_len, PT_STATE_MAX, policy, value, strlen(value));
+    }
+    /* Unlocked with nothing else in it: drop `,"policy":{…}` entirely (writers omit defaults). */
+    static const char key[] = ",\"policy\":";
+    const size_t klen = sizeof key - 1;
+    if (policy.p - r->state < (ptrdiff_t)klen || memcmp(policy.p - klen, key, klen) != 0) return false;
+    pt_span_t whole = {policy.p - klen, klen + policy.len};
+    return pt_json_replace(r->state, &r->state_len, PT_STATE_MAX, whole, "", 0);
 }
 
 static void abort_trip(pt_node_t *n, pt_outs_t *out, const pt_device_t *peer, const char *pet_id, int64_t epoch,
@@ -392,7 +423,9 @@ static const char *decline_reason(const pt_node_t *n, const env_t *e)
     if (!n->can_host || n->session.kind != PT_SES_NONE) return "busy";
     char species[32] = "";
     payload_str(e, "species", species, sizeof species);
-    if (strcmp(species, n->known_species) != 0) return "unsupportedSpecies";
+    bool known = false;
+    for (int i = 0; i < n->known_count && !known; i++) known = strcmp(species, n->known_species[i]) == 0;
+    if (!known) return "unsupportedSpecies";
     bool same = strcmp(n->record.pet_id, e->pet_id) == 0;
     switch (n->record.kind) {
     case PT_REC_NONE: return NULL;

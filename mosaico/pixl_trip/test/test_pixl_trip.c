@@ -492,6 +492,59 @@ static void test_recovery(void)
     free(m);
 }
 
+static void test_lock_and_species(void)
+{
+    pt_outs_t o;
+    char msg[512], reason[32];
+    size_t n;
+
+    // Lock inserts policy at its sorted place; unlock restores the exact bytes.
+    pt_node_t *m = owning_mosaico();
+    char before[PT_STATE_MAX];
+    size_t before_len = m->record.state_len;
+    memcpy(before, m->record.state, before_len);
+    CHECK(!pt_node_set_locked(m, false));            // already unlocked: no change
+    CHECK(pt_node_set_locked(m, true));
+    CHECK(pt_node_locked(m));
+    pt_span_t pet, policy;
+    CHECK(pt_json_find(m->record.state, m->record.state_len, "petId", &pet));
+    CHECK(pt_json_find(m->record.state, m->record.state_len, "policy", &policy));
+    CHECK(policy.p > pet.p);
+    char *after_pet = strstr(m->record.state, "\"policy\"");
+    char *saved_at = strstr(m->record.state, "\"savedAt\"");
+    CHECK(after_pet && saved_at && after_pet < saved_at);   // petId < policy < savedAt
+    CHECK(!pt_node_set_locked(m, true));
+    CHECK(pt_node_set_locked(m, false));
+    CHECK(!pt_node_locked(m));
+    CHECK(m->record.state_len == before_len && memcmp(m->record.state, before, before_len) == 0);
+    free(m);
+
+    // Not owned: nothing to lock.
+    m = new_node(&MOSAICO);
+    CHECK(!pt_node_set_locked(m, true));
+    free(m);
+
+    // A device that draws more species accepts them; unknown ones are still declined.
+    m = new_node(&MOSAICO);
+    static const char *const six[] = {"frogg", "cat", "shiba", "ghost", "slugg", "widow"};
+    m->known_species = six;
+    m->known_count = 6;
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "offer", 7, "{\"name\":\"Kiti\",\"species\":\"cat\"}");
+    pt_node_received(m, &MAC, msg, n, T0, &o);
+    char type[16];
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "type", type, sizeof type));
+    CHECK_STR(type, "accept");
+    free(m);
+    m = new_node(&MOSAICO);
+    m->known_species = six;
+    m->known_count = 6;
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "offer", 7, "{\"name\":\"Rex\",\"species\":\"dino\"}");
+    pt_node_received(m, &MAC, msg, n, T0, &o);
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.reason", reason, sizeof reason));
+    CHECK_STR(reason, "unsupportedSpecies");
+    free(m);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1) fixture_dir = argv[1];
@@ -503,6 +556,7 @@ int main(int argc, char **argv)
     test_sender_failures();
     test_receiver_declines();
     test_recovery();
+    test_lock_and_species();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

@@ -84,8 +84,9 @@ typedef struct {
     pt_record_t record;
     /// iOS-style "can host right now"; the Mosaico sets it false while unplugged.
     bool can_host;
-    /// The species this device can draw ("frogg").
-    const char *known_species;
+    /// The species this device can draw: `known_count` ids (default: "frogg").
+    const char *const *known_species;
+    int known_count;
     pt_random_fn random;
     void *random_ctx;
 
@@ -125,6 +126,10 @@ int64_t pt_node_deadline(const pt_node_t *n);
 bool pt_node_in_trip(const pt_node_t *n);
 /// The owned Pixl has `policy.locked` set.
 bool pt_node_locked(const pt_node_t *n);
+/// Lock or unlock the owned Pixl (SPEC §10.6): inserts or removes `policy.locked` in the raw
+/// state at its sorted place; unlocking with nothing else in `policy` drops `policy` entirely,
+/// so the bytes return to what they were. Persist the record when this returns true.
+bool pt_node_set_locked(pt_node_t *n, bool locked);
 
 /// `{"hello":{"deviceId":…,"deviceName":…}}`, the spike's first frame each way.
 size_t pt_hello_encode(const pt_device_t *me, char *buf, size_t cap);
