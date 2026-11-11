@@ -603,7 +603,9 @@ static void give_way(pt_node_t *n, const env_t *e, const pt_device_t *peer, cons
     pt_device_t holder = *peer;
     if (strcmp(held, "away") == 0) {
         char id[PT_ID_MAX] = "", name[PT_NAME_MAX] = "";
-        if (payload_str(e, "holderId", id, sizeof id) && id[0]) {
+        if (!payload_str(e, "holderId", id, sizeof id)) id[0] = 0;
+        if (strcmp(id, n->me.id) == 0) return;   // it names us: we are the holder
+        if (id[0]) {
             copy_str(holder.id, sizeof holder.id, id);
             if (!payload_str(e, "holderName", name, sizeof name)) copy_str(name, sizeof name, id);
             copy_str(holder.name, sizeof holder.name, name);
@@ -756,6 +758,17 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
             send_reason(n, out, peer, "abort", e.pet_id, e.epoch, "badTransfer", now_ms);
             return;
         }
+        /* The state may say another species than the offer did: only keep what this device can draw. */
+        char st_species[32] = "";
+        bool known = false;
+        if (state_str(st.p, st.len, "species", st_species, sizeof st_species)) {
+            for (int i = 0; i < n->known_count && !known; i++) known = strcmp(st_species, n->known_species[i]) == 0;
+        }
+        if (!known) {
+            n->session.kind = PT_SES_NONE;
+            send_reason(n, out, peer, "abort", e.pet_id, e.epoch, "unsupportedSpecies", now_ms);
+            return;
+        }
         char sum[65];
         pt_sha256_hex(st.p, st.len, sum);  // the raw bytes as received (SPEC §10.1)
         set_record(n, PT_REC_PENDING, e.pet_id, e.epoch, peer, st.p, st.len);   // bound to its sender (P5)
@@ -821,8 +834,9 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
         p.held = held;
         p.in_trip = pt_node_in_trip(n) ? 1 : 0;
         send_env(n, out, peer, "statusReply", e.pet_id, epoch, &p, now_ms);
-        /* The asker's copy is as new as ours: ask back, so its answer settles it here too (P4). */
-        if (same && e.epoch >= r->epoch) {
+        /* The asker's copy is as new as ours: ask back, so its answer settles it here too (P4).
+         * Not if we asked it lately: two equal copies would ask each other forever. */
+        if (same && e.epoch >= r->epoch && !asked_recently(n, peer, now_ms)) {
             n->ask_back = true;
             n->ask_back_peer = *peer;
         }

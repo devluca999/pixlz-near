@@ -902,6 +902,41 @@ static void test_trust(void)
     free(m);
 }
 
+// Guards shared with the Swift side.
+static void test_guards(void)
+{
+    pt_outs_t o;
+    char reason[32];
+    // No ping-pong: a peer we asked in the last 60 s isn't asked back.
+    pt_node_t *m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "status", 8, "{}", T1 + 1000, &o);
+    CHECK(o.count == 1 && sent_type(&o, 0, "statusReply"));
+    recv_env(m, &MAC, "status", 8, "{}", T1 + PT_STATUS_TRUST_MS + 2000, &o);
+    CHECK(o.count == 2 && sent_type(&o, 1, "status"));   // long ago: ask again
+    free(m);
+
+    // A reply that names us as the holder: we are it, nothing to give way to.
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"away\",\"holderId\":\"MOSAICO-0001\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED && o.count == 0);
+    free(m);
+
+    // A transfer of a species this device can't draw: abort, nothing saved.
+    m = new_node(&MOSAICO);
+    recv_env(m, &MAC, "offer", 7, "{\"name\":\"Frogg\",\"species\":\"frogg\"}", T0, &o);
+    CHECK(sent_type(&o, 0, "accept"));
+    recv_env(m, &MAC, "transfer", 8,
+             "{\"state\":{\"epoch\":8,\"owner\":{\"deviceId\":\"MOSAICO-0001\",\"deviceName\":\"Mosaico\"},"
+             "\"petId\":\"6F0E2C1A-0000-4000-8000-000000000001\",\"species\":\"cat\"}}", T0, &o);
+    CHECK(o.count == 1 && sent_type(&o, 0, "abort"));
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.reason", reason, sizeof reason));
+    CHECK_STR(reason, "unsupportedSpecies");
+    CHECK(m->record.kind == PT_REC_NONE && !pt_node_in_trip(m));
+    free(m);
+}
+
 // P8 / F4: ending a trip on purpose.
 static void test_abort(void)
 {
@@ -1080,6 +1115,7 @@ int main(int argc, char **argv)
     test_pending_binds_sender();
     test_trust();
     test_abort();
+    test_guards();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
