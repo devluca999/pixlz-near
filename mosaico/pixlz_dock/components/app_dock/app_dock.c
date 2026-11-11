@@ -515,6 +515,7 @@ static bool handle_agents(app_dock_handle_t d, const conn_t *c, const char *body
             copy_field(item, "detail", s->detail, sizeof s->detail);
             s->answerable = pt_json_find(item.p, item.len, "answerable", &v) && pt_json_is_true(v);
             s->reply_open = pt_json_find(item.p, item.len, "reply", &v) && pt_json_is_true(v);
+            copy_field(item, "queued", s->queued, sizeof s->queued);
             if (!s->id[0]) {
                 continue;
             }

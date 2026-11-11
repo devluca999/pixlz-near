@@ -46,10 +46,12 @@ public enum MosaicoFeed {
         public var summary, detail: String
         public var answerable: Bool      // Pixlz holds it: Deny on the Mosaico answers it
         public var replyOpen: Bool       // finished and held open for a reply
+        public var queued: String?       // a reply waiting for it to finish
         public init(id: String, project: String, doing: String, request: String? = nil, summary: String = "",
-                    detail: String = "", answerable: Bool = false, replyOpen: Bool = false) {
+                    detail: String = "", answerable: Bool = false, replyOpen: Bool = false, queued: String? = nil) {
             self.id = id; self.project = project; self.doing = doing; self.request = request
             self.summary = summary; self.detail = detail; self.answerable = answerable; self.replyOpen = replyOpen
+            self.queued = queued
         }
     }
     public static let maxAgents = 6
@@ -64,6 +66,7 @@ public enum MosaicoFeed {
                 "sessions": r.map { a -> [String: Any] in
                     var o: [String: Any] = ["id": ascii(a.id, 40), "project": ascii(a.project, 24), "doing": ascii(a.doing, 60)]
                     if a.replyOpen { o["reply"] = true }
+                    if let q = a.queued { o["queued"] = ascii(q, 90) }
                     if let req = a.request {
                         o["req"] = ascii(req, 15)
                         o["summary"] = ascii(a.summary, 60)

@@ -75,7 +75,8 @@ final class TravelController {
             let req = agents.hub.requests.first { $0.sessionID == s.id }
             return MosaicoFeed.AgentRow(id: s.id, project: s.project, doing: s.doing, request: req?.id,
                                         summary: req?.summary ?? "", detail: req?.detail ?? "",
-                                        answerable: req.map { agents.canAnswer($0.id) } ?? false, replyOpen: s.replyOpen)
+                                        answerable: req.map { agents.canAnswer($0.id) } ?? false, replyOpen: s.replyOpen,
+                                        queued: agents.queued[s.id])
         }
         let body = MosaicoFeed.agentsBody(rows, alerts: agents.alertsOn, from: me)
         for p in targets { r.transport.sendFrame(body, to: p) }
@@ -126,6 +127,7 @@ final class TravelController {
         }
         if let r = pairingController.verifiedReply(body, from: peer) {
             let result = app.agents.reply(r.id, r.text)
+            if result == .queued { queuedFrom[r.id] = peer }   // tell it when it's delivered
             let state = result == .sent ? "sent" : result == .queued ? "queued" : "failed"
             Debug.log("travel: \(peer.deviceName) replied \"\(r.text.prefix(40))\" (\(state))")
             // Tell the Mosaico what became of it, so its banner is true.
@@ -155,6 +157,8 @@ final class TravelController {
 
     lazy var pairingController = MosaicoPairingController(travel: self)
     private var dictation = MosaicoDictation()
+    /// Which Mosaico sent each queued reply (session id), to say "delivered" back to it.
+    private var queuedFrom: [String: DeviceRef] = [:]
 
     private var bluetooth: BLEBridge?
 
@@ -196,6 +200,11 @@ final class TravelController {
         }
         r.transport.onFrame = { [weak self] body, peer in self?.frame(body, from: peer) }
         app.agents.onHubChange = { [weak self] in self?.scheduleAgentsPush() }
+        app.agents.onDelivered = { [weak self] sid in
+            guard let self, let peer = self.queuedFrom.removeValue(forKey: sid),
+                  let out = try? JSONSerialization.data(withJSONObject: ["replyResult": ["id": sid, "state": "delivered"]]) else { return }
+            self.runner?.transport.sendFrame(out, to: peer)
+        }
         app.agents.extraRows = { [weak self] in self?.pairingController.rows() ?? [] }
         app.agents.onExtraRow = { [weak self] id in self?.pairingController.chose(id) }
         r.onAsk = { [weak self] peer, name in self?.ask(peer: peer, name: name) }

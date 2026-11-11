@@ -417,7 +417,8 @@ static void test_agents(void)
     tap(m, c.confirm_x, c.buttons_y);
     tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
     a = app_menu_take_action(m);
-    CHECK(a.kind == APP_MENU_ACTION_AGENT_REPLY && a.arg == 1 * 16 + 3 && !app_menu_is_open(m));
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_REPLY && a.arg == 1 * 16 + 3 && app_menu_read(m).mode == APP_MENU_CHAT);
+    CHECK(app_menu_read(m).agent_first == 1);   // back in that session's chat, which says what happened
     CHECK(strcmp(a.id, "s1") == 0);
     // Quick replies only while the session still takes one: otherwise back to its chat.
     app_menu_open(m, &ctx);
@@ -469,7 +470,8 @@ static void test_agents(void)
     app_menu_open_heard(m);
     tap(m, c.confirm_x, c.buttons_y);
     a = app_menu_take_action(m);
-    CHECK(a.kind == APP_MENU_ACTION_DICTATE_SEND && !app_menu_is_open(m));
+    CHECK(a.kind == APP_MENU_ACTION_DICTATE_SEND && app_menu_read(m).mode == APP_MENU_CHAT);
+    app_menu_close(m);
     app_menu_open_heard(m);   // not in a chat: ignored
     CHECK(!app_menu_is_open(m));
     app_menu_set_chat(m, false, false);

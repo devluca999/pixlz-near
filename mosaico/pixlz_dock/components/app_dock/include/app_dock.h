@@ -76,6 +76,7 @@ typedef struct {
     char detail[144];      /**< The exact command or file. */
     bool answerable;       /**< The Mac holds it: Deny here answers it. Else: the terminal asks. */
     bool reply_open;       /**< Finished and held open for a reply (Reply from Pixlz on the Mac). */
+    char queued[96];       /**< A reply waiting on the Mac for this session to finish ("" none). */
 } app_dock_agent_t;
 
 /** One session's chat, as the Mac sent it on request (newest last). count < 0: still loading. */

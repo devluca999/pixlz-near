@@ -53,6 +53,9 @@ typedef struct {
     char banner[64];          /* a line across the top ("pixlz needs you") */
     char pair_code[8];        /* a Mac's pairing code while it's asked (D20) */
     bool dictating;           /* the mic is on (D22) */
+    char reply_note[64];      /* the chat's line about the last reply: sending, sent, queued… */
+    int reply_tone;           /* 0 grey, 1 green, 2 amber, 3 red */
+    uint32_t reply_note_until;
     bool dictation_ready;     /* let go: send the clip once the recorder has finished */
     uint32_t transcript_version;
     uint32_t banner_until;
@@ -255,6 +258,14 @@ static void open_menu(host_state_t *state)
 }
 
 /* A line across the top; it wakes the screen so it can be read. */
+/* The chat's reply line, kept a while (and the banner too, for when the chat isn't open). */
+static void reply_note(host_state_t *state, const char *text, int tone, int seconds)
+{
+    snprintf(state->reply_note, sizeof state->reply_note, "%.63s", text);
+    state->reply_tone = tone;
+    state->reply_note_until = app_game_read(state->game).tick + (uint32_t)seconds * 30;
+}
+
 static void say_banner(host_state_t *state, const char *text)
 {
     const uint32_t tick = app_game_read(state->game).tick;
@@ -303,7 +314,7 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         static const char *const quick[4] = {"Continue", "Yes", "No", "Run the tests"};
         const int q = a.arg % 16;
         const bool sent = q >= 0 && q < 4 && app_dock_agent_reply(state->dock, a.id, quick[q]);
-        say_banner(state, sent ? "Sending..." : "Couldn't send it to your Mac");
+        reply_note(state, sent ? "Sending..." : "Couldn't send it to your Mac", sent ? 0 : 3, 30);
         break;
     }
     case APP_MENU_ACTION_DICTATE_START:
@@ -328,7 +339,10 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         say_banner(state, "Cancelled. Hold to talk to start over.");
         break;
     case APP_MENU_ACTION_DICTATE_SEND:
-        say_banner(state, app_dock_transcript_reply(state->dock) ? "Sending..." : "Couldn't send it to your Mac");
+        {
+            const bool ok = app_dock_transcript_reply(state->dock);
+            reply_note(state, ok ? "Sending..." : "Couldn't send it to your Mac", ok ? 0 : 3, 30);
+        }
         break;
     case APP_MENU_ACTION_PAIR:
         app_dock_pair_answer(state->dock, a.arg != 0);
@@ -455,9 +469,16 @@ static void on_event(host_state_t *state, const app_dock_event_t *e, uint32_t ti
         break;
     }
     case APP_DOCK_EVENT_REPLY_RESULT:
-        say_banner(state, strcmp(e->reason, "sent") == 0 ? "Sent. Claude carries on." :
-                          strcmp(e->reason, "queued") == 0 ? "Queued: Claude gets it when it finishes." :
-                          "That session isn't running any more.");
+        if (strcmp(e->reason, "sent") == 0) {
+            reply_note(state, "Sent. Claude carries on.", 1, 12);
+        } else if (strcmp(e->reason, "queued") == 0) {
+            reply_note(state, "Queued: Claude gets it when it finishes.", 2, 600);
+        } else if (strcmp(e->reason, "delivered") == 0) {
+            reply_note(state, "Delivered to Claude.", 1, 12);
+        } else {
+            reply_note(state, "That session isn't running any more.", 3, 12);
+        }
+        say_banner(state, state->reply_note);
         break;
     case APP_DOCK_EVENT_PAIR_ENDED:
         if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
@@ -1074,10 +1095,23 @@ static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
                           m->buttons_y + 10, 1, white);
         DrawCircle(m->confirm_x, m->buttons_y, (float)m->button_radius, shade(58, 170, 82, 100));
         draw_text_centred("Reply", m->confirm_x, m->buttons_y - PIXL_FONT_HEIGHT, 2, white);
-        /* What happens to a reply now: right away, or when Claude finishes. */
-        draw_text_centred(tr && tr->pending ? "Your Mac is listening..." :
-                          reply_open ? "Claude is waiting for you" : "Claude is working: replies wait until it finishes",
-                          GAME_WIDTH / 2, m->buttons_y - m->button_radius - 22, 1, tr && tr->pending ? amber : grey);
+        /* What happened to your last reply (stays a while), else what a reply would do now. */
+        const uint32_t now = app_game_read(state->game).tick;
+        if (state->reply_note[0] && now < state->reply_note_until) {
+            static const uint8_t tones[4][3] = {{200, 200, 200}, {120, 220, 130}, {255, 176, 60}, {240, 110, 100}};
+            const uint8_t *t = tones[state->reply_tone & 3];
+            draw_text_centred(state->reply_note, GAME_WIDTH / 2, m->buttons_y - m->button_radius - 22, 2,
+                              shade(t[0], t[1], t[2], 100));
+        } else {
+            draw_text_centred(tr && tr->pending ? "Your Mac is listening..." :
+                              reply_open ? "Claude is waiting for you" : "Claude is working: replies wait until it finishes",
+                              GAME_WIDTH / 2, m->buttons_y - m->button_radius - 22, 1, tr && tr->pending ? amber : grey);
+        }
+        if (a && a->queued[0]) {   /* the reply waiting on the Mac, word for word */
+            char q[120];
+            snprintf(q, sizeof q, "Waiting to send: %.95s", a->queued);
+            draw_text_centred(q, GAME_WIDTH / 2, m->buttons_y - m->button_radius - 42, 1, amber);
+        }
     } else if (can_pair) {
         /* Not paired with this Mac: the mic spot asks it to pair (it confirms there). */
         DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius, shade(110, 180, 245, 100));

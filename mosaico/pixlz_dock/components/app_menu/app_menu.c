@@ -198,6 +198,15 @@ static void act(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
     app_menu_close(m);
 }
 
+/* Sending a reply: the action, then back to that session's chat (it shows what happened). */
+static void act_in_chat(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
+{
+    int row = m->agent;
+    set_action(m, kind, arg);
+    show(m, APP_MENU_CHAT);
+    m->agent = row;
+}
+
 static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
 {
     app_menu_bubble_t bubbles[APP_MENU_SLOTS];
@@ -232,7 +241,7 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_UNPAIR: act(m, APP_MENU_ACTION_UNPAIR, 0); break;
     case APP_MENU_BUBBLE_PAIR: act(m, APP_MENU_ACTION_PAIR_REQUEST, 0); break;
     case APP_MENU_BUBBLE_Q0: case APP_MENU_BUBBLE_Q1: case APP_MENU_BUBBLE_Q2: case APP_MENU_BUBBLE_Q3:
-        act(m, APP_MENU_ACTION_AGENT_REPLY, m->agent * 16 + (int)(bubbles[i] - APP_MENU_BUBBLE_Q0));
+        act_in_chat(m, APP_MENU_ACTION_AGENT_REPLY, m->agent * 16 + (int)(bubbles[i] - APP_MENU_BUBBLE_Q0));
         break;
     case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
     case APP_MENU_BUBBLE_MEMORY: show(m, APP_MENU_MEMORY); break;
@@ -418,7 +427,7 @@ static void heard_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool presse
         return;
     }
     if (button > 0) {
-        act(m, APP_MENU_ACTION_DICTATE_SEND, m->agent);
+        act_in_chat(m, APP_MENU_ACTION_DICTATE_SEND, m->agent);
     } else {
         int row = m->agent;
         show(m, APP_MENU_CHAT);
