@@ -19,6 +19,7 @@ typedef enum {
                                       copy is elsewhere and this one stepped aside; "saveFailed"). */
     APP_DOCK_EVENT_PAIR_CODE,    /**< A Mac wants to pair: show `reason` (6 digits) and ask. */
     APP_DOCK_EVENT_PAIRED,       /**< Paired and saved; `reason` is the Mac's name (cut to fit). */
+    APP_DOCK_EVENT_REPLY_RESULT, /**< The Mac took a reply: `reason` "sent", "queued" (goes when it finishes) or "failed". */
     APP_DOCK_EVENT_PAIR_ENDED,   /**< The pairing stopped without pairing ("saveFailed": it couldn't be saved). */
 } app_dock_event_kind_t;
 

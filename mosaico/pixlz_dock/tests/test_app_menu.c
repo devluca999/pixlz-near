@@ -409,7 +409,7 @@ static void test_agents(void)
     CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
     tap(m, 240, row + s.row_h);
     (void)app_menu_take_action(m);
-    app_menu_set_chat(m, true);
+    app_menu_set_chat(m, true, false);
     tap(m, c.confirm_x, c.buttons_y);
     CHECK(app_menu_read(m).mode == APP_MENU_QUICK && app_menu_read(m).slots[3].bubble == APP_MENU_BUBBLE_Q3);
     tap(m, 240, 240);   // not a bubble: back to the chat
@@ -427,7 +427,7 @@ static void test_agents(void)
     (void)app_menu_take_action(m);
     tap(m, c.confirm_x, c.buttons_y);
     CHECK(app_menu_read(m).mode == APP_MENU_QUICK);
-    app_menu_set_chat(m, false);
+    app_menu_set_chat(m, false, false);
     CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
     // The Mac couldn't be asked: back to the list.
     app_menu_back_to_agents(m);
@@ -438,7 +438,7 @@ static void test_agents(void)
     tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
     tap(m, 240, row + s.row_h);
     (void)app_menu_take_action(m);
-    app_menu_set_chat(m, true);
+    app_menu_set_chat(m, true, false);
     CHECK(app_menu_pointer(m, c.cancel_x, c.buttons_y, true));
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_DICTATE_START && a.arg == 1);
@@ -472,7 +472,20 @@ static void test_agents(void)
     CHECK(a.kind == APP_MENU_ACTION_DICTATE_SEND && !app_menu_is_open(m));
     app_menu_open_heard(m);   // not in a chat: ignored
     CHECK(!app_menu_is_open(m));
-    app_menu_set_chat(m, false);
+    app_menu_set_chat(m, false, false);
+
+    // Not paired but a Mac is there: tapping the mic spot asks it to pair (the chat stays open).
+    app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row + s.row_h);
+    (void)app_menu_take_action(m);
+    app_menu_set_chat(m, false, true);
+    tap(m, c.cancel_x, c.buttons_y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_PAIR_REQUEST && app_menu_read(m).mode == APP_MENU_CHAT);
+    app_menu_set_chat(m, false, false);
+    tap(m, c.cancel_x, c.buttons_y);   // no Mac: a tap just goes back
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_NONE && app_menu_read(m).mode == APP_MENU_AGENTS);
 
     // No Mac: Agents is greyed.
     ctx.agents_connected = false;

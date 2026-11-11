@@ -303,7 +303,7 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         static const char *const quick[4] = {"Continue", "Yes", "No", "Run the tests"};
         const int q = a.arg % 16;
         const bool sent = q >= 0 && q < 4 && app_dock_agent_reply(state->dock, a.id, quick[q]);
-        say_banner(state, sent ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
+        say_banner(state, sent ? "Sending..." : "Couldn't send it to your Mac");
         break;
     }
     case APP_MENU_ACTION_DICTATE_START:
@@ -328,7 +328,7 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         say_banner(state, "Cancelled. Hold to talk to start over.");
         break;
     case APP_MENU_ACTION_DICTATE_SEND:
-        say_banner(state, app_dock_transcript_reply(state->dock) ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
+        say_banner(state, app_dock_transcript_reply(state->dock) ? "Sending..." : "Couldn't send it to your Mac");
         break;
     case APP_MENU_ACTION_PAIR:
         app_dock_pair_answer(state->dock, a.arg != 0);
@@ -454,6 +454,11 @@ static void on_event(host_state_t *state, const app_dock_event_t *e, uint32_t ti
         }
         break;
     }
+    case APP_DOCK_EVENT_REPLY_RESULT:
+        say_banner(state, strcmp(e->reason, "sent") == 0 ? "Sent. Claude carries on." :
+                          strcmp(e->reason, "queued") == 0 ? "Queued: Claude gets it when it finishes." :
+                          "That session isn't running any more.");
+        break;
     case APP_DOCK_EVENT_PAIR_ENDED:
         if (app_menu_read(state->menu).mode == APP_MENU_PAIR) {
             app_menu_close(state->menu);
@@ -548,7 +553,8 @@ static void update(void *value)
     agents_update(state, tick);
     {   /* the open chat takes a reply from here: that session held open on the Mac, and paired */
         const app_dock_agent_t *a = app_dock_agent_find(state->dock, app_menu_read(state->menu).agent_id);
-        app_menu_set_chat(state->menu, a && a->reply_open && app_dock_status(state->dock).agents_paired);
+        const app_dock_status_t cs = app_dock_status(state->dock);
+        app_menu_set_chat(state->menu, a && cs.agents_paired, a && !cs.agents_paired && cs.macs > 0);
     }
     /* Not in a trip and not here: nothing is being sent any more (it gave way, or it left). */
     const app_dock_status_t d = app_dock_status(state->dock);
@@ -1023,8 +1029,10 @@ static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
                   grey, true);
         return;
     }
-    const bool reply_ok = app_dock_status(state->dock).agents_paired && reply_open;
-    const int bottom = reply_ok ? m->buttons_y - m->button_radius - 10 : READ_BOTTOM;
+    const app_dock_status_t cs = app_dock_status(state->dock);
+    const bool reply_ok = cs.agents_paired;              /* a working session's reply waits on the Mac */
+    const bool can_pair = !cs.agents_paired && cs.macs > 0;
+    const int bottom = reply_ok || can_pair ? m->buttons_y - m->button_radius - 30 : READ_BOTTOM;
     const int view = bottom - READ_TOP;
     /* Measure, then draw scrolled; the view starts at the newest turn. */
     int h = 0;
@@ -1066,12 +1074,19 @@ static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
                           m->buttons_y + 10, 1, white);
         DrawCircle(m->confirm_x, m->buttons_y, (float)m->button_radius, shade(58, 170, 82, 100));
         draw_text_centred("Reply", m->confirm_x, m->buttons_y - PIXL_FONT_HEIGHT, 2, white);
-        if (tr && tr->pending) {
-            draw_text_centred("Your Mac is listening...", GAME_WIDTH / 2, m->buttons_y - m->button_radius - 24, 1, amber);
-        }
+        /* What happens to a reply now: right away, or when Claude finishes. */
+        draw_text_centred(tr && tr->pending ? "Your Mac is listening..." :
+                          reply_open ? "Claude is waiting for you" : "Claude is working: replies wait until it finishes",
+                          GAME_WIDTH / 2, m->buttons_y - m->button_radius - 22, 1, tr && tr->pending ? amber : grey);
+    } else if (can_pair) {
+        /* Not paired with this Mac: the mic spot asks it to pair (it confirms there). */
+        DrawCircle(m->cancel_x, m->buttons_y, (float)m->button_radius, shade(110, 180, 245, 100));
+        draw_text_centred("Pair", m->cancel_x, m->buttons_y - PIXL_FONT_HEIGHT - 6, 2, white);
+        draw_text_centred("to talk", m->cancel_x, m->buttons_y + 10, 1, white);
+        draw_text_centred("Replies need this Mosaico paired with your Mac", GAME_WIDTH / 2,
+                          m->buttons_y - m->button_radius - 22, 1, grey);
     } else {
-        draw_text_centred(reply_open ? "pair with your Mac to reply" : "drag to scroll - tap to go back", GAME_WIDTH / 2,
-                          GAME_HEIGHT - 26, 1, grey);
+        draw_text_centred("No Mac connected - drag to scroll, tap to go back", GAME_WIDTH / 2, GAME_HEIGHT - 26, 1, grey);
     }
 }
 

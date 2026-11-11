@@ -33,6 +33,7 @@ struct app_menu {
     char opened_id[APP_MENU_ID_MAX];    /* the session a request, chat or quick view is about */
     char opened_req[APP_MENU_REQ_MAX];  /* the request opened (Agent) */
     bool chat_reply_ok;
+    bool chat_can_pair;    /* not paired, but a Mac is there: the mic spot asks to pair */
     bool to_end;           /* chat: jump to the newest turn once its size is known */
     bool mic_off;          /* holding the mic, finger slid away from it */
     app_menu_action_t action;
@@ -450,6 +451,11 @@ static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
 {
     int32_t dx = x - m->down_x, dy = y - m->down_y;
     /* Chat: hold the mic (red spot, bottom left) to dictate; let go to send it to the Mac. */
+    if (m->mode == APP_MENU_CHAT && !m->chat_reply_ok && m->chat_can_pair && !pressed && was_down &&
+            button_at(m, x, y) < 0 && dx * dx + dy * dy <= TAP_SLOP * TAP_SLOP) {
+        m->action.kind = APP_MENU_ACTION_PAIR_REQUEST;   /* "Pair to talk": the menu stays */
+        return;
+    }
     if (m->mode == APP_MENU_CHAT && m->chat_reply_ok) {
         if (pressed && !was_down && button_at(m, x, y) < 0) {
             m->pressed = -1;
@@ -634,15 +640,16 @@ void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
     }
 }
 
-void app_menu_set_chat(app_menu_handle_t m, bool reply_ok)
+void app_menu_set_chat(app_menu_handle_t m, bool talk, bool can_pair)
 {
     if (!m) {
         return;
     }
-    m->chat_reply_ok = reply_ok;
-    if (m->mode == APP_MENU_QUICK && !reply_ok) {
+    m->chat_reply_ok = talk;
+    m->chat_can_pair = can_pair;
+    if (m->mode == APP_MENU_QUICK && !talk) {
         int row = m->agent;
-        show(m, APP_MENU_CHAT);   /* it doesn't take a reply now */
+        show(m, APP_MENU_CHAT);   /* can't reply from here now */
         m->agent = row;
     }
 }

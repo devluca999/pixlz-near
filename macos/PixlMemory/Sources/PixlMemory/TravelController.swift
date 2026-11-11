@@ -119,8 +119,13 @@ final class TravelController {
             return
         }
         if let r = pairingController.verifiedReply(body, from: peer) {
-            let ok = app.agents.reply(r.id, r.text)
-            Debug.log("travel: \(peer.deviceName) replied \"\(r.text)\" (\(ok ? "sent" : "session no longer open"))")
+            let result = app.agents.reply(r.id, r.text)
+            let state = result == .sent ? "sent" : result == .queued ? "queued" : "failed"
+            Debug.log("travel: \(peer.deviceName) replied \"\(r.text.prefix(40))\" (\(state))")
+            // Tell the Mosaico what became of it, so its banner is true.
+            if let out = try? JSONSerialization.data(withJSONObject: ["replyResult": ["id": r.id, "state": state]]) {
+                runner?.transport.sendFrame(out, to: peer)
+            }
             return
         }
         guard let d = MosaicoFeed.agentDecision(body) else { return }

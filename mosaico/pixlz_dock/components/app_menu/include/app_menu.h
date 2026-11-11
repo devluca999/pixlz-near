@@ -138,9 +138,10 @@ bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed
 void app_menu_update(app_menu_handle_t menu);
 /** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
-/** Chat: whether the open session takes a reply from here now (held open, and paired). Quick
- * replies go back to the chat when it stops. */
-void app_menu_set_chat(app_menu_handle_t menu, bool reply_ok);
+/** Chat: `talk` = replies work from here (paired with the Mac showing the sessions; a reply to
+ * a working session waits on the Mac). Else `can_pair` = a Mac is connected, so the mic spot
+ * reads "Pair to talk" and asks it. Quick replies go back to the chat when `talk` stops. */
+void app_menu_set_chat(app_menu_handle_t menu, bool talk, bool can_pair);
 /** The Mac's transcript is in: show it with red and green. */
 void app_menu_open_heard(app_menu_handle_t menu);
 /** Leave a chat or request view for the list (the Mac couldn't be asked). */

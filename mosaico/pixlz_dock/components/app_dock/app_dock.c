@@ -607,6 +607,19 @@ static bool handle_chat(app_dock_handle_t d, const conn_t *c, const char *body, 
     return true;
 }
 
+/* `{"replyResult":{"id","state"}}`: what the Mac did with a reply (sent, queued, failed). */
+static bool handle_reply_result(app_dock_handle_t d, const char *body, size_t len)
+{
+    pt_span_t r;
+    if (!pt_json_find(body, len, "replyResult", &r)) {
+        return false;
+    }
+    char state[16];
+    copy_field(r, "state", state, sizeof state);
+    queue_event(d, APP_DOCK_EVENT_REPLY_RESULT, state);
+    return true;
+}
+
 /* `{"transcript":{"id","session","text"}}` or `{"transcript":{"id","error"}}` from the Mac. */
 static bool handle_transcript(app_dock_handle_t d, const char *body, size_t len)
 {
@@ -720,7 +733,7 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
         }
     }
     if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len) ||
-            handle_chat(d, c, body, len) || handle_transcript(d, body, len)) {
+            handle_chat(d, c, body, len) || handle_transcript(d, body, len) || handle_reply_result(d, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
@@ -1171,7 +1184,7 @@ const app_dock_chat_t *app_dock_chat(app_dock_handle_t d)
 bool app_dock_agent_reply(app_dock_handle_t d, const char *session_id, const char *text)
 {
     const app_dock_agent_t *a = find_agent(d, session_id);
-    if (!a || !a->reply_open || !text) {
+    if (!a || !text) {   /* working or not: the Mac holds a reply until the session finishes */
         return false;
     }
     conn_t *c = paired_agents_conn(d);
