@@ -152,16 +152,37 @@ static void advertise(void)
     ESP_LOGI(TAG, "mDNS _pixlz._tcp %s", s_service_added ? "advertised" : esp_err_to_name(err));
 }
 
+static atomic_int s_wifi_tries;
+static esp_timer_handle_t s_retry_timer;
+
+static void retry_wifi(void *arg)
+{
+    (void)arg;
+    (void)esp_wifi_connect();
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         (void)esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        /* Retry with growing pauses: back-to-back attempts on a weak network hog the radio the
+         * Bluetooth link shares (the coexistence policy favours a Wi-Fi reconnect). */
+        static const uint32_t pause_s[] = {2, 5, 15, 30, 60};
         const wifi_event_sta_disconnected_t *d = data;
-        ESP_LOGW(TAG, "Wi-Fi lost (reason %d, rssi %d dBm); reconnecting", d ? d->reason : -1, d ? d->rssi : 0);
+        const int k = atomic_load(&s_wifi_tries);
+        const uint32_t wait = pause_s[k < 4 ? k : 4];
+        atomic_store(&s_wifi_tries, k + 1);
+        ESP_LOGW(TAG, "Wi-Fi lost (reason %d, rssi %d dBm); retrying in %u s", d ? d->reason : -1, d ? d->rssi : 0,
+                 (unsigned)wait);
         atomic_store(&s_net_ready, false);
-        (void)esp_wifi_connect();
+        if (s_retry_timer) {
+            (void)esp_timer_stop(s_retry_timer);
+            (void)esp_timer_start_once(s_retry_timer, (uint64_t)wait * 1000000ULL);
+        } else {
+            (void)esp_wifi_connect();
+        }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *ip = data;
         ESP_LOGI(TAG, "Wi-Fi ready: " IPSTR ", trips on port %d", IP2STR(&ip->ip_info.ip), APP_DOCK_PORT);
@@ -173,6 +194,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         }
         advertise();
         atomic_store(&s_net_ready, true);
+        atomic_store(&s_wifi_tries, 0);
     }
 }
 
@@ -241,6 +263,10 @@ void dock_platform_start(const pt_device_t *me)
             !(s_netif = esp_netif_create_default_wifi_sta())) {
         ESP_LOGE(TAG, "network interface setup failed");
         return;
+    }
+    const esp_timer_create_args_t retry = {.callback = retry_wifi, .name = "pixlz_wifi"};
+    if (esp_timer_create(&retry, &s_retry_timer) != ESP_OK) {
+        s_retry_timer = NULL;   /* then it retries at once, as before */
     }
     mdns_start();
     if (esp_wifi_init(&init) != ESP_OK ||
