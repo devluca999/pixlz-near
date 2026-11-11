@@ -383,19 +383,24 @@ final class BubbleMenu {
         let mapped = lines.map { l -> ChatCard.Line in
             switch l.role { case .you: .init(.you, l.text); case .claude: .init(.claude, l.text); case .tool: .init(.tool, l.text) }
         }
-        let note = agents.replyHere ? "you can reply when it finishes" : "turn on Reply from Pixlz (Agents) to reply here"
+        let note = agents.queued[sessionID] != nil ? "a reply is waiting: it goes when Claude finishes" : "Claude is working: it gets this when it finishes"
         let card = ChatCard(title: [s.project, title].compactMap { $0 }.joined(separator: " · "), lines: mapped,
                             replyOpen: s.replyOpen, replyNote: note, look: cardLook)
         card.fit()
         card.onClose = { [weak self] in self?.chatSession = nil; self?.closeCard() }
         card.onReply = { [weak self] text in
             guard let self else { return }
-            if agents.reply(sessionID, text) {
+            switch agents.reply(sessionID, text) {
+            case .sent:
                 self.chatSession = nil
                 self.closeCard()
                 self.app.notify(.agents("Sent to \(s.project). Claude carries on."))
-            } else {
-                self.app.notify(.agentsError("\(s.project) isn't waiting for a reply any more."))
+            case .queued:
+                self.chatSession = nil
+                self.closeCard()
+                self.app.notify(.agents("Queued for \(s.project): Claude gets it when it finishes."))
+            case .failed:
+                self.app.notify(.agentsError("\(s.project) isn't running any more."))
             }
         }
         showCard(card, name: "chat")
