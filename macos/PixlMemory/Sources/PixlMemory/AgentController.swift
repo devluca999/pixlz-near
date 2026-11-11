@@ -200,6 +200,9 @@ final class AgentController {
 
     /// The menu or a request is open: show what changed.
     var onChange: (@MainActor () -> Void)?
+    /// More rows for the Agents list from elsewhere in the app (other devices), and their handler.
+    var extraRows: (@MainActor () -> [ListMenuView.Row])?
+    var onExtraRow: (@MainActor (String) -> Void)?
     /// Anything else showing the sessions (another screen): told on every change.
     var onHubChange: (@MainActor () -> Void)?
     private func changed() { onChange?(); onHubChange?() }
