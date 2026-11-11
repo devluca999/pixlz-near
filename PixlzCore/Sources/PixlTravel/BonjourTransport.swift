@@ -75,8 +75,10 @@ public final class BonjourTransport: @unchecked Sendable {
             listener?.cancel(); listener = nil
             browser?.cancel(); browser = nil
             conns.values.forEach { $0.cancel() }; conns.removeAll()
-            found.removeAll(); bonjour.removeAll(); manual.removeAll()
+            found.removeAll(); bonjour.removeAll(); manual.removeAll(); routes.removeAll()
+            decoders.removeAll(); inboundPeer.removeAll()
         }
+        DispatchQueue.main.async { self.onPeers?([]) }   // nobody is reachable any more
     }
 
     private func update(_ results: Set<NWBrowser.Result>) {
@@ -195,7 +197,13 @@ public final class BonjourTransport: @unchecked Sendable {
             guard let self, let c else { return }
             if let data, !data.isEmpty {
                 var d = self.decoders[ObjectIdentifier(c)] ?? Framing.Decoder()
-                let frames = (try? d.frames(data)) ?? []
+                guard let frames = try? d.frames(data) else {
+                    // a broken stream: the rest can't be trusted to line up
+                    let text = "connection \(self.inboundPeer[ObjectIdentifier(c)]?.deviceName ?? "?"): framing error, dropped"
+                    DispatchQueue.main.async { self.onState?(text) }
+                    self.drop(c)
+                    return
+                }
                 self.decoders[ObjectIdentifier(c)] = d
                 for body in frames {
                     if let env = try? PetState.decoder.decode(Envelope.self, from: body) {
@@ -212,6 +220,9 @@ public final class BonjourTransport: @unchecked Sendable {
 
     private func deliver(_ env: Envelope, on c: NWConnection) {
         guard env.to == me.deviceId else { return }
+        // A connection belongs to one device: the one we opened it for, or the first one that
+        // spoke on it. An envelope claiming another sender is ignored (never relabelled).
+        if let known = inboundPeer[ObjectIdentifier(c)], known.deviceId != env.from { return }
         // who sent it: a device we found advertising that id, or (if our own browsing is held
         // back, e.g. Local Network not allowed yet) the name it advertised in the envelope
         let advertised = env.payload.fromName.map { DeviceRef(deviceId: env.from, deviceName: $0) }

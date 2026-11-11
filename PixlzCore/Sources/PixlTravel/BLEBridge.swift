@@ -30,6 +30,9 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private var listener: NWListener?
     private var client: NWConnection?
     private var outbox = Data()        // bytes for the Mosaico, written one chunk at a time
+    /// Bytes from the Mosaico while no transport connection is attached, sent on the next one.
+    private var inbox = Data()
+    static let inboxLimit = 64 * 1024
     private var writing = false
     private var said = false           // the hello went out on this link
 
@@ -92,7 +95,7 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         client?.cancel(); client = nil
         listener?.cancel(); listener = nil
         peripheral = nil; rx = nil; device = nil
-        outbox.removeAll(); writing = false; said = false
+        outbox.removeAll(); inbox.removeAll(); writing = false; said = false
         if let gone { DispatchQueue.main.async { self.onUnlink?(gone) } }
         if retry { queue.asyncAfter(deadline: .now() + 2) { self.scan() } }
     }
@@ -120,7 +123,14 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             device = DeviceRef(deviceId: id, deviceName: o["name"] ?? id)
             openListener()
         } else if ch.uuid == Self.txUUID {
-            client?.send(content: data, completion: .contentProcessed { _ in })
+            if let client {
+                client.send(content: data, completion: .contentProcessed { _ in })
+            } else if inbox.count + data.count <= Self.inboxLimit {
+                inbox.append(data)   // the transport reconnects soon: keep it for then
+            } else {
+                log("bluetooth: \(inbox.count + data.count) bytes waiting with no connection; dropping")
+                inbox.removeAll()
+            }
         }
     }
 
@@ -145,8 +155,14 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// come back. One connection at a time; a new one replaces the old.
     private func accept(_ c: NWConnection) {
         client?.cancel()
+        // a previous connection's unsent bytes (maybe half a frame) would garble the new one's
+        if said { outbox.removeAll() }
         client = c
         c.start(queue: queue)
+        if !inbox.isEmpty {
+            c.send(content: inbox, completion: .contentProcessed { _ in })
+            inbox.removeAll()
+        }
         if !said {
             said = true
             let hello: [String: Any] = ["hello": ["deviceId": me.deviceId, "deviceName": me.deviceName,
