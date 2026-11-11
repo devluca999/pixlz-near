@@ -6,13 +6,14 @@ import PixlzCore
 //
 //   PixlzSend send   [--host H] [--port P]   send Frogg to a Mosaico, exit when he's there
 //   PixlzSend dock   [--host H] [--port P]   stay connected; catch Frogg when he comes home
+//   PixlzSend call   [--host H] [--port P]   ask the Mosaico to send him home now
 //   PixlzSend status                          what this Mac holds
 //   PixlzSend fixtures <dir>                  write PixlzCore's bytes for the C host tests
 //
 // State lives in ~/Library/Application Support/PixlzDock (a FilePetStore), separate from the app.
 
 let usage = """
-usage: PixlzSend send|dock [--host H] [--port P]
+usage: PixlzSend send|dock|call [--host H] [--port P]
        PixlzSend status
        PixlzSend fixtures <dir>
 """
@@ -161,6 +162,36 @@ func runDock(_ args: [String], me: DeviceRef, store: FilePetStore) {
     RunLoop.main.run()
 }
 
+/// "Call Frogg": the owner (the Mosaico) starts the trip home; exits when he's here.
+func runCall(_ args: [String], me: DeviceRef, store: FilePetStore) throws {
+    guard case .away? = try store.load() else {
+        log(describe(try store.load()))
+        exit(1)
+    }
+    endpoint(args) { ep in
+        guard let link = try? Link(to: ep, me: me, store: store) else { exit(1) }
+        link.onPeer = { peer in
+            log("connected to \(peer.deviceName); calling Frogg home")
+            link.feed(.call(owner: peer))
+        }
+        link.onOutput = { out in
+            switch out {
+            case .playEntrance:
+                log("Frogg is home! \(describe(link.node.record))")
+                exit(0)
+            case .shrug(let reason):
+                log("Frogg stays (\(reason))")
+                exit(1)
+            default: break
+            }
+        }
+        link.onClosed = { why in log(why); exit(1) }
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { _ in log("timed out"); exit(1) }
+        link.start()
+    }
+    RunLoop.main.run()
+}
+
 nonisolated(unsafe) var current: Link?
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -170,6 +201,8 @@ do {
         try runSend(args, me: thisMac(), store: FilePetStore(directory: supportDir))
     case "dock":
         runDock(args, me: try thisMac(), store: FilePetStore(directory: supportDir))
+    case "call":
+        try runCall(args, me: thisMac(), store: FilePetStore(directory: supportDir))
     case "status":
         print(describe(try FilePetStore(directory: supportDir).load()))
     case "fixtures":
