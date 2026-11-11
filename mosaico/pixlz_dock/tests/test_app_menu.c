@@ -1,5 +1,6 @@
 // Host tests for the app_menu state: `make -C tests`.
 #include <stdio.h>
+#include <string.h>
 #include "../components/app_menu/include/app_menu.h"
 
 static int failures, checks;
@@ -24,7 +25,15 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false, 0, 0, true, false, false};
+static const app_menu_context_t CTX = {
+    .can_send = true, .has_pet = true, .pet_index = 0, .pet_count = 6, .answers_count = 2, .memory_count = 3,
+    .agents_connected = true, .can_swap = true,
+};
+
+// Six sessions; s0 and s5 wait on you (requests r0 and r5).
+static app_menu_agent_row_t ROWS[6] = {
+    {"s0", "r0"}, {"s1", ""}, {"s2", ""}, {"s3", ""}, {"s4", ""}, {"s5", "r5"},
+};
 
 static void test_pages(void)
 {
@@ -211,6 +220,12 @@ static void test_swap(void)
     one.pet_count = 1;
     app_menu_open(m, &one);
     CHECK(!app_menu_read(m).slots[2].enabled);
+    app_menu_context_t away = CTX;
+    away.can_swap = false;
+    app_menu_open(m, &away);
+    CHECK(!app_menu_read(m).slots[2].enabled);
+    tap(m, app_menu_read(m).slots[2].x, app_menu_read(m).slots[2].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
     app_menu_destroy(&m);
 }
 
@@ -269,9 +284,8 @@ static void test_agents(void)
 {
     app_menu_handle_t m = app_menu_create(480, 480);
     app_menu_context_t ctx = CTX;
-    ctx.agents_count = 6;
-    ctx.agents_waiting = (1u << 0) | (1u << 5);   // rows 0 and 5 wait on you
     app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
     app_menu_snapshot_t s = app_menu_read(m);
     tap(m, s.slots[1].x, s.slots[1].y);
     s = app_menu_read(m);
@@ -291,6 +305,7 @@ static void test_agents(void)
     tap(m, 240, row + s.row_h);
     s = app_menu_read(m);
     CHECK(s.mode == APP_MENU_AGENT && s.agent_first == 5);
+    CHECK(strcmp(s.agent_id, "s5") == 0 && strcmp(s.agent_req, "r5") == 0);
     // Allow is greyed until pairing: nothing happens.
     tap(m, s.confirm_x, s.buttons_y);
     CHECK(app_menu_read(m).mode == APP_MENU_AGENT && app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
@@ -302,24 +317,51 @@ static void test_agents(void)
     tap(m, s.cancel_x, s.buttons_y);
     app_menu_action_t a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_AGENT_DENY && a.arg == 5 && !app_menu_is_open(m));
+    CHECK(strcmp(a.id, "s5") == 0 && strcmp(a.req, "r5") == 0);   // by id, not row
     // Answered elsewhere while open: back to the list.
     app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
     tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
     tap(m, 240, row);
     CHECK(app_menu_read(m).mode == APP_MENU_AGENT);
-    app_menu_set_agents(m, 6, 1u << 5);
+    app_menu_agent_row_t moved[6];
+    memcpy(moved, ROWS, sizeof moved);
+    moved[0].req[0] = 0;
+    app_menu_set_agents(m, moved, 6);
     CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    // Rows move while a request is open: it follows its session.
+    tap(m, 240, row);   // row 0 isn't waiting now: its chat
+    (void)app_menu_take_action(m);
+    tap(m, 240, 200);
+    app_menu_set_agents(m, ROWS, 6);
+    tap(m, 240, row);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENT && strcmp(app_menu_read(m).agent_id, "s0") == 0);
+    for (int i = 0; i < 6; i++) moved[i] = ROWS[5 - i];   // s0 is now the last row
+    app_menu_set_agents(m, moved, 6);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENT && app_menu_read(m).agent_first == 5);
+    CHECK(strcmp(app_menu_read(m).agent_id, "s0") == 0);
+    // The same session with a new request: the one opened is gone, back to the list.
+    snprintf(moved[5].req, sizeof moved[5].req, "r9");
+    app_menu_set_agents(m, moved, 6);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    // The session gone altogether: also back.
+    app_menu_set_agents(m, ROWS, 6);
+    tap(m, 240, row);
+    app_menu_set_agents(m, ROWS + 1, 5);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    app_menu_set_agents(m, ROWS, 6);
     // Tapping above the rows goes back to page 1.
     tap(m, 240, 20);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
     // Paired with that Mac: Allow works.
     ctx.agents_paired = true;
     app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
     tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
     tap(m, 240, row);
     tap(m, s.confirm_x, s.buttons_y);
     a = app_menu_take_action(m);
-    CHECK(a.kind == APP_MENU_ACTION_AGENT_ALLOW && a.arg == 0);
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_ALLOW && a.arg == 0 && strcmp(a.id, "s0") == 0 && strcmp(a.req, "r0") == 0);
     ctx.agents_paired = false;
 
     // Pairing: the code screen stays until answered; red is no, green is yes.
@@ -347,12 +389,14 @@ static void test_agents(void)
 
     // A session that isn't waiting opens its chat (asking the Mac for it, menu still open).
     app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
     tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
     tap(m, 240, row + s.row_h);   // row 1: not waiting
     app_menu_snapshot_t c = app_menu_read(m);
     CHECK(c.mode == APP_MENU_CHAT && c.agent_first == 1);
     a = app_menu_take_action(m);
-    CHECK(a.kind == APP_MENU_ACTION_AGENT_CHAT && a.arg == 1 && app_menu_is_open(m));
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_CHAT && a.arg == 1 && app_menu_is_open(m) && strcmp(a.id, "s1") == 0);
+    CHECK(strcmp(c.agent_id, "s1") == 0);
     // No reply allowed: the green spot does nothing special, a tap goes back to the list.
     tap(m, c.confirm_x, c.buttons_y);
     CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
@@ -367,8 +411,23 @@ static void test_agents(void)
     tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_AGENT_REPLY && a.arg == 1 * 16 + 3 && !app_menu_is_open(m));
+    CHECK(strcmp(a.id, "s1") == 0);
+    // Quick replies only while the session still takes one: otherwise back to its chat.
+    app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row + s.row_h);
+    (void)app_menu_take_action(m);
+    tap(m, c.confirm_x, c.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_QUICK);
+    app_menu_set_chat(m, false);
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
+    // The Mac couldn't be asked: back to the list.
+    app_menu_back_to_agents(m);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
     // Dictation: hold the mic (bottom left) in a chat that takes replies, let go to send.
     app_menu_open(m, &ctx);
+    app_menu_set_agents(m, ROWS, 6);
     tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
     tap(m, 240, row + s.row_h);
     (void)app_menu_take_action(m);

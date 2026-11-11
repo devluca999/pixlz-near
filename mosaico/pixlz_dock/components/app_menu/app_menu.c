@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <stdlib.h>
+#include <string.h>
 #include "include/app_menu.h"
 
 enum { TICK_HZ = 30 };
@@ -27,6 +28,10 @@ struct app_menu {
     float scroll, scroll_at_down;
     int scroll_max;
     int agent_first, agent;
+    app_menu_agent_row_t rows[APP_MENU_AGENT_MAX];
+    int agents_count;
+    char opened_id[APP_MENU_ID_MAX];    /* the session a request, chat or quick view is about */
+    char opened_req[APP_MENU_REQ_MAX];  /* the request opened (Agent) */
     bool chat_reply_ok;
     bool to_end;           /* chat: jump to the newest turn once its size is known */
     app_menu_action_t action;
@@ -136,7 +141,7 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
             bubbles[0] = APP_MENU_BUBBLE_CALL, enabled[0] = c->can_call;   /* bring it here */
         }
         bubbles[1] = APP_MENU_BUBBLE_AGENTS, enabled[1] = c->agents_connected;
-        bubbles[2] = APP_MENU_BUBBLE_SWAP, enabled[2] = c->pet_count > 1;
+        bubbles[2] = APP_MENU_BUBBLE_SWAP, enabled[2] = c->can_swap && c->pet_count > 1;
         bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
     } else if (m->mode == APP_MENU_PAGE_2) {
         bubbles[0] = APP_MENU_BUBBLE_ANSWERS, enabled[0] = true;   /* empty: says how to fill it */
@@ -170,10 +175,22 @@ static int hit_slot(app_menu_handle_t m, int32_t x, int32_t y)
     return -1;
 }
 
-static void act(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
+/* The action, with the session (and request) the view is about. */
+static void set_action(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
 {
+    memset(&m->action, 0, sizeof m->action);
     m->action.kind = kind;
     m->action.arg = arg;
+    if (kind == APP_MENU_ACTION_AGENT_DENY || kind == APP_MENU_ACTION_AGENT_ALLOW ||
+            kind == APP_MENU_ACTION_AGENT_CHAT || kind == APP_MENU_ACTION_AGENT_REPLY) {
+        memcpy(m->action.id, m->opened_id, sizeof m->action.id);
+        memcpy(m->action.req, m->opened_req, sizeof m->action.req);
+    }
+}
+
+static void act(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
+{
+    set_action(m, kind, arg);
     app_menu_close(m);
 }
 
@@ -309,7 +326,7 @@ static void exit_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
 
 static bool waiting(const app_menu_handle_t m, int row)
 {
-    return row >= 0 && row < m->context.agents_count && row < 32 && (m->context.agents_waiting >> row & 1u);
+    return row >= 0 && row < m->agents_count && m->rows[row].req[0] != 0;
 }
 
 /* Agents list: tap a waiting row to open it; swipe sideways for the next four; tap above or
@@ -321,7 +338,7 @@ static void agents_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool press
         return;
     }
     int32_t dx = x - m->down_x, dy = y - m->down_y;
-    const int n = m->context.agents_count;
+    const int n = m->agents_count;
     if (dx * dx >= dy * dy && (dx <= -SWIPE_MIN || dx >= SWIPE_MIN)) {
         int first = m->agent_first + (dx < 0 ? APP_MENU_AGENT_ROWS : -APP_MENU_AGENT_ROWS);
         if (first >= 0 && first < n) {
@@ -342,9 +359,11 @@ static void agents_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool press
     show(m, waiting(m, row) ? APP_MENU_AGENT : APP_MENU_CHAT);   /* a request first; else its chat */
     m->agent_first = first;
     m->agent = row;
+    memcpy(m->opened_id, m->rows[row].id, sizeof m->opened_id);   /* act on this, wherever it moves */
+    memcpy(m->opened_req, m->rows[row].req, sizeof m->opened_req);
     if (m->mode == APP_MENU_CHAT) {
-        m->action.kind = APP_MENU_ACTION_AGENT_CHAT;   /* the menu stays open */
-        m->action.arg = row;
+        m->opened_req[0] = 0;
+        set_action(m, APP_MENU_ACTION_AGENT_CHAT, row);   /* the menu stays open */
     }
 }
 
@@ -570,7 +589,11 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.agent_first = (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK ||
                      m->mode == APP_MENU_HEARD) ? m->agent
                                                                                                        : m->agent_first;
-    s.agent_count = m->context.agents_count;
+    s.agent_count = m->agents_count;
+    if (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK || m->mode == APP_MENU_HEARD) {
+        memcpy(s.agent_id, m->opened_id, sizeof s.agent_id);
+        memcpy(s.agent_req, m->opened_req, sizeof s.agent_req);
+    }
     s.rows_y = ROWS_Y;
     s.row_h = ROW_H;
     app_menu_bubble_t bubbles[APP_MENU_SLOTS];
@@ -604,8 +627,23 @@ void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
 
 void app_menu_set_chat(app_menu_handle_t m, bool reply_ok)
 {
-    if (m) {
-        m->chat_reply_ok = reply_ok;
+    if (!m) {
+        return;
+    }
+    m->chat_reply_ok = reply_ok;
+    if (m->mode == APP_MENU_QUICK && !reply_ok) {
+        int row = m->agent;
+        show(m, APP_MENU_CHAT);   /* it doesn't take a reply now */
+        m->agent = row;
+    }
+}
+
+void app_menu_back_to_agents(app_menu_handle_t m)
+{
+    if (m && (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK)) {
+        int first = m->agent_first;
+        show(m, APP_MENU_AGENTS);
+        m->agent_first = first;
     }
 }
 
@@ -633,19 +671,40 @@ void app_menu_set_paired(app_menu_handle_t m, bool paired, bool agents_paired)
     }
 }
 
-void app_menu_set_agents(app_menu_handle_t m, int count, uint32_t waiting_rows)
+void app_menu_set_agents(app_menu_handle_t m, const app_menu_agent_row_t *rows, int count)
 {
     if (!m) {
         return;
     }
-    m->context.agents_count = count;
-    m->context.agents_waiting = waiting_rows;
+    if (!rows || count < 0) {
+        count = 0;
+    }
+    if (count > APP_MENU_AGENT_MAX) {
+        count = APP_MENU_AGENT_MAX;
+    }
+    for (int i = 0; i < count; i++) {
+        m->rows[i] = rows[i];
+        m->rows[i].id[APP_MENU_ID_MAX - 1] = m->rows[i].req[APP_MENU_REQ_MAX - 1] = 0;
+    }
+    m->agents_count = count;
     if (m->agent_first >= count) {
         m->agent_first = 0;
     }
-    if (m->mode == APP_MENU_AGENT && !waiting(m, m->agent)) {
+    if (m->mode != APP_MENU_AGENT && m->mode != APP_MENU_CHAT && m->mode != APP_MENU_QUICK) {
+        return;
+    }
+    int found = -1;   /* the opened session, wherever it is now */
+    for (int i = 0; i < count && found < 0; i++) {
+        if (strcmp(m->rows[i].id, m->opened_id) == 0) {
+            found = i;
+        }
+    }
+    if (found >= 0) {
+        m->agent = found;
+    }
+    if (m->mode == APP_MENU_AGENT && (found < 0 || strcmp(m->rows[found].req, m->opened_req) != 0)) {
         int first = m->agent_first;
-        show(m, APP_MENU_AGENTS);   /* answered on the Mac or in the terminal */
+        show(m, APP_MENU_AGENTS);   /* answered on the Mac or in the terminal, or it's gone */
         m->agent_first = first;
     }
 }
@@ -665,12 +724,11 @@ void app_menu_set_counts(app_menu_handle_t m, int answers_count, int memory_coun
 
 app_menu_action_t app_menu_take_action(app_menu_handle_t m)
 {
-    app_menu_action_t a = {APP_MENU_ACTION_NONE, 0};
+    app_menu_action_t a;
+    memset(&a, 0, sizeof a);
     if (m) {
         a = m->action;
-        m->action = (app_menu_action_t) {
-            APP_MENU_ACTION_NONE, 0
-        };
+        memset(&m->action, 0, sizeof m->action);
     }
     return a;
 }

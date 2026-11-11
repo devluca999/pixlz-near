@@ -635,6 +635,348 @@ static void test_lock_and_species(void)
     free(m);
 }
 
+// A Mosaico holding Frogg as pending (transfer saved, no commit yet).
+static pt_node_t *pending_mosaico(void)
+{
+    pt_node_t *m = new_node(&MOSAICO);
+    pt_outs_t o;
+    size_t len;
+    char *f = load("offer.json", &len);
+    pt_node_received(m, &MAC, f, len, T0, &o);
+    free(f);
+    f = load("transfer.json", &len);
+    pt_node_received(m, &MAC, f, len, T0, &o);
+    free(f);
+    return m;
+}
+
+static bool sent_type(const pt_outs_t *o, int index, const char *want)
+{
+    char type[16] = "";
+    return sent_field(out_at(o, index, PT_OUT_SEND), "type", type, sizeof type) && strcmp(type, want) == 0;
+}
+
+static void recv_env(pt_node_t *m, const pt_device_t *from, const char *type, int64_t epoch, const char *payload,
+                     int64_t now, pt_outs_t *o)
+{
+    char msg[768];
+    size_t n = env(msg, sizeof msg, from, &MOSAICO, type, epoch, payload);
+    pt_node_received(m, from, msg, n, now, o);
+}
+
+static void ack_return(pt_node_t *m)
+{
+    pt_outs_t o;
+    recv_env(m, &MAC, "accept", 8, "{}", T1, &o);
+    char *sum = load("return_state.sum", NULL), payload[128];
+    snprintf(payload, sizeof payload, "{\"checksum\":\"%s\"}", sum);
+    free(sum);
+    recv_env(m, &MAC, "ack", 9, payload, T1, &o);
+}
+
+// P1/P2: an away record remembers its holder and says who it is.
+static void test_away_holder(void)
+{
+    pt_outs_t o;
+    char buf[PT_NAME_MAX];
+    pt_node_t *m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY);
+    CHECK_STR(m->record.away_id, MAC.id);
+    CHECK_STR(m->record.away_name, MAC.name);
+    const pt_device_t other = {"MAC-0002", "Other Mac"};
+    recv_env(m, &other, "status", 3, "{}", T1, &o);
+    CHECK(sent_type(&o, 0, "statusReply"));
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.holderId", buf, sizeof buf));
+    CHECK_STR(buf, MAC.id);
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.holderName", buf, sizeof buf));
+    CHECK_STR(buf, MAC.name);
+    // Keys stay sorted: held < holderId < holderName < inTrip.
+    const pt_out_t *r = out_at(&o, 0, PT_OUT_SEND);
+    const char *h = r ? strstr(r->body, "\"held\"") : NULL, *hi = r ? strstr(r->body, "\"holderId\"") : NULL;
+    const char *hn = r ? strstr(r->body, "\"holderName\"") : NULL, *it = r ? strstr(r->body, "\"inTrip\"") : NULL;
+    CHECK(h && hi && hn && it && h < hi && hi < hn && hn < it);
+    free(m);
+
+    // Owned: no holder fields.
+    m = owning_mosaico();
+    recv_env(m, &MAC, "status", 8, "{}", T1, &o);
+    CHECK(!sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.holderId", buf, sizeof buf));
+    free(m);
+
+    // Sent away by a trip: the holder is the receiver.
+    m = owning_mosaico();
+    pt_node_send(m, &MAC, T1, &o);
+    ack_return(m);
+    CHECK(m->record.kind == PT_REC_AWAY);
+    CHECK_STR(m->record.away_id, MAC.id);
+    free(m);
+}
+
+// P3: give way to a newer copy, owned or away; the losing copy is not kept.
+static void test_give_way(void)
+{
+    pt_outs_t o;
+    const pt_device_t other = {"MAC-0002", "Other Mac"};
+
+    // held away with a newer epoch: the holder is the one it names.
+    pt_node_t *m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 9,
+             "{\"held\":\"away\",\"holderId\":\"MAC-0002\",\"holderName\":\"Other Mac\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 9);
+    CHECK(m->record.state_len == 0);   // never Bring-able
+    CHECK(!pt_node_can_reclaim(m));
+    CHECK_STR(m->record.away_id, other.id);
+    CHECK_STR(m->record.away_name, other.name);
+    CHECK(out_at(&o, 0, PT_OUT_SAVED));
+    free(m);
+
+    // held away with an equal epoch: ours stays.
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    free(m);
+
+    // held owned, newer: the replying peer holds it; tombstone empty.
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.state_len == 0);
+    CHECK_STR(m->record.away_id, MAC.id);
+    free(m);
+
+    // held owned, same epoch: the smaller device id wins ("MAC-0001" < "MOSAICO-0001").
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY);
+    free(m);
+    const pt_device_t big = {"ZZZ", "Zed"};
+    m = owning_mosaico();
+    pt_node_connected(m, &big, T1, &o);
+    recv_env(m, &big, "statusReply", 8, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    free(m);
+
+    // Giving way mid-offer ends the trip: abort to that peer, and a shrug so the screen stops waiting.
+    m = owning_mosaico();
+    pt_node_send(m, &other, T1, &o);
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && !pt_node_in_trip(m));
+    CHECK(out_at(&o, 0, PT_OUT_SAVED));
+    CHECK(sent_type(&o, 1, "abort"));
+    CHECK(out_at(&o, 1, PT_OUT_SEND) && strcmp(o.items[1].peer.id, other.id) == 0);
+    CHECK(out_at(&o, 2, PT_OUT_SHRUG));
+    if (out_at(&o, 2, PT_OUT_SHRUG)) CHECK_STR(o.items[2].reason, "gaveWay");
+    free(m);
+}
+
+// P4: answer a status that's as new as ours, and ask back; during a trip, ask once it ends.
+static void test_ask_back(void)
+{
+    pt_outs_t o;
+    pt_node_t *m = owning_mosaico();
+    recv_env(m, &MAC, "status", 8, "{}", T1, &o);   // equal epoch
+    CHECK(sent_type(&o, 0, "statusReply") && sent_type(&o, 1, "status"));
+    recv_env(m, &MAC, "status", 7, "{}", T1, &o);   // older: just answer
+    CHECK(o.count == 1 && sent_type(&o, 0, "statusReply"));
+    free(m);
+
+    m = owning_mosaico();
+    const pt_device_t other = {"MAC-0002", "Other Mac"};
+    pt_node_send(m, &other, T1, &o);
+    recv_env(m, &MAC, "status", 9, "{}", T1, &o);
+    CHECK(o.count == 1 && sent_type(&o, 0, "statusReply"));
+    pt_node_tick(m, T1 + PT_SENDER_TIMEOUT_MS, &o);   // the offer times out
+    int k = -1;
+    for (int i = 0; i < o.count; i++) {
+        if (sent_type(&o, i, "status")) k = i;
+    }
+    CHECK(k >= 0 && strcmp(o.items[k].peer.id, MAC.id) == 0);
+    pt_node_send(m, &other, T1, &o);
+    pt_node_tick(m, T1 + 3 * PT_SENDER_TIMEOUT_MS, &o);
+    k = -1;
+    for (int i = 0; i < o.count; i++) {
+        if (sent_type(&o, i, "status")) k = i;
+    }
+    CHECK(k < 0);   // once
+    free(m);
+}
+
+// P5: a pending record is bound to its sender.
+static void test_pending_binds_sender(void)
+{
+    pt_outs_t o;
+    const pt_device_t other = {"MAC-0002", "Other Mac"};
+    pt_node_t *m = pending_mosaico();
+    CHECK(m->record.kind == PT_REC_PENDING);
+    CHECK_STR(m->record.away_id, MAC.id);
+    CHECK_STR(m->record.away_name, MAC.name);
+
+    // Someone else's replies don't touch it.
+    pt_node_connected(m, &other, T0, &o);
+    recv_env(m, &other, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    recv_env(m, &other, "statusReply", 0, "{\"held\":\"none\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    recv_env(m, &other, "statusReply", 3, "{\"held\":\"owned\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    // Nor a commit or abort from someone else.
+    recv_env(m, &other, "commit", 8, "{}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING && o.count == 0);
+    recv_env(m, &other, "abort", 8, "{\"reason\":\"x\"}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+
+    // The sender's "away" promotes only at the pending epoch.
+    pt_node_connected(m, &MAC, T0, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    free(m);
+
+    // The sender holds nothing: ours is the only copy.
+    m = pending_mosaico();
+    pt_node_connected(m, &MAC, T0, &o);
+    recv_env(m, &MAC, "statusReply", 0, "{\"held\":\"none\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    free(m);
+
+    // The sender still owns an older copy and isn't in a trip: discard ours.
+    m = pending_mosaico();
+    pt_node_connected(m, &MAC, T0, &o);
+    recv_env(m, &MAC, "statusReply", 7, "{\"held\":\"owned\",\"inTrip\":true}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    recv_env(m, &MAC, "statusReply", 7, "{\"held\":\"owned\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.state_len == 0);
+    CHECK_STR(m->record.away_id, MAC.id);
+    free(m);
+
+    // A call can't be made for a pending Pixl.
+    m = pending_mosaico();
+    pt_node_call(m, &MAC, T0, &o);
+    CHECK(o.count == 0);
+    free(m);
+}
+
+// P7: whom to trust.
+static void test_trust(void)
+{
+    pt_outs_t o;
+    const pt_device_t other = {"MAC-0002", "Other Mac"};
+
+    // A statusReply nobody asked for is ignored; an asked one counts for 60 s.
+    pt_node_t *m = owning_mosaico();
+    recv_env(m, &MAC, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1 + PT_STATUS_TRUST_MS + 1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &other, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);   // asked MAC, not other
+    recv_env(m, &MAC, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}", T1 + 1000, &o);
+    CHECK(m->record.kind == PT_REC_AWAY);
+    free(m);
+
+    // decline and abort only from the trip's peer.
+    m = owning_mosaico();
+    pt_node_send(m, &MAC, T1, &o);
+    recv_env(m, &other, "decline", 8, "{\"reason\":\"busy\"}", T1, &o);
+    CHECK(pt_node_in_trip(m) && o.count == 0);
+    recv_env(m, &other, "abort", 8, "{\"reason\":\"x\"}", T1, &o);
+    CHECK(pt_node_in_trip(m) && o.count == 0);
+    recv_env(m, &MAC, "abort", 8, "{\"reason\":\"x\"}", T1, &o);
+    CHECK(!pt_node_in_trip(m));
+    free(m);
+
+    // call: only from `call_from` when set (paired), else from anyone.
+    m = owning_mosaico();
+    snprintf(m->call_from, sizeof m->call_from, "%s", other.id);
+    recv_env(m, &MAC, "call", 8, "{}", T1, &o);
+    CHECK(o.count == 0 && !pt_node_in_trip(m));
+    recv_env(m, &other, "call", 8, "{}", T1, &o);
+    CHECK(sent_type(&o, 0, "offer") && pt_node_in_trip(m));
+    free(m);
+}
+
+// Guards shared with the Swift side.
+static void test_guards(void)
+{
+    pt_outs_t o;
+    char reason[32];
+    // No ping-pong: a peer we asked in the last 60 s isn't asked back.
+    pt_node_t *m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "status", 8, "{}", T1 + 1000, &o);
+    CHECK(o.count == 1 && sent_type(&o, 0, "statusReply"));
+    recv_env(m, &MAC, "status", 8, "{}", T1 + PT_STATUS_TRUST_MS + 2000, &o);
+    CHECK(o.count == 2 && sent_type(&o, 1, "status"));   // long ago: ask again
+    free(m);
+
+    // A reply that names us as the holder: we are it, nothing to give way to.
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"away\",\"holderId\":\"MOSAICO-0001\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED && o.count == 0);
+    free(m);
+
+    // A transfer of a species this device can't draw: abort, nothing saved.
+    m = new_node(&MOSAICO);
+    recv_env(m, &MAC, "offer", 7, "{\"name\":\"Frogg\",\"species\":\"frogg\"}", T0, &o);
+    CHECK(sent_type(&o, 0, "accept"));
+    recv_env(m, &MAC, "transfer", 8,
+             "{\"state\":{\"epoch\":8,\"owner\":{\"deviceId\":\"MOSAICO-0001\",\"deviceName\":\"Mosaico\"},"
+             "\"petId\":\"6F0E2C1A-0000-4000-8000-000000000001\",\"species\":\"cat\"}}", T0, &o);
+    CHECK(o.count == 1 && sent_type(&o, 0, "abort"));
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.reason", reason, sizeof reason));
+    CHECK_STR(reason, "unsupportedSpecies");
+    CHECK(m->record.kind == PT_REC_NONE && !pt_node_in_trip(m));
+    free(m);
+}
+
+// P8 / F4: ending a trip on purpose.
+static void test_abort(void)
+{
+    pt_outs_t o;
+    char reason[32];
+    pt_node_t *m = owning_mosaico();
+    CHECK(!pt_node_abort(m, "saveFailed", T1, &o) && o.count == 0);
+    pt_node_send(m, &MAC, T1, &o);
+    CHECK(pt_node_abort(m, "saveFailed", T1, &o));
+    CHECK(sent_type(&o, 0, "abort") && !pt_node_in_trip(m));
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.reason", reason, sizeof reason));
+    CHECK_STR(reason, "saveFailed");
+    CHECK(m->record.kind == PT_REC_OWNED);
+    free(m);
+
+    // Receiving: abort to the sender with the trip's pet and epoch.
+    m = new_node(&MOSAICO);
+    size_t len;
+    char *f = load("offer.json", &len);
+    pt_node_received(m, &MAC, f, len, T0, &o);
+    free(f);
+    CHECK(pt_node_abort(m, "saveFailed", T0, &o));
+    CHECK(sent_type(&o, 0, "abort"));
+    char pet[PT_ID_MAX];
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "petId", pet, sizeof pet));
+    CHECK_STR(pet, PET);
+    CHECK(sent_int(out_at(&o, 0, PT_OUT_SEND), "epoch") == 8);
+    free(m);
+
+    // Committed: just over, no abort (the receiver may already own it).
+    m = owning_mosaico();
+    pt_node_send(m, &MAC, T1, &o);
+    ack_return(m);
+    CHECK(pt_node_in_trip(m));
+    CHECK(pt_node_abort(m, "leaving", T1, &o) && o.count == 0 && !pt_node_in_trip(m));
+    free(m);
+}
+
 static void hexeq(const uint8_t *got, size_t n, const char *want, int line)
 {
     char h[129];
@@ -794,6 +1136,13 @@ int main(int argc, char **argv)
     test_receiver_declines();
     test_recovery();
     test_lock_and_species();
+    test_away_holder();
+    test_give_way();
+    test_ask_back();
+    test_pending_binds_sender();
+    test_trust();
+    test_abort();
+    test_guards();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

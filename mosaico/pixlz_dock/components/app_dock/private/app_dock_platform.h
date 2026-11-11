@@ -22,9 +22,16 @@ int64_t dock_platform_now_ms(void);
 void dock_platform_random(void *ctx, uint8_t *out, size_t n);
 /** This device's stable id and name. */
 void dock_platform_device(pt_device_t *me);
-/** Loads the saved record; false = none (or unreadable). */
-bool dock_platform_load(pt_record_t *record);
-/** Saves the record atomically; false on failure. */
+typedef enum {
+    DOCK_LOAD_NONE = 0,  /**< Nothing saved. */
+    DOCK_LOAD_OK,        /**< `record` holds it. */
+    DOCK_LOAD_BAD,       /**< Something is saved but unreadable: kept aside, never erased. */
+} dock_load_t;
+/** Loads the saved record (PXL2, or an older PXL1 with no holder id). */
+dock_load_t dock_platform_load(pt_record_t *record);
+/** Milliseconds since boot; never jumps (timeouts use this, not the wall clock). */
+int64_t dock_platform_uptime_ms(void);
+/** Saves the record atomically (always PXL2); false on failure. */
 bool dock_platform_save(const pt_record_t *record);
 void dock_platform_log(const char *fmt, ...);
 /** Battery charge (0..100) and whether it is running on battery; false = unknown.

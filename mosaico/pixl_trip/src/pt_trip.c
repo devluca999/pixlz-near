@@ -102,6 +102,8 @@ static void push_shrug(pt_outs_t *out, const pt_device_t *peer, const char *reas
 typedef struct {
     const char *checksum;
     const char *held;
+    const char *holder_id;
+    const char *holder_name;
     int in_trip;       // -1 = absent
     const char *name;
     int proto;         // 0 = absent
@@ -140,6 +142,8 @@ static void send_env(pt_node_t *n, pt_outs_t *out, const pt_device_t *peer, cons
     MEMBER("fromName");
     pt_jw_str(&w, n->me.name);
     if (p && p->held) { MEMBER("held"); pt_jw_str(&w, p->held); }
+    if (p && p->holder_id) { MEMBER("holderId"); pt_jw_str(&w, p->holder_id); }
+    if (p && p->holder_name) { MEMBER("holderName"); pt_jw_str(&w, p->holder_name); }
     if (p && p->in_trip >= 0) { MEMBER("inTrip"); pt_jw_lit(&w, p->in_trip ? "true" : "false"); }
     if (p && p->name) { MEMBER("name"); pt_jw_str(&w, p->name); }
     if (p && p->proto) { MEMBER("proto"); pt_jw_int(&w, p->proto); }
@@ -189,6 +193,41 @@ static void send_plain(pt_node_t *n, pt_outs_t *out, const pt_device_t *peer, co
 static void saved(pt_outs_t *out)
 {
     push(out, PT_OUT_SAVED, NULL);
+}
+
+// `status` to `peer`, remembered so its statusReply is trusted for a while (P7).
+static void send_status(pt_node_t *n, pt_outs_t *out, const pt_device_t *peer, int64_t now_ms)
+{
+    if (n->record.kind == PT_REC_NONE) return;
+    int slot = 0;
+    for (int i = 0; i < PT_ASKED_MAX; i++) {
+        if (strcmp(n->asked[i].id, peer->id) == 0) {
+            slot = i;
+            break;
+        }
+        if (n->asked[i].at_ms < n->asked[slot].at_ms) slot = i;   // else the oldest
+    }
+    copy_str(n->asked[slot].id, sizeof n->asked[slot].id, peer->id);
+    n->asked[slot].at_ms = now_ms;
+    send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
+}
+
+static bool asked_recently(const pt_node_t *n, const pt_device_t *peer, int64_t now_ms)
+{
+    for (int i = 0; i < PT_ASKED_MAX; i++) {
+        if (n->asked[i].id[0] && strcmp(n->asked[i].id, peer->id) == 0) {
+            return now_ms - n->asked[i].at_ms <= PT_STATUS_TRUST_MS;   // a clock step back still counts
+        }
+    }
+    return false;
+}
+
+// A newer copy asked during a trip: now that the trip is over, ask it back.
+static void flush_ask_back(pt_node_t *n, pt_outs_t *out, int64_t now_ms)
+{
+    if (!n->ask_back || n->session.kind != PT_SES_NONE) return;
+    n->ask_back = false;
+    send_status(n, out, &n->ask_back_peer, now_ms);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -349,6 +388,7 @@ static void start_trip(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt
     state_str(n->record.state, n->record.state_len, "name", name, sizeof name);
     n->session.kind = PT_SES_OFFERED;
     n->session.peer = *peer;
+    copy_str(n->session.pet_id, sizeof n->session.pet_id, n->record.pet_id);
     n->session.epoch = n->record.epoch;
     n->session.deadline_ms = now_ms + PT_SENDER_TIMEOUT_MS;
     payload_t p;
@@ -357,6 +397,20 @@ static void start_trip(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt
     p.name = name;
     p.proto = PT_PROTO;
     send_env(n, out, peer, "offer", n->record.pet_id, n->record.epoch, &p, now_ms);
+}
+
+bool pt_node_abort(pt_node_t *n, const char *reason, int64_t now_ms, pt_outs_t *out)
+{
+    begin(n, out);
+    pt_session_kind_t kind = n->session.kind;
+    if (kind == PT_SES_NONE) return false;
+    n->session.kind = PT_SES_NONE;
+    /* Committed: the receiver may own it already; an abort could make it drop the only copy. */
+    if (kind != PT_SES_COMMITTED) {
+        send_reason(n, out, &n->session.peer, "abort", n->session.pet_id, n->session.epoch, reason, now_ms);
+    }
+    flush_ask_back(n, out, now_ms);
+    return true;
 }
 
 void pt_node_send(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out)
@@ -368,11 +422,11 @@ void pt_node_send(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs
 void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_outs_t *out)
 {
     begin(n, out);
-    if (n->record.kind == PT_REC_NONE || n->record.kind == PT_REC_OWNED) return;
+    if (n->record.kind != PT_REC_AWAY) return;   // not while pending: it's on its way
     send_plain(n, out, owner, "call", n->record.pet_id, n->record.epoch, now_ms);
 }
 
-static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const char *away_name,
+static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const pt_device_t *away,
                        const char *state, size_t state_len);
 
 bool pt_node_restyle(pt_node_t *n, const char *species, const char *name, pt_outs_t *out)
@@ -396,7 +450,7 @@ bool pt_node_restyle(pt_node_t *n, const char *species, const char *name, pt_out
     pt_jw_init(&w, quoted, sizeof quoted);
     pt_jw_str(&w, name);
     if (!w.ok || !splice(buf, &len, "name", quoted)) return false;
-    set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, "", buf, len);
+    set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, NULL, buf, len);
     saved(out);
     return true;
 }
@@ -419,7 +473,7 @@ bool pt_node_reclaim(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
                        false)) {
         return false;
     }
-    set_record(n, PT_REC_OWNED, r->pet_id, epoch, "", n->session.next, n->session.next_len);
+    set_record(n, PT_REC_OWNED, r->pet_id, epoch, NULL, n->session.next, n->session.next_len);
     saved(out);
     push(out, PT_OUT_PLAY_ENTRANCE, NULL);
     return true;
@@ -428,8 +482,7 @@ bool pt_node_reclaim(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
 void pt_node_connected(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out)
 {
     begin(n, out);
-    if (n->record.kind == PT_REC_NONE) return;
-    send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
+    send_status(n, out, peer, now_ms);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -491,10 +544,14 @@ static const char *decline_reason(const pt_node_t *n, const env_t *e)
     return NULL;
 }
 
-static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const char *away_name,
+// `away` (NULL = nobody) is the holder when away, the sender when pending.
+static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const pt_device_t *away,
                        const char *state, size_t state_len)
 {
     pt_record_t *r = &n->record;
+    pt_device_t who;
+    memset(&who, 0, sizeof who);
+    if (away) who = *away;   // `away` may point into the record
     // `state` may point into r->state already (memmove handles the overlap).
     if (state && state_len <= PT_STATE_MAX) {
         memmove(r->state, state, state_len);
@@ -505,17 +562,24 @@ static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int
     r->kind = kind;
     if (pet_id != r->pet_id) copy_str(r->pet_id, sizeof r->pet_id, pet_id);
     r->epoch = epoch;
-    if (away_name != r->away_name) copy_str(r->away_name, sizeof r->away_name, away_name ? away_name : "");
+    copy_str(r->away_id, sizeof r->away_id, who.id);
+    copy_str(r->away_name, sizeof r->away_name, who.name);
+}
+
+// The device a pending record came from. Records saved before it was kept have none: anyone.
+static bool is_sender(const pt_node_t *n, const pt_device_t *peer)
+{
+    return !n->record.away_id[0] || strcmp(n->record.away_id, peer->id) == 0;
 }
 
 static void promote(pt_node_t *n, int64_t epoch, const char *pet_id, const pt_device_t *peer, int64_t now_ms,
                     pt_outs_t *out)
 {
     pt_record_t *r = &n->record;
-    if (r->kind == PT_REC_PENDING && strcmp(r->pet_id, pet_id) == 0 && r->epoch == epoch) {
+    if (r->kind == PT_REC_PENDING && strcmp(r->pet_id, pet_id) == 0 && r->epoch == epoch && is_sender(n, peer)) {
         // TODO(spike): Swift also records the travel/receive needs bumps and a `happy` emotion here.
         splice_date(r->state, &r->state_len, "savedAt", now_ms);
-        r->kind = PT_REC_OWNED;
+        set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, NULL, r->state, r->state_len);
         if (n->session.kind == PT_SES_RECEIVING && same_peer(&n->session.peer, peer)) n->session.kind = PT_SES_NONE;
         saved(out);
         send_plain(n, out, peer, "commitAck", pet_id, epoch, now_ms);
@@ -525,16 +589,43 @@ static void promote(pt_node_t *n, int64_t epoch, const char *pet_id, const pt_de
     }
 }
 
-static void discard_pending(pt_node_t *n, const char *away_name, pt_outs_t *out)
+static void discard_pending(pt_node_t *n, const pt_device_t *sender, pt_outs_t *out)
 {
-    set_record(n, PT_REC_AWAY, n->record.pet_id, n->record.epoch - 1, away_name, NULL, 0);
+    set_record(n, PT_REC_AWAY, n->record.pet_id, n->record.epoch - 1, sender, NULL, 0);
     saved(out);
+}
+
+// Another copy is newer: this one steps aside and keeps no safety copy, so it can't come back (P3).
+static void give_way(pt_node_t *n, const env_t *e, const pt_device_t *peer, const char *held, int64_t now_ms,
+                     pt_outs_t *out)
+{
+    pt_record_t *r = &n->record;
+    pt_device_t holder = *peer;
+    if (strcmp(held, "away") == 0) {
+        char id[PT_ID_MAX] = "", name[PT_NAME_MAX] = "";
+        if (!payload_str(e, "holderId", id, sizeof id)) id[0] = 0;
+        if (strcmp(id, n->me.id) == 0) return;   // it names us: we are the holder
+        if (id[0]) {
+            copy_str(holder.id, sizeof holder.id, id);
+            if (!payload_str(e, "holderName", name, sizeof name)) copy_str(name, sizeof name, id);
+            copy_str(holder.name, sizeof holder.name, name);
+        }
+    }
+    pt_session_kind_t was = n->session.kind;
+    n->session.kind = PT_SES_NONE;
+    set_record(n, PT_REC_AWAY, r->pet_id, e->epoch, &holder, NULL, 0);
+    saved(out);
+    if (was == PT_SES_OFFERED || was == PT_SES_TRANSFERRED) {
+        send_reason(n, out, &n->session.peer, "abort", n->session.pet_id, n->session.epoch, "gaveWay", now_ms);
+        push_shrug(out, &n->session.peer, "gaveWay");
+    }
 }
 
 static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out)
 {
     pt_record_t *r = &n->record;
     char held[16];
+    if (!asked_recently(n, peer, now_ms)) return;   // nobody asked it (P7)
     if (r->kind == PT_REC_NONE || strcmp(r->pet_id, e->pet_id) != 0 || !payload_str(e, "held", held, sizeof held)) return;
     pt_span_t v;
     bool peer_in_trip = pt_json_find(e->payload.p, e->payload.len, "inTrip", &v) && pt_json_is_true(v);
@@ -542,13 +633,15 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
 
     switch (r->kind) {
     case PT_REC_PENDING:
-        if (strcmp(held, "away") == 0 && pe >= r->epoch) {
+        if (!is_sender(n, peer)) return;   // only its sender knows (P5)
+        if (strcmp(held, "away") == 0 && pe == r->epoch) {
             promote(n, r->epoch, r->pet_id, peer, now_ms, out);
         } else if (strcmp(held, "owned") == 0 && pe < r->epoch && !peer_in_trip) {
             if (n->session.kind == PT_SES_RECEIVING && same_peer(&n->session.peer, peer)) n->session.kind = PT_SES_NONE;
-            discard_pending(n, peer->name, out);
+            discard_pending(n, peer, out);
         } else if (strcmp(held, "none") == 0) {
-            r->kind = PT_REC_OWNED;  // the sender has nothing: ours is the only copy
+            // the sender has nothing: ours is the only copy
+            set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, NULL, r->state, r->state_len);
             saved(out);
             push(out, PT_OUT_PLAY_ENTRANCE, peer);
         }
@@ -571,7 +664,7 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
                                false)) {
                 return;
             }
-            set_record(n, PT_REC_OWNED, r->pet_id, epoch, "", n->session.next, n->session.next_len);
+            set_record(n, PT_REC_OWNED, r->pet_id, epoch, NULL, n->session.next, n->session.next_len);
             saved(out);
             push(out, PT_OUT_PLAY_ENTRANCE, peer);
         }
@@ -579,12 +672,10 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
     }
 
     case PT_REC_OWNED: {
-        if (strcmp(held, "owned") != 0) return;
-        bool peer_wins = pe > r->epoch || (pe == r->epoch && strcmp(peer->id, n->me.id) < 0);
-        if (!peer_wins) return;
-        set_record(n, PT_REC_AWAY, r->pet_id, pe, peer->name, r->state, r->state_len);
-        n->session.kind = PT_SES_NONE;
-        saved(out);
+        bool owned = strcmp(held, "owned") == 0, away = strcmp(held, "away") == 0;
+        bool peer_wins = ((owned || away) && pe > r->epoch) ||
+                         (owned && pe == r->epoch && strcmp(peer->id, n->me.id) < 0);
+        if (peer_wins) give_way(n, e, peer, held, now_ms, out);
         break;
     }
 
@@ -604,6 +695,7 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
 
     if (strcmp(t, "call") == 0) {
         if (r->kind != PT_REC_OWNED || strcmp(r->pet_id, e.pet_id) != 0) return;
+        if (n->call_from[0] && strcmp(n->call_from, peer->id) != 0) return;   // only the paired Mac (P7)
         if (pt_node_locked(n)) {
             send_reason(n, out, peer, "decline", e.pet_id, e.epoch, "locked", now_ms);
             return;
@@ -618,6 +710,7 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
         }
         n->session.kind = PT_SES_RECEIVING;
         n->session.peer = *peer;
+        copy_str(n->session.pet_id, sizeof n->session.pet_id, e.pet_id);
         n->session.epoch = e.epoch + 1;
         n->session.deadline_ms = now_ms + PT_RECEIVER_TIMEOUT_MS;
         send_plain(n, out, peer, "accept", e.pet_id, e.epoch, now_ms);
@@ -648,9 +741,7 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
         payload_str(&e, "reason", reason, sizeof reason);
         abort_trip(n, out, peer, e.pet_id, n->session.epoch, reason, now_ms);
         /* It's already there: two copies. Ask, so the older one steps aside. */
-        if (strcmp(reason, "alreadyHere") == 0 && n->record.kind != PT_REC_NONE) {
-            send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
-        }
+        if (strcmp(reason, "alreadyHere") == 0) send_status(n, out, peer, now_ms);
 
     } else if (strcmp(t, "transfer") == 0) {
         if (n->session.kind != PT_SES_RECEIVING || !same_peer(&n->session.peer, peer) || e.epoch != n->session.epoch) return;
@@ -667,9 +758,20 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
             send_reason(n, out, peer, "abort", e.pet_id, e.epoch, "badTransfer", now_ms);
             return;
         }
+        /* The state may say another species than the offer did: only keep what this device can draw. */
+        char st_species[32] = "";
+        bool known = false;
+        if (state_str(st.p, st.len, "species", st_species, sizeof st_species)) {
+            for (int i = 0; i < n->known_count && !known; i++) known = strcmp(st_species, n->known_species[i]) == 0;
+        }
+        if (!known) {
+            n->session.kind = PT_SES_NONE;
+            send_reason(n, out, peer, "abort", e.pet_id, e.epoch, "unsupportedSpecies", now_ms);
+            return;
+        }
         char sum[65];
         pt_sha256_hex(st.p, st.len, sum);  // the raw bytes as received (SPEC §10.1)
-        set_record(n, PT_REC_PENDING, e.pet_id, e.epoch, "", st.p, st.len);
+        set_record(n, PT_REC_PENDING, e.pet_id, e.epoch, peer, st.p, st.len);   // bound to its sender (P5)
         saved(out);
         payload_t p;
         payload_init(&p);
@@ -684,7 +786,7 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
             abort_trip(n, out, peer, e.pet_id, e.epoch, "checksumMismatch", now_ms);
             return;
         }
-        set_record(n, PT_REC_AWAY, r->pet_id, e.epoch, peer->name, n->session.next, n->session.next_len);
+        set_record(n, PT_REC_AWAY, r->pet_id, e.epoch, peer, n->session.next, n->session.next_len);
         n->session.kind = PT_SES_COMMITTED;
         n->session.deadline_ms += PT_SENDER_TIMEOUT_MS;
         saved(out);
@@ -709,33 +811,40 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
             payload_str(&e, "reason", reason, sizeof reason);
             shrug = true;
         }
-        if (r->kind == PT_REC_PENDING && strcmp(r->pet_id, e.pet_id) == 0 &&
+        if (r->kind == PT_REC_PENDING && strcmp(r->pet_id, e.pet_id) == 0 && is_sender(n, peer) &&
             (r->epoch == e.epoch || r->epoch == e.epoch + 1)) {
-            discard_pending(n, peer->name, out);
+            discard_pending(n, peer, out);
         }
         if (shrug) push_shrug(out, peer, reason);
 
     } else if (strcmp(t, "status") == 0) {
         const char *held = "none";
         int64_t epoch = 0;
-        if (r->kind != PT_REC_NONE && strcmp(r->pet_id, e.pet_id) == 0) {
-            epoch = r->epoch;
-            held = r->kind == PT_REC_OWNED ? "owned" : r->kind == PT_REC_PENDING ? "pending" : "away";
-        }
+        bool same = r->kind != PT_REC_NONE && strcmp(r->pet_id, e.pet_id) == 0;
         payload_t p;
         payload_init(&p);
+        if (same) {
+            epoch = r->epoch;
+            held = r->kind == PT_REC_OWNED ? "owned" : r->kind == PT_REC_PENDING ? "pending" : "away";
+            if (r->kind == PT_REC_AWAY && r->away_id[0]) {
+                p.holder_id = r->away_id;
+                p.holder_name = r->away_name[0] ? r->away_name : r->away_id;
+            }
+        }
         p.held = held;
         p.in_trip = pt_node_in_trip(n) ? 1 : 0;
         send_env(n, out, peer, "statusReply", e.pet_id, epoch, &p, now_ms);
-        /* The asker's copy is newer than ours: ask back, so its answer settles it here too. */
-        if (r->kind != PT_REC_NONE && strcmp(r->pet_id, e.pet_id) == 0 && e.epoch > r->epoch &&
-                n->session.kind == PT_SES_NONE) {
-            send_plain(n, out, peer, "status", r->pet_id, r->epoch, now_ms);
+        /* The asker's copy is as new as ours: ask back, so its answer settles it here too (P4).
+         * Not if we asked it lately: two equal copies would ask each other forever. */
+        if (same && e.epoch >= r->epoch && !asked_recently(n, peer, now_ms)) {
+            n->ask_back = true;
+            n->ask_back_peer = *peer;
         }
 
     } else if (strcmp(t, "statusReply") == 0) {
         reconcile(n, &e, peer, now_ms, out);
     }
+    flush_ask_back(n, out, now_ms);
 }
 
 void pt_node_tick(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
@@ -746,20 +855,19 @@ void pt_node_tick(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
     switch (n->session.kind) {
     case PT_SES_OFFERED:
     case PT_SES_TRANSFERRED:
-        abort_trip(n, out, peer, n->record.pet_id, n->session.epoch, "timeout", now_ms);
+        abort_trip(n, out, peer, n->session.pet_id, n->session.epoch, "timeout", now_ms);
         break;
     case PT_SES_COMMITTED:
         n->session.kind = PT_SES_NONE;  // no commitAck: stay away; the next status settles it
         break;
     case PT_SES_RECEIVING:
         n->session.kind = PT_SES_NONE;
-        if (n->record.kind == PT_REC_PENDING) {
-            send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
-        }
+        if (n->record.kind == PT_REC_PENDING) send_status(n, out, peer, now_ms);
         break;
     case PT_SES_NONE:
         break;
     }
+    flush_ask_back(n, out, now_ms);
 }
 
 size_t pt_hello_encode(const pt_device_t *me, char *buf, size_t cap)

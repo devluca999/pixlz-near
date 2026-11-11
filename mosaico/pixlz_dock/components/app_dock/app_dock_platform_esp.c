@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -23,6 +24,7 @@
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mdns.h"
 #include "nvs.h"
@@ -37,14 +39,27 @@ static const char *TAG = "pixlz_dock";
 #define SHARED_NAMESPACE "shared"
 #define STORE_NAMESPACE "pixlz"
 #define STORE_KEY "record"
-#define RECORD_MAGIC 0x50584C31u /* "PXL1" */
+#define BAD_KEY "record_bad"     /* an unreadable record, kept once for a look later */
+#define RECORD_MAGIC_V1 0x50584C31u /* "PXL1": no holder id */
+#define RECORD_MAGIC 0x50584C32u /* "PXL2" */
 #define CLOCK_VALID_AFTER 1735689600 /* 2025-01-01: anything earlier means SNTP hasn't run */
+
+/* PXL1, as older firmware saved it: still loaded, never written. */
+typedef struct {
+    uint32_t magic;
+    uint32_t kind;
+    int64_t epoch;
+    char pet_id[PT_ID_MAX];
+    char away_name[PT_NAME_MAX];
+    uint32_t state_len;
+} record_header_v1_t;
 
 typedef struct {
     uint32_t magic;
     uint32_t kind;
     int64_t epoch;
     char pet_id[PT_ID_MAX];
+    char away_id[PT_ID_MAX];
     char away_name[PT_NAME_MAX];
     uint32_t state_len;
 } record_header_t;
@@ -283,6 +298,11 @@ void dock_platform_offer_clock(int64_t unix_ms)
     }
 }
 
+int64_t dock_platform_uptime_ms(void)
+{
+    return esp_timer_get_time() / 1000;
+}
+
 int64_t dock_platform_now_ms(void)
 {
     struct timeval tv;
@@ -304,28 +324,74 @@ void dock_platform_device(pt_device_t *me)
     snprintf(me->name, sizeof me->name, "Mosaico %02X%02X", mac[4], mac[5]);
 }
 
-bool dock_platform_load(pt_record_t *r)
+/* An unreadable record: copy it to BAD_KEY once, so nothing is lost when it's forgotten. */
+static void keep_bad_blob(void)
+{
+    nvs_handle_t h;
+    if (!s_store_ok || nvs_open(STORE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    size_t size = 0;
+    if (nvs_get_blob(h, BAD_KEY, NULL, &size) == ESP_OK) {
+        nvs_close(h);
+        return;   /* kept already */
+    }
+    size = 0;
+    if (nvs_get_blob(h, STORE_KEY, NULL, &size) == ESP_OK && size > 0) {
+        void *buf = malloc(size);
+        bool ok = buf && nvs_get_blob(h, STORE_KEY, buf, &size) == ESP_OK &&
+                  nvs_set_blob(h, BAD_KEY, buf, size) == ESP_OK && nvs_commit(h) == ESP_OK;
+        free(buf);
+        ESP_LOGW(TAG, "saved Pixl unreadable (%u bytes); %s", (unsigned)size, ok ? "copied to " BAD_KEY : "copy failed");
+    }
+    nvs_close(h);
+}
+
+dock_load_t dock_platform_load(pt_record_t *r)
 {
     nvs_handle_t h;
     if (nvs_flash_init() != ESP_OK || nvs_open(STORE_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
-        return false;
+        return DOCK_LOAD_NONE;   /* no namespace yet: nothing was ever saved */
     }
     size_t len = sizeof s_blob;
     esp_err_t err = nvs_get_blob(h, STORE_KEY, &s_blob, &len);
     nvs_close(h);
-    const record_header_t *hd = &s_blob.header;
-    if (err != ESP_OK || len < sizeof *hd || hd->magic != RECORD_MAGIC || hd->state_len > PT_STATE_MAX ||
-            len != sizeof *hd + hd->state_len || hd->kind > PT_REC_AWAY) {
-        return false;
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return DOCK_LOAD_NONE;
     }
-    r->kind = (pt_rec_kind_t)hd->kind;
-    r->epoch = hd->epoch;
-    memcpy(r->pet_id, hd->pet_id, sizeof r->pet_id);
-    memcpy(r->away_name, hd->away_name, sizeof r->away_name);
-    r->pet_id[PT_ID_MAX - 1] = r->away_name[PT_NAME_MAX - 1] = 0;
-    memcpy(r->state, s_blob.state, hd->state_len);
-    r->state_len = hd->state_len;
-    return true;
+    static record_header_t hd;      /* single owner (the dock loop); kept off the stack */
+    static record_header_v1_t v1;
+    const char *state = NULL;
+    memset(&hd, 0, sizeof hd);
+    if (err == ESP_OK && len >= sizeof(record_header_v1_t) && s_blob.header.magic == RECORD_MAGIC_V1) {
+        memcpy(&v1, &s_blob, sizeof v1);
+        hd.magic = v1.magic;
+        hd.kind = v1.kind;
+        hd.epoch = v1.epoch;
+        memcpy(hd.pet_id, v1.pet_id, sizeof hd.pet_id);
+        memcpy(hd.away_name, v1.away_name, sizeof hd.away_name);
+        hd.state_len = v1.state_len;
+        state = (const char *)&s_blob + sizeof v1;
+        if (len != sizeof v1 + hd.state_len) {
+            state = NULL;
+        }
+    } else if (err == ESP_OK && len >= sizeof hd && s_blob.header.magic == RECORD_MAGIC) {
+        hd = s_blob.header;
+        state = len == sizeof hd + hd.state_len ? s_blob.state : NULL;
+    }
+    if (!state || hd.state_len > PT_STATE_MAX || hd.kind > PT_REC_AWAY) {
+        keep_bad_blob();
+        return DOCK_LOAD_BAD;
+    }
+    r->kind = (pt_rec_kind_t)hd.kind;
+    r->epoch = hd.epoch;
+    memcpy(r->pet_id, hd.pet_id, sizeof r->pet_id);
+    memcpy(r->away_id, hd.away_id, sizeof r->away_id);
+    memcpy(r->away_name, hd.away_name, sizeof r->away_name);
+    r->pet_id[PT_ID_MAX - 1] = r->away_id[PT_ID_MAX - 1] = r->away_name[PT_NAME_MAX - 1] = 0;
+    memcpy(r->state, state, hd.state_len);
+    r->state_len = hd.state_len;
+    return DOCK_LOAD_OK;
 }
 
 bool dock_platform_save(const pt_record_t *r)
@@ -339,6 +405,7 @@ bool dock_platform_save(const pt_record_t *r)
     hd->kind = (uint32_t)r->kind;
     hd->epoch = r->epoch;
     memcpy(hd->pet_id, r->pet_id, sizeof hd->pet_id);
+    memcpy(hd->away_id, r->away_id, sizeof hd->away_id);
     memcpy(hd->away_name, r->away_name, sizeof hd->away_name);
     hd->state_len = (uint32_t)r->state_len;
     memcpy(s_blob.state, r->state, r->state_len);
