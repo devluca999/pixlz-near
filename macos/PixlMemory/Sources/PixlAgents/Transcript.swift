@@ -11,6 +11,19 @@ public struct ChatLine: Sendable, Equatable {
 }
 
 public enum Transcript {
+    /// How a reply sent through Pixlz starts, so Claude (and the terminal) see it's from you.
+    public static let replyMark = "Message from you via Pixlz ("
+    public static func label(via: String) -> String { "\(replyMark)\(via)): " }
+
+    /// A Stop hook's text as Claude Code records it ("Stop hook feedback:\n…"): Pixlz's replies
+    /// become your lines again; other hooks' feedback is left out.
+    static func pixlzReply(_ s: String) -> String? {
+        let body = s.hasPrefix("Stop hook feedback:") ? String(s.dropFirst("Stop hook feedback:".count)).trimmingCharacters(in: .whitespacesAndNewlines) : s
+        guard body.hasPrefix(replyMark), let close = body.range(of: "): ") else { return nil }
+        let via = body[body.index(body.startIndex, offsetBy: replyMark.count)..<close.lowerBound]
+        return "(\(via)) " + body[close.upperBound...]
+    }
+
     /// Only the end of a long transcript is read.
     public static let tailBytes = 400_000
 
@@ -37,7 +50,11 @@ public enum Transcript {
             if o["isSidechain"] as? Bool == true { continue }
             guard type == "user" || type == "assistant", let m = o["message"] as? [String: Any] else { continue }
             if let s = m["content"] as? String {
-                if type == "user", !s.hasPrefix("<") { lines.append(ChatLine(role: .you, text: clean(s))) }
+                if type == "user", let r = pixlzReply(s) {
+                    lines.append(ChatLine(role: .you, text: clean(r)))
+                } else if type == "user", !s.hasPrefix("<"), !s.hasPrefix("Stop hook feedback:"), o["isMeta"] as? Bool != true {
+                    lines.append(ChatLine(role: .you, text: clean(s)))
+                }
                 continue
             }
             for item in m["content"] as? [[String: Any]] ?? [] {

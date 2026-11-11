@@ -152,6 +152,15 @@ import Testing
         #expect(Transcript.parse(jsonl, limit: 2).lines.count == 2)
     }
 
+    @Test func repliesSentThroughPixlzShowAsYours() {
+        let jsonl = [
+            #"{"type":"user","isMeta":true,"message":{"content":"Stop hook feedback:\nMessage from you via Pixlz (dictated on the Mosaico): run the tests please"}}"#,
+            #"{"type":"user","isMeta":true,"message":{"content":"Stop hook feedback:\nlint failed"}}"#,
+        ].joined(separator: "\n")
+        #expect(Transcript.parse(jsonl).lines == [ChatLine(role: .you, text: "(dictated on the Mosaico) run the tests please")])
+        #expect(Transcript.label(via: "typed on the Mac") == "Message from you via Pixlz (typed on the Mac): ")
+    }
+
     @Test func aStopReplyContinuesTheSession() throws {
         let o = try JSONSerialization.jsonObject(with: AgentHub.stopReply("now run the linter")) as? [String: String]
         #expect(o == ["decision": "block", "reason": "now run the linter"])

@@ -223,9 +223,11 @@ final class AgentController {
     /// here and goes the moment that session next finishes (its Stop hook answers it at once,
     /// whether or not Reply from Pixlz is on). A newer reply replaces a waiting one.
     @discardableResult
-    func reply(_ sessionID: String, _ text: String) -> ReplyResult {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, hub.sessions[sessionID] != nil else { return .failed }
+    func reply(_ sessionID: String, _ text: String, via: String = "typed on the Mac") -> ReplyResult {
+        let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty, hub.sessions[sessionID] != nil else { return .failed }
+        // Claude Code shows a Stop hook's text as "Stop hook feedback": say plainly it's you.
+        let t = Transcript.label(via: via) + said
         let project = hub.sessions[sessionID]?.project ?? "?"
         guard let h = heldStops.removeValue(forKey: sessionID) else {
             queued[sessionID] = t
