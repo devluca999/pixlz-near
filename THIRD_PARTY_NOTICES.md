@@ -1,7 +1,5 @@
 # Third-party notices
 
-None yet.
-
 ## raylib default font (ESP-Mosaico app)
 
 `mosaico/pixlz_dock/components/app_game_runtime/private/pixl_font.h` is generated from raylib's
