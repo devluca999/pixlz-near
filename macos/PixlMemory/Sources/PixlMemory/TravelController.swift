@@ -23,6 +23,34 @@ final class TravelController {
 
     init(app: AppController) { self.app = app }
 
+    // MARK: Mosaico feed (opt-in per device: MosaicoFeed.defaultsKey)
+
+    /// The latest Ask answers, newest first, for a Mosaico's Answers page.
+    private var recentAnswers: [(question: String, answer: String)] = []
+    private var feedTimer: Timer?
+
+    func noteAnswer(question: String, answer: String) {
+        recentAnswers.insert((question, answer), at: 0)
+        recentAnswers = Array(recentAnswers.prefix(MosaicoFeed.maxAnswers))
+        pushFeed()
+    }
+
+    /// Sends the answers and the newest highlights to every reachable device that opted in.
+    func pushFeed() {
+        let wanted = MosaicoFeed.devices()
+        let targets = peers.filter { wanted.contains($0.deviceId) }
+        guard !targets.isEmpty, let r = runner else { return }
+        let answers = recentAnswers, me = self.me
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let highlights = await self.app.client.highlights(limit: MosaicoFeed.maxHighlights)
+            let body = MosaicoFeed.body(answers: answers,
+                                        highlights: highlights.map { ($0.title ?? $0.url ?? "Highlight", $0.text) }, from: me)
+            for p in targets { r.transport.sendFrame(body, to: p) }
+            Debug.log("travel: feed to \(targets.map(\.deviceName)): \(answers.count) answers, \(highlights.count) highlights")
+        }
+    }
+
     var me: DeviceRef { ThisDevice.ref() }
 
     /// Where this device keeps its Pixl's state (a second copy of the app gets its own).
@@ -41,8 +69,16 @@ final class TravelController {
             r.adoptIfNeeded(species: PixlSkins.currentID, name: app.settings.name)
         }
         r.onPeers = { [weak self] list in
-            self?.peers = list
+            guard let self else { return }
+            let fresh = list.contains { p in !self.peers.contains(p) }
+            self.peers = list
             Debug.log("travel: nearby \(list.map(\.deviceName))")
+            // after the trip runner's own hello (status), so the Mosaico knows who we are
+            if fresh { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.pushFeed() } }
+        }
+        feedTimer?.invalidate()
+        feedTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pushFeed() }
         }
         r.onAsk = { [weak self] peer, name in self?.ask(peer: peer, name: name) }
         r.onExit = { [weak self] to in self?.leave(to: to) }

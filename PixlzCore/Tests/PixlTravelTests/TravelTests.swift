@@ -96,4 +96,29 @@ struct BonjourTripTests {
         t.setManualPeers([])
         #expect(await waitUntil(2) { seen.isEmpty })
     }
+
+    @Test func mosaicoFeedIsAsciiTrimmedAndFits() throws {
+        #expect(MosaicoFeed.ascii("Glass frogs’ skin — “see-through”… **bold** `x`", 100)
+                == "Glass frogs' skin - \"see-through\"... bold x")
+        #expect(MosaicoFeed.ascii("Café  naïve\n\tline", 100) == "Cafe naive line")
+        #expect(MosaicoFeed.ascii("🐸 ribbit", 100) == "ribbit")
+        #expect(MosaicoFeed.ascii(String(repeating: "a", count: 50), 10) == "aaaaaaa...")
+
+        let body = MosaicoFeed.body(answers: [("Why are frogs green?", "Camouflage.")],
+                                    highlights: [("Glass frogs", "Their skin is see-through.")])
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let feed = try #require(json["feed"] as? [String: Any])
+        let answers = try #require(feed["answers"] as? [[String: String]])
+        #expect(answers == [["q": "Why are frogs green?", "a": "Camouflage."]])
+        #expect((feed["highlights"] as? [[String: String]])?.first?["title"] == "Glass frogs")
+
+        // Many long items: trimmed to fit the Mosaico's buffer, newest kept.
+        let long = String(repeating: "word ", count: 400)
+        let big = MosaicoFeed.body(answers: (0..<10).map { ("q\($0) " + long, long) },
+                                   highlights: (0..<10).map { ("t\($0) " + long, long) })
+        #expect(big.count <= MosaicoFeed.maxBytes)
+        let bigFeed = try #require((try JSONSerialization.jsonObject(with: big) as? [String: Any])?["feed"] as? [String: Any])
+        let first = (bigFeed["answers"] as? [[String: String]])?.first?["q"] ?? ""
+        #expect(first.hasPrefix("q0 "))
+    }
 }

@@ -125,6 +125,27 @@ public final class BonjourTransport: @unchecked Sendable {
         }
     }
 
+    /// Sends one framed JSON body that isn't a trip envelope (the Mosaico feed) on the open
+    /// connection to `peer`, opening one if needed.
+    public func sendFrame(_ body: Data, to peer: DeviceRef) {
+        queue.async {
+            var length = UInt32(body.count).bigEndian
+            let data = Data(bytes: &length, count: 4) + body
+            let c: NWConnection
+            if let open = self.conns[peer.deviceId] {
+                c = open
+            } else if let f = self.found[peer.deviceId] {
+                c = NWConnection(to: f.endpoint, using: .tcp)
+                self.conns[peer.deviceId] = c
+                self.inboundPeer[ObjectIdentifier(c)] = peer
+                self.start(c)
+            } else {
+                return
+            }
+            c.send(content: data, completion: .contentProcessed { _ in })
+        }
+    }
+
     // MARK: connections
 
     private func accept(_ c: NWConnection) { start(c) }

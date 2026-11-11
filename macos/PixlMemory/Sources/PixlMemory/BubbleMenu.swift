@@ -404,6 +404,7 @@ final class BubbleMenu {
                 switch result {
                 case .success(let r):
                     card.show(r)
+                    self.app.travel.noteAnswer(question: q, answer: r.answer)
                     // an answer that lists places or things: their pictures, looked up by name on Wikipedia
                     Task { @MainActor [weak self, weak card] in
                         let pics = await AnswerPictures.find(for: r.answer)
