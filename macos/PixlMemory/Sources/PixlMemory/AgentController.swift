@@ -160,6 +160,14 @@ final class AgentController {
         // Notification ("waiting for your input", ~60 s after it finished) isn't moving on.
         if heldStops[event.sessionID] != nil, event.name != "Notification" { release(event.sessionID) }
         let request = hub.receive(event, at: Date())
+        if event.name == "Stop", let waiting = queued.removeValue(forKey: event.sessionID) {
+            releaseSettled()
+            Debug.log("agents: \(hub.sessions[event.sessionID]?.project ?? "?") finished; queued reply delivered")
+            hub.setReplyOpen(event.sessionID, false)
+            finish(fd, reply: AgentHub.stopReply(waiting))
+            changed()
+            return
+        }
         if event.name == "Stop", replyHere {
             releaseSettled()
             heldStops[event.sessionID] = (fd, Date())
@@ -203,17 +211,29 @@ final class AgentController {
         changed()
     }
 
-    /// Continue a finished session with `text` as your next message. False when it isn't held
-    /// open any more (it timed out, or you answered in the terminal).
+    enum ReplyResult { case sent, queued, failed }
+    /// Replies waiting for their session to finish (it was working, or its window had closed).
+    private(set) var queued: [String: String] = [:]
+
+    /// Your next message for a session: now, if it's finished and held open; otherwise it waits
+    /// here and goes the moment that session next finishes (its Stop hook answers it at once,
+    /// whether or not Reply from Pixlz is on). A newer reply replaces a waiting one.
     @discardableResult
-    func reply(_ sessionID: String, _ text: String) -> Bool {
+    func reply(_ sessionID: String, _ text: String) -> ReplyResult {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, let h = heldStops.removeValue(forKey: sessionID) else { return false }
-        Debug.log("agents: reply to \(hub.sessions[sessionID]?.project ?? "?") (\(t.count) chars)")
+        guard !t.isEmpty, hub.sessions[sessionID] != nil else { return .failed }
+        let project = hub.sessions[sessionID]?.project ?? "?"
+        guard let h = heldStops.removeValue(forKey: sessionID) else {
+            queued[sessionID] = t
+            Debug.log("agents: reply to \(project) queued until it finishes (\(t.count) chars)")
+            changed()
+            return .queued
+        }
+        Debug.log("agents: reply to \(project) (\(t.count) chars)")
         hub.setReplyOpen(sessionID, false)
         finish(h.fd, reply: AgentHub.stopReply(t))
         changed()
-        return true
+        return .sent
     }
 
     /// Let a held session finish normally.

@@ -35,16 +35,14 @@ public final class ChatCard: PixlCard {
                 stack.addArrangedSubview(text("▸ " + Self.cut(l.text, 200), size: 11, muted: true, mono: true))
             }
         }
-        if replyOpen {
-            input.widthAnchor.constraint(equalToConstant: inner).isActive = true
-            input.onReturn = { [weak self] in self?.submit() }
-            input.onEscape = { [weak self] in self?.onClose?() }
-            stack.addArrangedSubview(input)
-            setFooter([PixelButton(title: "Reply", style: .primary, hint: "↵") { [weak self] in self?.submit() }],
-                      hint: "continues this session")
-        } else {
-            setFooter([], hint: replyNote)
-        }
+        // The reply field is always here: a reply to a session that's still working waits and
+        // goes when it finishes (`replyNote` says so).
+        input.widthAnchor.constraint(equalToConstant: inner).isActive = true
+        input.onReturn = { [weak self] in self?.submit() }
+        input.onEscape = { [weak self] in self?.onClose?() }
+        stack.addArrangedSubview(input)
+        setFooter([PixelButton(title: replyOpen ? "Reply" : "Queue reply", style: .primary, hint: "↵") { [weak self] in self?.submit() }],
+                  hint: replyOpen ? "Claude is waiting for you" : replyNote)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
