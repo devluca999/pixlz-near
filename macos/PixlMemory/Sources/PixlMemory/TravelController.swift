@@ -227,12 +227,18 @@ final class TravelController {
         // bridge's local port instead of Wi-Fi. Only for a Mosaico this Mac knows.
         let ble = BLEBridge(me: me)
         ble.onState = { Debug.log("travel: \($0)") }
-        ble.onLink = { [weak r] ref, port in
+        ble.onLink = { [weak r, weak self] ref, port in
             guard MosaicoFeed.devices().contains(ref.deviceId) || MosaicoPairingController.load(ref.deviceId) != nil else {
                 Debug.log("travel: bluetooth link to \(ref.deviceName) not used (not a feed device or paired)")
                 return
             }
             r?.transport.setRoute(ref, host: "127.0.0.1", port: port)
+            // Say hello now (the first frame over the link is it), so the Mosaico knows this Mac
+            // within a second instead of at the next routine update.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.pushAgents()
+                self?.pushFeed()
+            }
         }
         ble.onUnlink = { [weak r] id in r?.transport.clearRoute(id) }
         ble.start()
