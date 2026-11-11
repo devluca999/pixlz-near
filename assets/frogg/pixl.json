@@ -158,6 +158,7 @@
       "being a frog"
     ],
     "sounds": {
+      "alert": ["ribbit! ribbit!", "RIBBIT!", "rrbt rrbt!"],
       "greet": [
         "ribbit!",
         "rrbt?"

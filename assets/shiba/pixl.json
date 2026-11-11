@@ -154,6 +154,7 @@
       "making a new friend"
     ],
     "sounds": {
+      "alert": ["wan! wan!", "WAN WAN WAN!", "awoo! awoo!"],
       "greet": [
         "wan!",
         "awoo!"

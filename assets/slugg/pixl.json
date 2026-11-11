@@ -150,6 +150,7 @@
       "enjoying the damp"
     ],
     "sounds": {
+      "alert": ["squelch!", "SQUELCH!", "shlp shlp!"],
       "greet": [
         "...",
         "squelch"
