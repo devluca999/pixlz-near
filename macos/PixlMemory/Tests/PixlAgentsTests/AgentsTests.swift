@@ -103,6 +103,20 @@ import Testing
         #expect(HookSettings.removing(from: HookSettings.adding(to: [:], hookPath: hook))["hooks"] == nil)
     }
 
+    @Test func removeKeepsYourOwnHooksThatShareAnEntry() {
+        let shared: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "say done"],
+                                                                   ["type": "command", "command": "'\(hook)'"]]]]]]
+        let back = HookSettings.removing(from: shared)
+        let stop = ((back["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?.first?["hooks"] as? [[String: Any]]
+        #expect(stop?.count == 1 && stop?.first?["command"] as? String == "say done")
+    }
+
+    @Test func aMovedAppCountsAsNotInstalled() {
+        let s = HookSettings.adding(to: [:], hookPath: hook)
+        #expect(HookSettings.installed(in: s, hookPath: hook))
+        #expect(!HookSettings.installed(in: s, hookPath: "/Applications/Pixl Memory.app/Contents/MacOS/pixl-agent-hook"))
+    }
+
     @Test func fileRoundTripKeepsABackup() throws {
         let dir = FileManager.default.temporaryDirectory.appending(path: "pixlz-hooks-\(UUID().uuidString)")
         let url = HookSettings.url(home: dir)

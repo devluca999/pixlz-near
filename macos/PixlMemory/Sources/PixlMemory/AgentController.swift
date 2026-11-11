@@ -36,7 +36,15 @@ final class AgentController {
     /// the terminal asks as usual, without waiting on Pixlz.
     var answerHere: Bool {
         get { UserDefaults.standard.bool(forKey: answerKey) }
-        set { UserDefaults.standard.set(newValue, forKey: answerKey); Debug.log("agents: answer here \(newValue)") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: answerKey)
+            Debug.log("agents: answer here \(newValue)")
+            if !newValue {   // let every waiting hook go now: the terminal asks
+                for (id, fd) in held { finish(fd, reply: nil); hub.unmarkHeld(id) }
+                held.removeAll()
+                changed()
+            }
+        }
     }
     /// While a session waits on you, the Pixl keeps calling (every 20 s) in its own voice.
     var alertsOn: Bool {
@@ -50,7 +58,7 @@ final class AgentController {
         Bundle.main.executableURL!.deletingLastPathComponent().appending(path: "pixl-agent-hook").path
     }
     var settingsURL: URL { HookSettings.url(home: FileManager.default.homeDirectoryForCurrentUser) }
-    var hooksInstalled: Bool { (try? HookSettings.read(settingsURL)).map(HookSettings.installed) ?? false }
+    var hooksInstalled: Bool { (try? HookSettings.read(settingsURL)).map { HookSettings.installed(in: $0, hookPath: hookPath) } ?? false }
 
     /// The bubble's sub-label: nil hides the Agents bubble (nothing connected, nothing running).
     var bubbleSub: String? {
@@ -64,6 +72,10 @@ final class AgentController {
     func start() {
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        if Self.someoneListens(at: path) {
+            Debug.log("agents: another Pixl Memory already listens at \(path); not taking it over")
+            return
+        }
         unlink(path)
         let s = socket(AF_UNIX, SOCK_STREAM, 0)
         guard s >= 0 else { Debug.log("agents: socket failed"); return }
@@ -81,6 +93,17 @@ final class AgentController {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
         timer?.tolerance = 0.3
         Debug.log("agents: listening at \(path) (hooks \(hooksInstalled ? "installed" : "not installed"))")
+    }
+
+    /// Is another live process listening on that socket?
+    static func someoneListens(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        _ = withUnsafeMutableBytes(of: &addr.sun_path) { buf in path.utf8CString.withUnsafeBytes { buf.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(buf.count - 1))) } }
+        return withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } } == 0
     }
 
     private func accept() {
@@ -136,6 +159,7 @@ final class AgentController {
         if heldStops[event.sessionID] != nil { release(event.sessionID) }   // it moved on without us
         let request = hub.receive(event, at: Date())
         if event.name == "Stop", replyHere {
+            releaseSettled()
             heldStops[event.sessionID] = (fd, Date())
             hub.setReplyOpen(event.sessionID, true)
             Debug.log("agents: \(hub.sessions[event.sessionID]?.project ?? "?") finished; open for a reply")
@@ -219,7 +243,10 @@ final class AgentController {
     private func tick() {
         let gone = hub.expire(at: Date())
         for id in gone {
-            if let fd = held.removeValue(forKey: id) { finish(fd, reply: nil) }
+            if let fd = held.removeValue(forKey: id) {
+                finish(fd, reply: nil)
+                app.notify(.agentsError("A request waited too long here. Answer it in the terminal."))
+            }
             Debug.log("agents: \(id) timed out; the terminal asks")
         }
         if !gone.isEmpty { changed() }
@@ -244,7 +271,7 @@ final class AgentController {
         lastAlert = Date()
         Debug.log("agents: alert for \(oldest.project)")
         // Its own call ("wan! wan!") leads a plain-English notice naming the session.
-        app.notify(.agents("\(oldest.project) needs you: \(oldest.summary)"), voice: .alert)
+        app.notify(.agents("\(oldest.project) needs you: \(oldest.summary)"), voice: .alert, urgent: true)
     }
 
     func snooze(minutes: Double = 10) {

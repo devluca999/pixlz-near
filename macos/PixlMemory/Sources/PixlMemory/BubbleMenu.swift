@@ -354,7 +354,7 @@ final class BubbleMenu {
             case "disconnect":
                 self.closeList()
                 if let why = agents.removeHooks() { self.app.notify(.agentsError(why)) }
-                else { self.app.notify(.agents("Claude Code disconnected. Its settings are back as they were.")) }
+                else { self.app.notify(.agents("Claude Code disconnected: Pixlz's hooks are removed; your own are kept.")) }
             default: agents.onExtraRow?(row.id)
             }
         }

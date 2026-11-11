@@ -162,6 +162,11 @@ public struct AgentHub: Sendable {
         if let i = requests.firstIndex(where: { $0.id == requestID }) { requests[i].held = true }
     }
 
+    /// Pixlz let go of it: it stays listed, for the terminal to answer.
+    public mutating func unmarkHeld(_ requestID: String) {
+        if let i = requests.firstIndex(where: { $0.id == requestID }) { requests[i].held = false }
+    }
+
     /// The request was answered (or its hook went away): it leaves the list.
     public mutating func resolve(_ requestID: String) {
         guard let i = requests.firstIndex(where: { $0.id == requestID }) else { return }
