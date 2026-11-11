@@ -24,6 +24,9 @@ extern "C" {
 #define PT_OUT_MAX 4
 #define PT_SENDER_TIMEOUT_MS 8000
 #define PT_RECEIVER_TIMEOUT_MS 10000
+/// A statusReply counts only from a peer we sent `status` to this recently.
+#define PT_STATUS_TRUST_MS 60000
+#define PT_ASKED_MAX 4
 
 typedef struct {
     char id[PT_ID_MAX];
@@ -42,7 +45,8 @@ typedef struct {
     pt_rec_kind_t kind;
     char pet_id[PT_ID_MAX];
     int64_t epoch;
-    /// Away: the device it went to.
+    /// Away: the device that holds it. Pending: the device that sent it.
+    char away_id[PT_ID_MAX];
     char away_name[PT_NAME_MAX];
     size_t state_len;
     char state[PT_STATE_MAX];
@@ -89,17 +93,29 @@ typedef struct {
     int known_count;
     pt_random_fn random;
     void *random_ctx;
+    /// Who may `call` the Pixl away from here: "" = any peer, else only this device id (the paired Mac).
+    char call_from[PT_ID_MAX];
 
     // In memory only; lost on a crash.
     struct {
         pt_session_kind_t kind;
         pt_device_t peer;
+        char pet_id[PT_ID_MAX];
         int64_t epoch;
         int64_t deadline_ms;
         char checksum[65];
         size_t next_len;
         char next[PT_STATE_MAX];
     } session;
+
+    /// Peers we sent `status` to, and when (for trusting their statusReply).
+    struct {
+        char id[PT_ID_MAX];
+        int64_t at_ms;
+    } asked[PT_ASKED_MAX];
+    /// A newer copy asked during a trip: ask it back once the trip ends.
+    bool ask_back;
+    pt_device_t ask_back_peer;
 
     char msg[PT_OUT_MAX][PT_MSG_MAX];
     int msg_used;
@@ -109,11 +125,14 @@ typedef struct {
 
 void pt_node_init(pt_node_t *n, const pt_device_t *me, pt_random_fn random, void *random_ctx);
 
+/// End any trip now (save failed, leaving the app): sends `abort` with `reason` to the trip's
+/// peer while offered, transferred or receiving; a committed trip just ends (no abort). The
+/// record isn't touched. False when there was no trip.
+bool pt_node_abort(pt_node_t *n, const char *reason, int64_t now_ms, pt_outs_t *out);
 /// The user asked to send the Pixl to `peer` (or a tap, in the spike).
 void pt_node_send(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out);
 /// Ask the owner to send the Pixl here.
 void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_outs_t *out);
-/// A peer connected: reconcile with `status`.
 /// A swap: the Pixl here travels as `species` named `name` from now on (splices the saved state).
 /// Only while owned here and not mid-trip; emits SAVED. False when nothing changed.
 bool pt_node_restyle(pt_node_t *n, const char *species, const char *name, pt_outs_t *out);
@@ -122,6 +141,7 @@ bool pt_node_can_reclaim(const pt_node_t *n);
 /// The holder is off or out of reach: own the Pixl again from the safety copy (epoch + 2).
 /// Emits SAVED then PLAY_ENTRANCE (peer NULL). False when it can't.
 bool pt_node_reclaim(pt_node_t *n, int64_t now_ms, pt_outs_t *out);
+/// A peer connected (or a periodic re-check): ask it with `status`.
 void pt_node_connected(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out);
 /// One envelope arrived from `peer` (the JSON body of a frame).
 void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, size_t len, int64_t now_ms,

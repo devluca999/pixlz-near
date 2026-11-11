@@ -28,6 +28,13 @@ dependencies, so the same code runs in host tests, the simulator and on the devi
 - **Sizes.** State up to `PT_STATE_MAX` (4 KB), messages up to `PT_MSG_MAX`. `pt_node_t` is about
   33 KB: allocate it once (heap/PSRAM), never on a task stack.
 - **Time.** Every call takes `now` as Unix milliseconds. Don't run trips before the clock is set.
+- **Who holds it.** An away record keeps the holder's id and name (`away_id`, `away_name`) and a
+  `statusReply` with `held: "away"` names them (`holderId`, `holderName`). A pending record keeps
+  its sender there instead, and only that sender's replies, commit or abort settle it.
+- **Trust.** A `statusReply` counts only from a peer sent `status` in the last 60 s; trip messages
+  only from the trip's peer; `call` only from `call_from` when set (the paired Mac).
+- **Giving way.** An owned copy that meets a newer one (owned or away) becomes away with an empty
+  tombstone, so it can never be brought back; a trip it was offering ends with `gaveWay`.
 - **Protocol 2.** Offers carry `proto: 2`; an offer from a newer protocol is declined `needsUpdate`.
   `policy.locked` declines calls with `locked` and blocks sending.
 
