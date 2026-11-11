@@ -99,7 +99,7 @@ public struct AgentHub: Sendable {
         if !e.cwd.isEmpty { s.cwd = e.cwd }
         if let t = e.transcriptPath, !t.isEmpty { s.transcriptPath = t }
         s.lastHeard = now
-        if e.name != "Stop" { s.replyOpen = false }   // it moved on: no longer waiting for a reply
+        if e.name != "Stop", e.name != "Notification" { s.replyOpen = false }   // it moved on: no longer waiting for a reply
         var newRequest: String?
         switch e.name {
         case "SessionStart":
