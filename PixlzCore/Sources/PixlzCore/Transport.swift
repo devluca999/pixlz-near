@@ -36,9 +36,13 @@ public struct Payload: Codable, Equatable, Sendable {
     /// statusReply
     public var held: HeldKind?
     public var inTrip: Bool?
+    /// statusReply with held == away: the device it went to (from the away record).
+    public var holderId: String?
+    public var holderName: String?
 
     public init(species: String? = nil, name: String? = nil, reason: String? = nil, state: PetState? = nil,
-                checksum: String? = nil, held: HeldKind? = nil, inTrip: Bool? = nil) {
+                checksum: String? = nil, held: HeldKind? = nil, inTrip: Bool? = nil,
+                holderId: String? = nil, holderName: String? = nil) {
         self.species = species
         self.name = name
         self.reason = reason
@@ -46,6 +50,8 @@ public struct Payload: Codable, Equatable, Sendable {
         self.checksum = checksum
         self.held = held
         self.inTrip = inTrip
+        self.holderId = holderId
+        self.holderName = holderName
     }
 }
 

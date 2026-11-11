@@ -39,11 +39,29 @@ func sampleFrogg() -> PetState {
         let store = FilePetStore(directory: dir)
         #expect(try store.load() == nil)
         let s = try PetState.decode(sampleFrogg().canonicalData())
-        for pet in [StoredPet.owned(s), .pendingArrival(s), .away(petId: s.petId, epoch: 8, ownerName: "Luca's iPhone", tombstone: s),
-                    .away(petId: s.petId, epoch: 9, ownerName: "x", tombstone: nil)] {
+        for pet in [StoredPet.owned(s), .pendingArrival(s, from: phone), .away(petId: s.petId, epoch: 8, ownerName: "Luca's iPhone", ownerId: nil, tombstone: s),
+                    .away(petId: s.petId, epoch: 9, ownerName: "x", ownerId: nil, tombstone: nil)] {
             try store.save(pet)
             #expect(try store.load() == pet)
         }
+    }
+
+    /// P9: an unreadable file is kept aside, not silently treated as "no Pixl".
+    @Test func unreadableStoreIsMovedAsideAndReported() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pixlz-store-\(UUID().uuidString)")
+        let store = FilePetStore(directory: dir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("{not json".utf8).write(to: store.url)
+        do {
+            _ = try store.load()
+            Issue.record("load should throw")
+        } catch PetStoreError.unreadable(let kept, _) {
+            let k = try #require(kept)
+            #expect(k.lastPathComponent.hasPrefix("pet.json.corrupt-"))
+            #expect(FileManager.default.fileExists(atPath: k.path))
+            #expect(!FileManager.default.fileExists(atPath: store.url.path))
+        }
+        #expect(try store.load() == nil)
     }
 
     @Test func storeBroadcastsChanges() async throws {
@@ -55,7 +73,7 @@ func sampleFrogg() -> PetState {
 
     @Test func tombstoneExpiresAfterSevenDays() {
         let s = sampleFrogg()
-        let away = StoredPet.away(petId: s.petId, epoch: 2, ownerName: "x", tombstone: s)
+        let away = StoredPet.away(petId: s.petId, epoch: 2, ownerName: "x", ownerId: nil, tombstone: s)
         #expect(away.pruned(at: s.savedAt.addingTimeInterval(6 * 86400)).completeCopy != nil)
         #expect(away.pruned(at: s.savedAt.addingTimeInterval(8 * 86400)).completeCopy == nil)
     }

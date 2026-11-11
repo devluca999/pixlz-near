@@ -113,7 +113,7 @@ struct TravelSim {
         #expect(arrived.owner == phone)
         #expect(arrived.stats.pokes == 41 && arrived.stats.trips == 1)
         #expect(arrived.emotion?.kind == .happy)
-        guard case .away(_, 2, "Luca's iPhone", let t?)? = sim[mac].record else { Issue.record("mac not away"); return }
+        guard case .away(_, 2, "Luca's iPhone", _, let t?)? = sim[mac].record else { Issue.record("mac not away"); return }
         #expect(t.epoch == 2)
         #expect(sim.events == ["Luca's Mac: exit → Luca's iPhone", "Luca's iPhone: entrance"])
         #expect(!sim[mac].inTrip && !sim[phone].inTrip)
@@ -126,7 +126,7 @@ struct TravelSim {
     }
 
     @Test func callFromThePhone() {
-        var sim = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", tombstone: nil))
+        var sim = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", ownerId: nil, tombstone: nil))
         sim.input(phone, .call(owner: mac))
         sim.drain()
         #expect(sim.owners == [phone])
@@ -178,7 +178,7 @@ struct TravelSim {
         sim.drain()
         #expect(sim.events == ["Luca's Mac: shrug checksumMismatch"])
         #expect(sim.owners == [mac])
-        guard case .away(_, 1, _, nil)? = sim[phone].record else { Issue.record("phone kept pending: \(String(describing: sim[phone].record))"); return }
+        guard case .away(_, 1, _, _, nil)? = sim[phone].record else { Issue.record("phone kept pending: \(String(describing: sim[phone].record))"); return }
         #expect(sim.violations == [])
     }
 
@@ -196,7 +196,7 @@ struct TravelSim {
         sim.violations = []
         sim.reconnect(); sim.drain()
         #expect(sim.owners == [phone])
-        #expect(sim[mac].record?.completeCopy?.epoch == 4)   // kept as a tombstone
+        #expect(sim[mac].record?.completeCopy == nil)   // the losing copy is stale: no tombstone (P3)
     }
 
     @Test func conflictTieGoesToSmallerDeviceId() {
@@ -240,7 +240,7 @@ struct TravelSim {
         #expect(sim.owned(mac)?.epoch == 4)
         guard case .away? = sim[phone].record else { Issue.record("phone should have let go"); return }
         // Nothing to reclaim when the Pixl is here or there's no safety copy.
-        var fresh = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", tombstone: nil))
+        var fresh = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", ownerId: nil, tombstone: nil))
         fresh.input(phone, .reclaim)
         #expect(fresh.owners == [mac] && !fresh[phone].canReclaim && !fresh[mac].canReclaim)
     }
@@ -259,7 +259,7 @@ struct TravelSim {
                              payload: Payload(held: .owned, inTrip: false), sentAt: tripStart)
         let settled = node.handle(.received(reply, from: phone), at: tripStart)
         #expect(settled.contains(.playExit(to: phone)))
-        guard case .away(_, 13, _, _)? = node.record else { Issue.record("the Mac should have let go"); return }
+        guard case .away(_, 13, _, _, _)? = node.record else { Issue.record("the Mac should have let go"); return }
         // The newer side, asked by an older one, just answers: no ping-pong.
         var newer = sampleFrogg()
         newer.epoch = 13
