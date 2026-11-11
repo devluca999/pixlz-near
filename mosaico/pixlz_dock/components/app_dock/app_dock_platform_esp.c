@@ -461,6 +461,21 @@ static bool gauge_word(uint8_t command, uint16_t *out)
     return true;
 }
 
+/* A single-cell lithium battery's rough charge from its voltage (resting-ish; under load it
+ * reads a little low, which errs on the side of warning). */
+static int percent_from_mv(unsigned mv)
+{
+    static const uint16_t mv_at[] = {3400, 3500, 3600, 3700, 3750, 3800, 3850, 3900, 4000, 4100, 4200};
+    static const uint8_t pct_at[] = {0, 5, 12, 25, 35, 45, 55, 65, 80, 92, 100};
+    if (mv <= mv_at[0]) return 0;
+    for (int i = 1; i < (int)(sizeof mv_at / sizeof mv_at[0]); i++) {
+        if (mv <= mv_at[i]) {
+            return pct_at[i - 1] + (int)((mv - mv_at[i - 1]) * (unsigned)(pct_at[i] - pct_at[i - 1]) / (mv_at[i] - mv_at[i - 1]));
+        }
+    }
+    return 100;
+}
+
 bool dock_platform_battery(int *percent, bool *on_battery)
 {
     if (!s_gauge && !s_gauge_failed) {
@@ -485,8 +500,12 @@ bool dock_platform_battery(int *percent, bool *on_battery)
             !(flags & GAUGE_FLAG_BATTPRES) || mv == 0 || soc > 100) {
         return false;
     }
-    *percent = soc;
     *on_battery = (flags & GAUGE_FLAG_DSG) != 0;
+    /* The gauge's own percentage drifts when it loses its learned capacity (it said 10% at
+     * 4.18 V while topping off). Check it against the voltage; far apart, trust the voltage. */
+    const int by_volts = percent_from_mv(mv);
+    const bool gauge_off = soc + 30 < by_volts || soc > by_volts + 30;
+    *percent = gauge_off ? by_volts : soc;
     /* Once a minute: what it's doing with power, for diagnosing drain (read-only). */
     static int64_t next_log_us;
     const int64_t now_us = esp_timer_get_time();
@@ -494,7 +513,8 @@ bool dock_platform_battery(int *percent, bool *on_battery)
         next_log_us = now_us + 60LL * 1000000;
         uint16_t raw = 0;
         const int ma = gauge_word(GAUGE_AVG_CURRENT, &raw) ? (int)(int16_t)raw : 0;
-        ESP_LOGI(TAG, "battery %u%%, %u mV, %d mA (%s), flags 0x%04x", (unsigned)soc, (unsigned)mv, ma,
+        ESP_LOGI(TAG, "battery %u%% (gauge) / ~%d%% (voltage)%s, %u mV, %d mA (%s), flags 0x%04x", (unsigned)soc,
+                 by_volts, gauge_off ? " -> using voltage" : "", (unsigned)mv, ma,
                  ma > 0 ? "charging" : ma < 0 ? "draining" : "idle", (unsigned)flags);
     }
     /* Unplugged: let Wi-Fi sleep between beacons (trips get slower, the battery lasts).
