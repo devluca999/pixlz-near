@@ -53,6 +53,8 @@ public struct AgentRequest: Sendable, Equatable, Identifiable {
     public var detail: String           // the exact command, file or URL
     public var summary: String          // "Run swift test", "Edit App.swift"
     public var received: Date
+    /// Pixlz holds the hook, so Allow / Deny here answers it. Not held: answer in the terminal.
+    public var held = false
 }
 
 public enum AgentDecision: String, Sendable { case allow, deny }
@@ -60,8 +62,10 @@ public enum AgentDecision: String, Sendable { case allow, deny }
 public struct AgentHub: Sendable {
     /// A session not heard from for this long leaves the list.
     public static let sessionTimeout: TimeInterval = 30 * 60
-    /// Pixlz gives up on a request after this long; Claude Code then asks in the terminal.
+    /// Pixlz gives up on a held request after this long; Claude Code then asks in the terminal.
     public static let requestTimeout: TimeInterval = 55
+    /// A request left to the terminal is forgotten after this long if nothing settles it.
+    public static let terminalTimeout: TimeInterval = 10 * 60
 
     public private(set) var sessions: [String: AgentSession] = [:]
     public private(set) var requests: [AgentRequest] = []   // oldest first
@@ -99,9 +103,11 @@ public struct AgentHub: Sendable {
             s.state = .working
             answeredElsewhere(e.sessionID)
         case "PreToolUse":
+            // A new tool call means the last question in this session was settled.
+            answeredElsewhere(e.sessionID)
             s.doing = Self.describe(tool: e.toolName ?? "", input: e.toolInput, present: true)
-            if s.state != .needsYou { s.state = .working }
-        case "PostToolUse":
+            s.state = .working
+        case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
             // It ran: whatever it asked about was answered (here or in the terminal).
             answeredElsewhere(e.sessionID)
             s.state = .working
@@ -129,6 +135,11 @@ public struct AgentHub: Sendable {
         return newRequest
     }
 
+    /// Pixlz keeps the hook waiting for an answer here.
+    public mutating func markHeld(_ requestID: String) {
+        if let i = requests.firstIndex(where: { $0.id == requestID }) { requests[i].held = true }
+    }
+
     /// The request was answered (or its hook went away): it leaves the list.
     public mutating func resolve(_ requestID: String) {
         guard let i = requests.firstIndex(where: { $0.id == requestID }) else { return }
@@ -139,7 +150,7 @@ public struct AgentHub: Sendable {
     /// Drops old requests and quiet sessions. Returns the ids of requests that timed out.
     @discardableResult
     public mutating func expire(at now: Date) -> [String] {
-        let old = requests.filter { now.timeIntervalSince($0.received) >= Self.requestTimeout }.map(\.id)
+        let old = requests.filter { now.timeIntervalSince($0.received) >= ($0.held ? Self.requestTimeout : Self.terminalTimeout) }.map(\.id)
         old.forEach { resolve($0) }
         sessions = sessions.filter { now.timeIntervalSince($0.value.lastHeard) < Self.sessionTimeout }
         return old
@@ -147,6 +158,7 @@ public struct AgentHub: Sendable {
 
     private mutating func answeredElsewhere(_ sessionID: String) {
         requests.removeAll { $0.sessionID == sessionID }
+        if var s = sessions[sessionID], s.state == .needsYou { s.state = .working; sessions[sessionID] = s }
     }
 
     private mutating func settle(_ sessionID: String) {

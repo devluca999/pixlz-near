@@ -37,11 +37,20 @@ import Testing
         #expect(hub.requests.first?.summary == "Write a.txt")
         hub.receive(HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Write"), at: t0)
         #expect(hub.requests.isEmpty)
+
+        // Denied in the terminal: the next tool call settles it.
+        hub.receive(HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm x"]), at: t0)
+        #expect(hub.sessions["a"]?.state == .needsYou)
+        hub.receive(HookEvent(name: "PreToolUse", sessionID: "a", toolName: "Read", toolInput: ["file_path": "/p/b"]), at: t0)
+        #expect(hub.requests.isEmpty && hub.sessions["a"]?.state == .working)
     }
 
     @Test func oldRequestsAndQuietSessionsExpire() {
         var hub = AgentHub()
         let id = hub.receive(HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "ls"]), at: t0)!
+        // Left to the terminal: listed for up to 10 min.
+        #expect(hub.expire(at: t0.addingTimeInterval(60)).isEmpty && hub.requests.count == 1)
+        hub.markHeld(id)
         #expect(hub.expire(at: t0.addingTimeInterval(54)).isEmpty)
         #expect(hub.expire(at: t0.addingTimeInterval(55)) == [id])
         #expect(hub.sessions.count == 1)
