@@ -155,6 +155,9 @@ const app_dock_transcript_t *app_dock_transcript(app_dock_handle_t dock);
 bool app_dock_transcript_reply(app_dock_handle_t dock);
 /** The user's answer to the pairing code on screen. */
 void app_dock_pair_answer(app_dock_handle_t dock, bool accept);
+/** Ask the connected Mac (the one showing its sessions here, else the latest) to start pairing;
+ * the Mac asks its user, then both screens show the code. False when no Mac is connected. */
+bool app_dock_pair_request(app_dock_handle_t dock);
 /** Forget the paired Mac (Allow turns off here). False if it couldn't be saved (still paired). */
 bool app_dock_unpair(app_dock_handle_t dock);
 /** Lock or unlock the Pixl here; saved at once. False if nothing changed or it couldn't be saved. */

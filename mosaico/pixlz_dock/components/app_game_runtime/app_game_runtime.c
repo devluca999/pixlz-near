@@ -326,6 +326,9 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         app_dock_pair_answer(state->dock, a.arg != 0);
         say_banner(state, a.arg ? "Now confirm on your Mac" : "Pairing cancelled");
         break;
+    case APP_MENU_ACTION_PAIR_REQUEST:
+        say_banner(state, app_dock_pair_request(state->dock) ? "Asked your Mac. Check its screen." : "No Mac connected");
+        break;
     case APP_MENU_ACTION_UNPAIR:
         say_banner(state, app_dock_unpair(state->dock) ? "Unpaired. Allow is off here." : "Couldn't unpair. Try again.");
         break;
@@ -806,6 +809,7 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_EXIT: return "Exit";
     case APP_MENU_BUBBLE_AGENTS: return "Agents";
     case APP_MENU_BUBBLE_UNPAIR: return "Unpair";
+    case APP_MENU_BUBBLE_PAIR: return "Pair";
     case APP_MENU_BUBBLE_Q0: return "Continue";
     case APP_MENU_BUBBLE_Q1: return "Yes";
     case APP_MENU_BUBBLE_Q2: return "No";
@@ -824,6 +828,7 @@ static Color bubble_colour(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_EXIT: return shade(150, 160, 200, 100);     /* slate */
     case APP_MENU_BUBBLE_AGENTS: return shade(255, 176, 60, 100);    /* amber */
     case APP_MENU_BUBBLE_UNPAIR: return shade(150, 160, 200, 100);   /* slate */
+    case APP_MENU_BUBBLE_PAIR: return shade(110, 180, 245, 100);     /* blue */
     case APP_MENU_BUBBLE_Q0: return shade(140, 215, 120, 100);       /* green: carry on */
     case APP_MENU_BUBBLE_Q1: return shade(110, 180, 245, 100);
     case APP_MENU_BUBBLE_Q2: return shade(240, 115, 105, 100);

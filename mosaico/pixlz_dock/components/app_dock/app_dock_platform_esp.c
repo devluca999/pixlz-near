@@ -33,7 +33,9 @@
 
 #include "private/app_dock_platform.h"
 
-static const char *TAG = "pixlz_dock";
+/* Our own label: the engine logs display statistics under the game id ("pixlz_dock") every
+ * 10 s; those are turned down to warnings so pairing and trip events stay in the log ring. */
+static const char *TAG = "pixlz";
 
 #define SYSMETA_PARTITION "sysmeta"
 #define SHARED_NAMESPACE "shared"
@@ -214,6 +216,9 @@ void dock_platform_start(const pt_device_t *me)
     }
     s_started = true;
     s_me = *me;
+    esp_log_level_set("pixlz_dock", ESP_LOG_WARN);
+    esp_log_level_set("native_game", ESP_LOG_WARN);
+    esp_log_level_set("video_present", ESP_LOG_WARN);
     esp_err_t rpc = esp_iris_rpc_register(FORGET_SERVICE_ID, FORGET_METHOD_ID, forget_rpc, NULL);
     if (rpc != ESP_OK) {
         ESP_LOGW(TAG, "maintenance RPC unavailable: %s", esp_err_to_name(rpc));

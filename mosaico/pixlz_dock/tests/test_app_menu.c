@@ -82,7 +82,7 @@ static void test_pages(void)
     tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3);
     CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_UNLOCK);
-    CHECK(app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_EXIT && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_NONE);
+    CHECK(app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_EXIT && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_PAIR);
     // Back from page 3 is page 2.
     tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
@@ -377,6 +377,13 @@ static void test_agents(void)
     tap(m, s.confirm_x, s.buttons_y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_PAIR && a.arg == 1);
+    // Not paired: Pair on page 3 asks the Mac.
+    app_menu_open(m, &ctx);
+    tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
+    tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
+    CHECK(app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_PAIR && app_menu_read(m).slots[2].enabled);
+    tap(m, 240, app_menu_read(m).slots[2].y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_PAIR_REQUEST);
     // Paired: Unpair on page 3.
     ctx.paired = true;
     app_menu_open(m, &ctx);

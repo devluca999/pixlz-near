@@ -69,7 +69,16 @@ final class MosaicoPairingController {
 
     /// A "pair" frame from a device. True when it was one.
     func frame(_ body: Data, from peer: DeviceRef) -> Bool {
-        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any], o["pair"] != nil else { return false }
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return false }
+        if let state = o["pairState"] as? [String: Any] {
+            checkState(state["paired"] as? Bool ?? false, peer: peer)
+            return true
+        }
+        guard let pair = o["pair"] as? [String: Any] else { return false }
+        if pair["step"] as? String == "request" {
+            askToPair(peer)
+            return true
+        }
         guard var p = pairing, pairingPeer?.deviceId == peer.deviceId else { return true }
         let events = p.receive(body)
         pairing = p
@@ -114,6 +123,41 @@ final class MosaicoPairingController {
                 Debug.log("pairing: cancelled (\(why))")
                 app.notify(.agentsError(why))
             }
+        }
+    }
+
+    // MARK: started from the Mosaico, and checked on connect
+
+    private var lastAsk: [String: Date] = [:]
+
+    /// The Mosaico asked to pair (its Pair bubble). The Mac's user says yes before any code shows.
+    private func askToPair(_ peer: DeviceRef) {
+        guard MosaicoFeed.devices().contains(peer.deviceId) else {
+            Debug.log("pairing: request from \(peer.deviceName) ignored (not a feed device)")
+            return
+        }
+        guard pairing == nil, Date().timeIntervalSince(lastAsk[peer.deviceId] ?? .distantPast) > 10 else { return }
+        lastAsk[peer.deviceId] = Date()
+        Debug.log("pairing: \(peer.deviceName) asked to pair")
+        app.menu.showList([ListMenuView.Row(id: "q", title: "\(peer.deviceName) wants to pair. Compare codes?", icon: "info", enabled: false),
+                           ListMenuView.Row(id: "yes", title: "Yes, show the code", icon: "check", trailing: "↵"),
+                           ListMenuView.Row(id: "no", title: "Not now", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
+            guard row.id != "q" else { return }
+            self?.app.menu.closeList()
+            if row.id == "yes" { self?.start(with: peer) } else { Debug.log("pairing: request from \(peer.deviceName) declined") }
+        }
+    }
+
+    /// What the Mosaico says on connect, against what this Mac keeps. A mismatch is told, not
+    /// fixed silently: the user pairs again (from either side).
+    private func checkState(_ mosaicoPaired: Bool, peer: DeviceRef) {
+        let macPaired = Self.load(peer.deviceId) != nil
+        Debug.log("pairing: \(peer.deviceName) says \(mosaicoPaired ? "paired" : "not paired"); this Mac \(macPaired ? "has" : "has no") key")
+        guard mosaicoPaired != macPaired, pairing == nil else { return }
+        if macPaired {
+            app.notify(.agentsError("\(peer.deviceName) lost its pairing with this Mac. Pair again (from either side) to Allow from it."))
+        } else {
+            app.notify(.agentsError("\(peer.deviceName) thinks it's paired, but this Mac has no key for it. Pair again."))
         }
     }
 

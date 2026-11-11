@@ -112,7 +112,7 @@ echo "Installed: $DEST"
 
 case "${1:-}" in
   --open)     open "$DEST" ;;
-  --debug)    rm -f "$HOME/Library/Logs/PixlMemory/debug.log"
+  --debug)    # the log is kept across installs (it rotates itself past 5 MB)
               open --env PIXL_DEBUG=1 "$DEST"
               echo "Debug log: tail -f ~/Library/Logs/PixlMemory/debug.log" ;;
   --selftest) PIXL_DEBUG=1 "$DEST/Contents/MacOS/PixlMemory" --selftest ;;

@@ -157,6 +157,8 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         bubbles[1] = APP_MENU_BUBBLE_EXIT, enabled[1] = true;
         if (c->paired) {
             bubbles[2] = APP_MENU_BUBBLE_UNPAIR, enabled[2] = true;
+        } else {
+            bubbles[2] = APP_MENU_BUBBLE_PAIR, enabled[2] = c->agents_connected;   /* needs a Mac to ask */
         }
         bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
     }
@@ -226,6 +228,7 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
     case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
     case APP_MENU_BUBBLE_UNPAIR: act(m, APP_MENU_ACTION_UNPAIR, 0); break;
+    case APP_MENU_BUBBLE_PAIR: act(m, APP_MENU_ACTION_PAIR_REQUEST, 0); break;
     case APP_MENU_BUBBLE_Q0: case APP_MENU_BUBBLE_Q1: case APP_MENU_BUBBLE_Q2: case APP_MENU_BUBBLE_Q3:
         act(m, APP_MENU_ACTION_AGENT_REPLY, m->agent * 16 + (int)(bubbles[i] - APP_MENU_BUBBLE_Q0));
         break;

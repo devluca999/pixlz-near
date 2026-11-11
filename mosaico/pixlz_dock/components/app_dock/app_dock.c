@@ -704,6 +704,13 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
         }
         dock_platform_log("pixlz: %.*s connected (clock %s)", PT_NAME_MAX - 1, c->peer.name,
                           dock_platform_clock_ok() ? "set" : "not set");
+        /* Tell it whether this device is paired with it, so a Mac whose key no longer matches
+         * finds out now, not when Allow fails. */
+        {
+            const bool with_it = d->paired.paired && strcmp(d->paired.mac_id, c->peer.id) == 0;
+            const char *ps = with_it ? "{\"pairState\":{\"paired\":true}}" : "{\"pairState\":{\"paired\":false}}";
+            (void)enqueue(c, ps, strlen(ps));
+        }
         // Ask who has the Pixl, whatever the first frame was: a Mac that brought it back while
         // this device was off owns a newer copy, and this one gives way (SPEC §10.5).
         pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
@@ -1176,6 +1183,26 @@ bool app_dock_agent_reply(app_dock_handle_t d, const char *session_id, const cha
         return false;
     }
     dock_platform_log("pixlz: replied \"%.40s\" to %.*s", text, (int)sizeof a->project - 1, a->project);
+    return true;
+}
+
+bool app_dock_pair_request(app_dock_handle_t d)
+{
+    if (!d) {
+        return false;
+    }
+    conn_t *c = conn_for(d, d->agents_from);
+    for (int i = 0; !c && i < MAX_CONNS; i++) {   /* else the latest Mac to say hello */
+        conn_t *o = &d->conns[i];
+        if (o->fd >= 0 && o->hello && (!c || o->hello_ms > c->hello_ms)) {
+            c = o;
+        }
+    }
+    static const char req[] = "{\"pair\":{\"step\":\"request\"}}";
+    if (!c || !enqueue(c, req, sizeof req - 1)) {
+        return false;
+    }
+    dock_platform_log("pixlz: asked %.*s to pair", PT_NAME_MAX - 1, c->peer.name);
     return true;
 }
 

@@ -34,7 +34,7 @@ typedef enum {
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
-    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS, APP_MENU_BUBBLE_UNPAIR,
+    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS, APP_MENU_BUBBLE_UNPAIR, APP_MENU_BUBBLE_PAIR,
     APP_MENU_BUBBLE_Q0, APP_MENU_BUBBLE_Q1, APP_MENU_BUBBLE_Q2, APP_MENU_BUBBLE_Q3,
 } app_menu_bubble_t;
 
@@ -55,6 +55,7 @@ typedef enum {
     APP_MENU_ACTION_AGENT_ALLOW,/**< arg: the agents row (only when paired with that Mac) */
     APP_MENU_ACTION_PAIR,       /**< arg: 1 the codes match, 0 no */
     APP_MENU_ACTION_UNPAIR,
+    APP_MENU_ACTION_PAIR_REQUEST, /**< Ask the connected Mac to start pairing (it confirms there). */
     APP_MENU_ACTION_AGENT_CHAT, /**< arg: the agents row; the menu stays open (ask the Mac for its chat) */
     APP_MENU_ACTION_AGENT_REPLY,/**< arg: row * 16 + quick reply (0..3) */
     APP_MENU_ACTION_DICTATE_START, /**< the mic button went down in a chat (menu stays open) */
