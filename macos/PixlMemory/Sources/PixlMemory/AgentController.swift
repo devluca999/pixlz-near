@@ -14,12 +14,24 @@ final class AgentController {
     private var listenSource: DispatchSourceRead?
     private var clients: [Int32: (source: DispatchSourceRead, buffer: Data)] = [:]
     private var held: [String: Int32] = [:]       // request id → the hook waiting for its answer
+    private var heldStops: [String: (fd: Int32, since: Date)] = [:]   // session id → its Stop hook, waiting for a reply
+    static let replyWindow: TimeInterval = 300
     private var timer: Timer?
     private var lastAlert = Date.distantPast
     private var snoozedUntil: Date?
     let path = AgentSocket.path()
 
-    private let answerKey = "PixlMemory.agentAnswer", alertsKey = "PixlMemory.agentAlerts"
+    private let answerKey = "PixlMemory.agentAnswer", alertsKey = "PixlMemory.agentAlerts", replyKey = "PixlMemory.agentReply"
+    /// Keep a finished session open (up to 5 min) so a reply from Pixlz continues it. While
+    /// held, the terminal shows it as busy; Esc there takes it back.
+    var replyHere: Bool {
+        get { UserDefaults.standard.bool(forKey: replyKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: replyKey)
+            Debug.log("agents: reply here \(newValue)")
+            if !newValue { for id in Array(heldStops.keys) { release(id) } }
+        }
+    }
     /// Hold permission requests for an answer here (up to 55 s). Off: Pixlz only watches, and
     /// the terminal asks as usual, without waiting on Pixlz.
     var answerHere: Bool {
@@ -103,6 +115,11 @@ final class AgentController {
         guard n > 0, var c = clients[fd] else {
             // The hook went away (answered in the terminal, or Claude Code gave up on it).
             if let id = held.first(where: { $0.value == fd })?.key { held[id] = nil; hub.resolve(id); changed() }
+            if let sid = heldStops.first(where: { $0.value.fd == fd })?.key {
+                heldStops[sid] = nil   // Esc in the terminal, or Claude Code gave up on the hook
+                hub.setReplyOpen(sid, false)
+                changed()
+            }
             finish(fd, reply: nil)
             return
         }
@@ -116,7 +133,15 @@ final class AgentController {
         clients[fd]?.buffer = Data()
         guard let event = HookEvent(json: Data(line)) else { finish(fd, reply: nil); return }
         let had = hub.requests.count
+        if heldStops[event.sessionID] != nil { release(event.sessionID) }   // it moved on without us
         let request = hub.receive(event, at: Date())
+        if event.name == "Stop", replyHere {
+            heldStops[event.sessionID] = (fd, Date())
+            hub.setReplyOpen(event.sessionID, true)
+            Debug.log("agents: \(hub.sessions[event.sessionID]?.project ?? "?") finished; open for a reply")
+            changed()
+            return
+        }
         if let request, answerHere {
             held[request] = fd   // keep the hook waiting for Allow / Deny
             hub.markHeld(request)
@@ -152,6 +177,32 @@ final class AgentController {
         changed()
     }
 
+    /// Continue a finished session with `text` as your next message. False when it isn't held
+    /// open any more (it timed out, or you answered in the terminal).
+    @discardableResult
+    func reply(_ sessionID: String, _ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let h = heldStops.removeValue(forKey: sessionID) else { return false }
+        Debug.log("agents: reply to \(hub.sessions[sessionID]?.project ?? "?") (\(t.count) chars)")
+        hub.setReplyOpen(sessionID, false)
+        finish(h.fd, reply: AgentHub.stopReply(t))
+        changed()
+        return true
+    }
+
+    /// Let a held session finish normally.
+    private func release(_ sessionID: String) {
+        guard let h = heldStops.removeValue(forKey: sessionID) else { return }
+        hub.setReplyOpen(sessionID, false)
+        finish(h.fd, reply: nil)
+    }
+
+    /// The session's title and its last turns, from its transcript.
+    func chat(_ sessionID: String, limit: Int = 30) -> (title: String?, lines: [ChatLine]) {
+        guard let p = hub.sessions[sessionID]?.transcriptPath else { return (nil, []) }
+        return Transcript.read(URL(fileURLWithPath: p), limit: limit)
+    }
+
     /// Can Allow / Deny here answer it (Pixlz holds its hook)?
     func canAnswer(_ requestID: String) -> Bool { held[requestID] != nil }
 
@@ -172,6 +223,9 @@ final class AgentController {
             Debug.log("agents: \(id) timed out; the terminal asks")
         }
         if !gone.isEmpty { changed() }
+        let stale = heldStops.filter { Date().timeIntervalSince($0.value.since) >= Self.replyWindow }.map(\.key)
+        for id in stale { release(id); Debug.log("agents: reply window closed") }
+        if !stale.isEmpty { changed() }
         alertIfDue()
     }
 
@@ -231,6 +285,7 @@ final class AgentController {
             try HookSettings.write(HookSettings.removing(from: s), to: settingsURL)
             for (id, fd) in held { finish(fd, reply: nil); hub.resolve(id) }
             held.removeAll()
+            for id in Array(heldStops.keys) { release(id) }
             Debug.log("agents: hooks removed")
             return nil
         } catch {
@@ -240,6 +295,7 @@ final class AgentController {
 
     func stop() {
         for (_, fd) in held { finish(fd, reply: nil) }
+        for (_, h) in heldStops { finish(h.fd, reply: nil) }
         unlink(path)
     }
 }

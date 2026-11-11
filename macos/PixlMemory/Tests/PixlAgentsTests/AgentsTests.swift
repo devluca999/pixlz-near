@@ -117,3 +117,37 @@ import Testing
         try? FileManager.default.removeItem(at: dir)
     }
 }
+
+@Suite struct TranscriptTests {
+    @Test func readsPromptsRepliesAndToolsOnly() {
+        let jsonl = [
+            #"{"type":"user","message":{"role":"user","content":"fix the tests\nplease"}}"#,
+            #"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Running them now."}]}}"#,
+            #"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"swift test","description":""}}]}}"#,
+            #"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#,
+            #"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"subagent noise"}]}}"#,
+            #"{"type":"user","message":{"content":"<command-name>/clear</command-name>"}}"#,
+            #"{"type":"ai-title","aiTitle":"Fix the tests"}"#,
+            "not json",
+            #"{"type":"assistant","message":{"content":[{"type":"text","text":"All 40 pass."}]}}"#,
+        ].joined(separator: "\n")
+        let (title, lines) = Transcript.parse(jsonl)
+        #expect(title == "Fix the tests")
+        #expect(lines == [ChatLine(role: .you, text: "fix the tests\nplease"), ChatLine(role: .claude, text: "Running them now."),
+                          ChatLine(role: .tool, text: "Run swift test"), ChatLine(role: .claude, text: "All 40 pass.")])
+        #expect(Transcript.parse(jsonl, limit: 2).lines.count == 2)
+    }
+
+    @Test func aStopReplyContinuesTheSession() throws {
+        let o = try JSONSerialization.jsonObject(with: AgentHub.stopReply("now run the linter")) as? [String: String]
+        #expect(o == ["decision": "block", "reason": "now run the linter"])
+        var hub = AgentHub()
+        let t0 = Date()
+        hub.receive(HookEvent(name: "Stop", sessionID: "a", cwd: "/p/x", transcriptPath: "/tmp/a.jsonl"), at: t0)
+        #expect(hub.sessions["a"]?.transcriptPath == "/tmp/a.jsonl")
+        hub.setReplyOpen("a", true)
+        #expect(hub.sessions["a"]?.replyOpen == true)
+        hub.receive(HookEvent(name: "UserPromptSubmit", sessionID: "a", prompt: "typed in the terminal"), at: t0)
+        #expect(hub.sessions["a"]?.replyOpen == false)   // it moved on
+    }
+}
