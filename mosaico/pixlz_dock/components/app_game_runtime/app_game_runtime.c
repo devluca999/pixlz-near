@@ -1083,6 +1083,9 @@ static int render(void *value)
     }
     draw_banner(state, s.tick);
     const app_dock_status_t dock = app_dock_status(state->dock);
+    if (!dock.network_ready) {   /* offline: no trips, no agents; say so (drifts with the empty screen's rule) */
+        draw_text("no Wi-Fi", 14 + (int)((s.tick / 900) % 3) * 4, 14, 1, shade(200, 120, 90, brightness < 50 ? 50 : brightness));
+    }
     if (dock.on_battery && dock.battery_percent >= 0 && dock.battery_percent <= BATTERY_WARN) {
         draw_battery(dock.battery_percent, s.tick, brightness < 50 ? 50 : brightness);
     }

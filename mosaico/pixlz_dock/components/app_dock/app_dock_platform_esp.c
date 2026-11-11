@@ -140,6 +140,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         (void)esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *d = data;
+        ESP_LOGW(TAG, "Wi-Fi lost (reason %d, rssi %d dBm); reconnecting", d ? d->reason : -1, d ? d->rssi : 0);
         atomic_store(&s_net_ready, false);
         (void)esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {

@@ -250,7 +250,7 @@ final class TravelController {
     func offerReclaim(because why: String) {
         guard let r = runner, r.canReclaim, let away = app.awayOn else { return }
         let name = app.settings.name
-        app.menu.showList([ListMenuView.Row(id: "info", title: why, icon: nil, trailing: nil),
+        app.menu.showList([ListMenuView.Row(id: "info", title: why, icon: nil, trailing: nil, enabled: false),
                            ListMenuView.Row(id: "reclaim", title: "Bring \(name) back anyway (time on \(away) is lost)", icon: nil, trailing: "↵"),
                            ListMenuView.Row(id: "wait", title: "Wait for \(away)", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
             guard let self else { return }
