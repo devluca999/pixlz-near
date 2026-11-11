@@ -47,7 +47,7 @@ struct BonjourTripTests {
         #expect(entered?.name == "Nox" && entered?.species == "cat" && entered?.owner == macB && entered?.epoch == 2)   // a new Pixl starts at epoch 1; every move adds one
         #expect(exitedTo == macB)
         #expect(b.owned != nil && a.owned == nil)
-        if case .away(_, let epoch, let ownerName, _)? = a.record { #expect(epoch == 2 && ownerName == "Laptop") }
+        if case .away(_, let epoch, let ownerName, _, _)? = a.record { #expect(epoch == 2 && ownerName == "Laptop") }
         else { Issue.record("A should hold an away record, has \(String(describing: a.record))") }
 
         // and back: B now trusts nothing from A automatically… but A trusts nobody yet either,

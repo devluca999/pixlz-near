@@ -159,11 +159,18 @@ final class TravelController {
     func start() {
         let trusted = Set(UserDefaults.standard.stringArray(forKey: trustedKey) ?? [])
         let r = TripRunner(me: me, store: FilePetStore(directory: storeDir), knownSpecies: Set(PixlSkins.all.map(\.id)), trusted: trusted)
-        // the first device adopts the Pixl; a second copy (PIXL_DEVICE_ID) starts empty and
-        // waits for it to visit (one Pixl, one owner at a time: SPEC D9)
-        if ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] == nil {
+        r.onLog = { Debug.log($0) }
+        r.onProblem = { [weak self] why in self?.app.notify(.travelProblem(why)) }
+        r.isPaired = { MosaicoPairingController.load($0) != nil }
+        if r.loadProblem != nil {
+            // the saved Pixl couldn't be read: it was kept aside; never adopt a new one over it
+            app.notify(.petUnreadable)
+        } else if ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] == nil {
+            // the first device adopts the Pixl; a second copy (PIXL_DEVICE_ID) starts empty and
+            // waits for it to visit (one Pixl, one owner at a time: SPEC D9)
             r.adoptIfNeeded(species: PixlSkins.currentID, name: app.settings.name)
         }
+        r.onRecord = { [weak self] rec in self?.recordChanged(rec) }
         r.onPeers = { [weak self] list in
             guard let self else { return }
             let fresh = list.contains { p in !self.peers.contains(p) }
@@ -182,6 +189,7 @@ final class TravelController {
         app.agents.onExtraRow = { [weak self] id in self?.pairingController.chose(id) }
         r.onAsk = { [weak self] peer, name in self?.ask(peer: peer, name: name) }
         r.onExit = { [weak self] to in self?.leave(to: to) }
+        r.onGaveWay = { [weak self] to in self?.leave(to: to, gaveWay: true) }
         r.onEntrance = { [weak self] state in self?.arrive(state) }
         r.onShrug = { [weak self] why in
             Debug.log("travel: shrug \(why)")
@@ -205,24 +213,45 @@ final class TravelController {
             Debug.log("travel: manual peers \(manual.map { "\($0.ref.deviceName) @ \($0.host)" })")
         }
         runner = r
-        // The Pixl on screen is the one that travels (a swap made before this fix, or elsewhere).
-        if let s = r.owned, s.species != PixlSkins.currentID { r.restyle(species: PixlSkins.currentID, name: app.settings.name) }
+        // One source of truth: the Pixl that travels (the record) is the one on screen.
+        if let s = r.owned, s.species != PixlSkins.currentID || s.name != app.settings.name {
+            if PixlSkins.skin(s.species) != nil {
+                Debug.log("travel: settings follow the record (\(s.species), \(s.name))")
+                app.becomeSkin(id: s.species, name: s.name)
+            } else {
+                r.restyle(species: PixlSkins.currentID, name: app.settings.name)   // a species this app can't show
+            }
+        }
         Debug.log("travel: I'm \(me.deviceName) (\(me.deviceId.prefix(8)))")
         // Bluetooth to a Mosaico (D21): while linked, the transport reaches it through the
-        // bridge's local port instead of Wi-Fi.
+        // bridge's local port instead of Wi-Fi. Only for a Mosaico this Mac knows.
         let ble = BLEBridge(me: me)
         ble.onState = { Debug.log("travel: \($0)") }
-        ble.onLink = { [weak r] ref, port in r?.transport.setRoute(ref, host: "127.0.0.1", port: port) }
+        ble.onLink = { [weak r] ref, port in
+            guard MosaicoFeed.devices().contains(ref.deviceId) || MosaicoPairingController.load(ref.deviceId) != nil else {
+                Debug.log("travel: bluetooth link to \(ref.deviceName) not used (not a feed device or paired)")
+                return
+            }
+            r?.transport.setRoute(ref, host: "127.0.0.1", port: port)
+        }
         ble.onUnlink = { [weak r] id in r?.transport.clearRoute(id) }
         ble.start()
         bluetooth = ble
         // away on another device since last time (or never had it): stay hidden until it comes
-        if case .away(_, _, let owner, _)? = r.record {
-            app.awayOn = owner
+        recordChanged(r.record)
+        if app.awayOn != nil { app.froggPanel.orderOut(nil) }
+    }
+
+    /// The record changed: where the Pixl is follows from it (owned = here). Leaving plays its
+    /// exit first (onExit), which hides the panel when it lands.
+    func recordChanged(_ rec: StoredPet?) {
+        let wasAway = app.awayOn != nil
+        app.awayOn = Whereabouts.awayOn(rec)
+        Debug.log("travel: record \(rec.map { "\($0.isOwned ? "owned" : "not here") e\($0.epoch)" } ?? "none") → \(app.awayOn ?? "here")")
+        // not here and no exit to play (it wasn't on screen): make sure nothing shows
+        if wasAway, app.awayOn != nil {
             app.froggPanel.orderOut(nil)
-        } else if r.record == nil {
-            app.awayOn = "another device"
-            app.froggPanel.orderOut(nil)
+            app.bubblePanel.orderOut(nil)
         }
     }
 
@@ -239,22 +268,74 @@ final class TravelController {
 
     func ask(peer: DeviceRef, name: String) {
         Debug.log("travel: \(name) wants to come from \(peer.deviceName)")
-        // the Pixl that would arrive here: show the question beside the menu bar
-        app.menu.showList([ListMenuView.Row(id: "yes", title: "Catch \(name) from \(peer.deviceName)", icon: nil, trailing: "↵"),
-                           ListMenuView.Row(id: "no", title: "Not now", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
-            guard let self else { return }
+        // the Pixl that would arrive here: show the question beside the menu bar.
+        // Esc or a click away is "Not now".
+        app.menu.showList([ListMenuView.Row(id: "q", title: "Catch \(name) from \(peer.deviceName)?", icon: "info", enabled: false),
+                           ListMenuView.Row(id: "once", title: "Yes, just this time", icon: nil, trailing: "↵"),
+                           ListMenuView.Row(id: "always", title: "Always accept from \(peer.deviceName)", icon: nil),
+                           ListMenuView.Row(id: "no", title: "Not now", icon: nil, trailing: "esc")], near: nil, onSelect: { [weak self] row in
+            guard let self, row.id != "q" else { return }
             self.app.menu.closeList()
-            if row.id == "yes" { UserDefaults.standard.set(Array((self.runner?.trusted ?? []).union([peer.deviceId])), forKey: self.trustedKey) }
-            self.runner?.consent(row.id == "yes", for: peer)
+            self.answer(row.id, peer: peer)
+        }, onDismiss: { [weak self] in self?.answer("no", peer: peer) })
+    }
+
+    private func answer(_ id: String, peer: DeviceRef) {
+        if id == "always" { trust(peer) }
+        runner?.consent(id == "once" || id == "always", always: id == "always", for: peer)
+    }
+
+    // MARK: trusted devices (their offers come straight in; they may call the Pixl)
+
+    let trustedNamesKey = "PixlMemory.trustedDeviceNames"
+
+    func trust(_ peer: DeviceRef) {
+        let ids = (runner?.trusted ?? []).union([peer.deviceId])
+        UserDefaults.standard.set(Array(ids), forKey: trustedKey)
+        var names = UserDefaults.standard.dictionary(forKey: trustedNamesKey) as? [String: String] ?? [:]
+        names[peer.deviceId] = peer.deviceName
+        UserDefaults.standard.set(names, forKey: trustedNamesKey)
+    }
+
+    func untrust(_ deviceId: String) {
+        runner?.untrust(deviceId)
+        UserDefaults.standard.set(Array(runner?.trusted ?? []), forKey: trustedKey)
+        var names = UserDefaults.standard.dictionary(forKey: trustedNamesKey) as? [String: String] ?? [:]
+        let name = names.removeValue(forKey: deviceId) ?? peers.first { $0.deviceId == deviceId }?.deviceName ?? deviceId
+        UserDefaults.standard.set(names, forKey: trustedNamesKey)
+        Debug.log("travel: untrusted \(deviceId.prefix(8))")
+        app.notify(.trustRemoved(name))
+    }
+
+    /// Trusted devices by id and a name to show.
+    var trustedDevices: [(id: String, name: String)] {
+        let names = UserDefaults.standard.dictionary(forKey: trustedNamesKey) as? [String: String] ?? [:]
+        return (runner?.trusted ?? []).sorted().map { id in
+            (id, names[id] ?? peers.first { $0.deviceId == id }?.deviceName ?? String(id.prefix(8)))
         }
     }
 
-    /// Committed: leap up and away, then this device only remembers where it went.
-    func leave(to peer: DeviceRef) {
-        app.awayOn = peer.deviceName
+    /// "Trusted devices…": each with Remove.
+    func showTrusted() {
+        let list = trustedDevices
+        guard !list.isEmpty else {
+            app.menu.showList([ListMenuView.Row(id: "none", title: "No trusted devices. Each one asks first.", icon: "info", enabled: false)],
+                              near: nil) { _ in }
+            return
+        }
+        app.menu.showList(list.map { ListMenuView.Row(id: $0.id, title: "Remove \($0.name)", icon: nil, trailing: "asks again") }, near: nil) { [weak self] row in
+            guard let self else { return }
+            self.app.menu.closeList()
+            self.untrust(row.id)
+        }
+    }
+
+    /// Committed (or this copy gave way to a newer one): leap up and away; this device only
+    /// remembers where it went (the record already says so: see `recordChanged`).
+    func leave(to peer: DeviceRef, gaveWay: Bool = false) {
         app.menu.close(reason: "travel")
-        guard let foot = app.foot else { app.froggPanel.orderOut(nil); return }
-        app.notify(.left(app.settings.name, to: peer.deviceName))
+        app.notify(gaveWay ? .alreadyHas(peer.deviceName, app.settings.name) : .left(app.settings.name, to: peer.deviceName))
+        guard let foot = app.foot, app.froggPanel.isVisible else { app.froggPanel.orderOut(nil); return }
         app.puff(at: foot)
         app.run(Choreography.exit(from: foot, scale: app.scale), target: nil) { [weak self] in
             self?.app.froggPanel.orderOut(nil)
@@ -262,25 +343,21 @@ final class TravelController {
         }
     }
 
-    /// Owned here now: become that Pixl (skin, name) and spring out of the menu bar.
+    /// Owned here now: become that Pixl (skin, name, the same way as a swap) and spring out of
+    /// the menu bar. Pause and full-screen hiding stay as they were.
     func arrive(_ s: PetState) {
         Debug.log("travel: \(s.name) arrived (epoch \(s.epoch))")
-        app.awayOn = nil
-        if PixlSkins.skin(s.species) != nil, s.species != PixlSkins.currentID {
-            PixlSkins.currentID = s.species
-            app.settings.skin = s.species
-            app.buildFrogg()
-        }
-        app.settings.name = s.name
-        app.settings.save()
-        app.userHidden = true   // so summon() plays the entrance from the icon
-        app.summon()
+        if PixlSkins.skin(s.species) != nil { app.becomeSkin(id: s.species, name: s.name) }
+        app.userHidden = false
+        app.springOut()
         app.notify(.arrived(app.settings.name), voice: .greet)
     }
 
     func callBack() {
-        guard let r = runner, case .away(_, _, let ownerName, _)? = r.record else { return }
-        guard let owner = peers.first(where: { $0.deviceName == ownerName }) else {
+        guard let r = runner, case .away(_, _, let ownerName, let ownerId, _)? = r.record else { return }
+        // by id (a renamed device is the same device); by name for records from before ids were kept
+        guard let owner = peers.first(where: { ownerId != nil && $0.deviceId == ownerId })
+                ?? peers.first(where: { $0.deviceName == ownerName }) else {
             app.notify(.ownerAway(ownerName))
             return
         }

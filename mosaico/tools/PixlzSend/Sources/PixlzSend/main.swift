@@ -45,8 +45,8 @@ func describe(_ record: StoredPet?) -> String {
     switch record {
     case nil: "no Pixl yet"
     case .owned(let s)?: "\(s.name) is here (epoch \(s.epoch), \(s.stats.trips) trips)"
-    case .pendingArrival(let s)?: "\(s.name) is arriving (epoch \(s.epoch))"
-    case .away(_, let e, let name, _)?: "away on \(name) (epoch \(e))"
+    case .pendingArrival(let s, _)?: "\(s.name) is arriving (epoch \(s.epoch))"
+    case .away(_, let e, let name, _, _)?: "away on \(name) (epoch \(e))"
     }
 }
 

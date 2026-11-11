@@ -12,6 +12,8 @@ final class BubbleMenu {
     var view: OptionBubblesView?
     var listPanel: KeyPanel?
     var list: ListMenuView?
+    /// The open list was left without a choice (Esc, a click away): its "no".
+    var listDismiss: (@MainActor () -> Void)?
     var cardPanel: KeyPanel?
     var direction: BubbleMenuModel.Direction = .up
     var openedFoot: CGPoint?
@@ -69,7 +71,7 @@ final class BubbleMenu {
     // MARK: open / close
 
     func open(trigger: String) {
-        guard !app.userHidden, head != nil else { return }
+        guard !app.userHidden, app.awayOn == nil, head != nil else { return }   // not here: nothing to open
         closeList()
         closeCard()  // also invalidates any card still fetching
         // Accessibility first (instant). In a browser where it can't see the selection (rich
@@ -89,7 +91,7 @@ final class BubbleMenu {
     }
 
     private func openNow(trigger: String) {
-        guard !app.userHidden, let head else { return }
+        guard !app.userHidden, app.awayOn == nil, let head else { return }
         let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: app.travel.sendSlotName, walletSub: wallet?.short,
                                           agentsSub: app.agents.bubbleSub)
         let screen = app.screensTopLeft.first { $0.minX <= head.x && head.x <= $0.maxX } ?? app.screensTopLeft.first ?? .zero
@@ -174,7 +176,10 @@ final class BubbleMenu {
     func watchOutside() {
         guard monitors.isEmpty else { return }
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.close(reason: "click away") }
+            MainActor.assumeIsolated {
+                self?.dismissList()
+                self?.close(reason: "click away")
+            }
         }) { monitors.append(m) }
     }
 
@@ -225,6 +230,8 @@ final class BubbleMenu {
                     ListMenuView.Row(id: "play", title: "Play", icon: "play", trailing: app.game.ownGame.map(GameController.title)),
                     ListMenuView.Row(id: "skin", title: "Change Pixl", icon: nil, trailing: app.settings.name),
                     ListMenuView.Row(id: "settings", title: "Pixl settings", icon: "settings", trailing: "⌃⌥P"),
+                    ListMenuView.Row(id: "trusted", title: "Trusted devices…", icon: nil,
+                                     trailing: app.travel.trustedDevices.isEmpty ? "none" : "\(app.travel.trustedDevices.count)"),
                     ListMenuView.Row(id: "hide", title: "Hide for now", icon: "hide", trailing: "⌃⌥H")]
         if app.pendingSelection != nil { rows.insert(ListMenuView.Row(id: "polish", title: "Polish selection", icon: "polish"), at: 0) }
         // fold the other bubbles in; the list takes over
@@ -246,6 +253,7 @@ final class BubbleMenu {
         case "send": showSend()
         case "play": showPlay(near: nil)
         case "settings": app.toggleMiniMenu()
+        case "trusted": app.travel.showTrusted()
         case "hide": app.toggleHidden()
         default: break
         }
@@ -278,11 +286,14 @@ final class BubbleMenu {
         }
     }
 
-    func showList(_ rows: [ListMenuView.Row], near slotID: String?, onSelect: @escaping @MainActor (ListMenuView.Row) -> Void) {
+    /// `onDismiss`: the list was left without a choice (Esc or a click away).
+    func showList(_ rows: [ListMenuView.Row], near slotID: String?, onSelect: @escaping @MainActor (ListMenuView.Row) -> Void,
+                  onDismiss: (@MainActor () -> Void)? = nil) {
         closeList()
         let l = ListMenuView(rows: rows, look: cardLook)
         l.onSelect = onSelect
-        l.onCancel = { [weak self] in self?.closeList(); self?.close(reason: "esc") }
+        l.onCancel = { [weak self] in self?.dismissList(); self?.close(reason: "esc") }
+        listDismiss = onDismiss
         let p = KeyPanel(size: l.frame.size)
         p.level = .popUpMenu
         p.contentView = l
@@ -455,7 +466,16 @@ final class BubbleMenu {
         }
     }
 
+    /// Closes the list as left without a choice: runs its `onDismiss` once.
+    func dismissList() {
+        let d = listDismiss
+        listDismiss = nil
+        closeList()
+        d?()
+    }
+
     func closeList() {
+        listDismiss = nil
         guard let p = listPanel else { return }
         listPanel = nil
         list = nil

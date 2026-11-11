@@ -26,7 +26,7 @@ final class ResizeController {
     }
 
     func beginAdjust() {
-        guard !adjusting, !app.userHidden else { return }
+        guard !adjusting, !app.userHidden, app.awayOn == nil else { return }   // nothing to resize while it's away
         app.cancelMotion()
         app.cancelAnimations()
         app.leaveSurface()

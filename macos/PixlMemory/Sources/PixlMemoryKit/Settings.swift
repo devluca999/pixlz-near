@@ -32,6 +32,9 @@ public struct PixlSettings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    /// One change to settings (what the Settings panel sends).
+    public typealias Edit = (inout PixlSettings) -> Void
+
     /// Remember `name` as the current Pixl's own (or forget it when it's back to the default).
     public mutating func rememberName(default d: String) {
         var n = names ?? [:]
