@@ -24,7 +24,7 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false};
+static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false, 0, 0, true};
 
 static void test_pages(void)
 {
@@ -36,7 +36,7 @@ static void test_pages(void)
     app_menu_open(m, &CTX);
     app_menu_snapshot_t s = app_menu_read(m);
     CHECK(s.mode == APP_MENU_PAGE_1 && s.radius >= 55);
-    CHECK(s.slots[0].bubble == APP_MENU_BUBBLE_SEND && s.slots[1].bubble == APP_MENU_BUBBLE_TRICK);
+    CHECK(s.slots[0].bubble == APP_MENU_BUBBLE_SEND && s.slots[1].bubble == APP_MENU_BUBBLE_AGENTS);
     CHECK(s.slots[2].bubble == APP_MENU_BUBBLE_SWAP && s.slots[3].bubble == APP_MENU_BUBBLE_MORE);
     // Slots sit at the middle of each edge, fully on screen.
     CHECK(s.slots[0].x == 240 && s.slots[0].y - s.radius >= 0);
@@ -49,22 +49,20 @@ static void test_pages(void)
     s = app_menu_read(m);
     for (int i = 0; i < 4; i++) CHECK(s.slots[i].scale == 1000);
 
-    // More → page 2 → Back → page 1.
+    // Page 1: Home · Agents · Swap · More. More → page 2 (Answers · Memory · Trick · More).
+    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_AGENTS && s.slots[1].enabled);
     tap(m, s.slots[3].x, s.slots[3].y);
-    s = app_menu_read(m);
-    CHECK(s.mode == APP_MENU_PAGE_2 && s.slots[0].bubble == APP_MENU_BUBBLE_ANSWERS);
-    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_MEMORY && s.slots[2].bubble == APP_MENU_BUBBLE_MORE);
-    CHECK(s.slots[3].bubble == APP_MENU_BUBBLE_BACK);
-    tap(m, s.slots[3].x, s.slots[3].y);
-    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
+    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_ANSWERS && app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_MEMORY);
+    CHECK(app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_TRICK && app_menu_read(m).slots[3].bubble == APP_MENU_BUBBLE_MORE);
 
     // Trick: an action, and the menu closes.
-    tap(m, s.slots[1].x, s.slots[1].y);
+    tap(m, 240, s.slots[2].y);
     app_menu_action_t a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_TRICK && !app_menu_is_open(m));
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
 
-    // Send home; and Lock (Unlock when locked) on page 3.
+    // Send home; and Lock (Unlock when locked) on page 3 (More, More).
     app_menu_open(m, &CTX);
     tap(m, 240, s.slots[0].y);
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_SEND_HOME);
@@ -72,14 +70,14 @@ static void test_pages(void)
     locked.locked = true;
     app_menu_open(m, &locked);
     tap(m, s.slots[3].x, s.slots[3].y);
-    tap(m, 240, s.slots[2].y);
+    tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3);
     CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_UNLOCK);
     CHECK(app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_EXIT && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_NONE);
     // Back from page 3 is page 2.
     tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
-    tap(m, 240, s.slots[2].y);
+    tap(m, s.slots[3].x, s.slots[3].y);
     tap(m, 240, s.slots[0].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_LOCK && a.arg == 0);
@@ -87,7 +85,7 @@ static void test_pages(void)
     // Exit asks first: red stays (back to page 3), green leaves.
     app_menu_open(m, &CTX);
     tap(m, s.slots[3].x, s.slots[3].y);
-    tap(m, 240, s.slots[2].y);
+    tap(m, s.slots[3].x, s.slots[3].y);
     tap(m, s.slots[1].x, s.slots[1].y);
     app_menu_snapshot_t e = app_menu_read(m);
     CHECK(e.mode == APP_MENU_EXIT);
@@ -114,7 +112,7 @@ static void test_pages(void)
     away.can_call = true;
     app_menu_open(m, &away);
     CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_CALL && app_menu_read(m).slots[0].enabled);
-    CHECK(!app_menu_read(m).slots[1].enabled);   // no trick without a Pixl
+    CHECK(app_menu_read(m).slots[1].enabled);   // Agents works without a Pixl here
     tap(m, 240, s.slots[0].y);
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_CALL);
     away.can_call = false;
@@ -267,8 +265,60 @@ static void test_readers(void)
     app_menu_destroy(&m);
 }
 
+static void test_agents(void)
+{
+    app_menu_handle_t m = app_menu_create(480, 480);
+    app_menu_context_t ctx = CTX;
+    ctx.agents_count = 6;
+    ctx.agents_waiting = (1u << 0) | (1u << 5);   // rows 0 and 5 wait on you
+    app_menu_open(m, &ctx);
+    app_menu_snapshot_t s = app_menu_read(m);
+    tap(m, s.slots[1].x, s.slots[1].y);
+    s = app_menu_read(m);
+    CHECK(s.mode == APP_MENU_AGENTS && s.agent_first == 0 && s.agent_count == 6);
+    const int row = s.rows_y + s.row_h / 2;
+    // A session that isn't waiting: nothing opens.
+    tap(m, 240, row + s.row_h);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    // Swipe for the next four; row 5 is the second there.
+    swipe(m, 360, 200);
+    CHECK(app_menu_read(m).agent_first == 4);
+    swipe(m, 360, 200);   // no more: stays
+    CHECK(app_menu_read(m).agent_first == 4);
+    tap(m, 240, row + s.row_h);
+    s = app_menu_read(m);
+    CHECK(s.mode == APP_MENU_AGENT && s.agent_first == 5);
+    // Allow is greyed until pairing: nothing happens.
+    tap(m, s.confirm_x, s.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENT && app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
+    // A tap elsewhere goes back to the list, on the same screen.
+    tap(m, 240, 200);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS && app_menu_read(m).agent_first == 4);
+    tap(m, 240, row + s.row_h);
+    // Deny: an action naming the row.
+    tap(m, s.cancel_x, s.buttons_y);
+    app_menu_action_t a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_DENY && a.arg == 5 && !app_menu_is_open(m));
+    // Answered elsewhere while open: back to the list.
+    app_menu_open(m, &ctx);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENT);
+    app_menu_set_agents(m, 6, 1u << 5);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    // Tapping above the rows goes back to page 1.
+    tap(m, 240, 20);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
+    // No Mac: Agents is greyed.
+    ctx.agents_connected = false;
+    app_menu_open(m, &ctx);
+    CHECK(!app_menu_read(m).slots[1].enabled);
+    app_menu_destroy(&m);
+}
+
 int main(void)
 {
+    test_agents();
     test_pages();
     test_swap();
     test_readers();

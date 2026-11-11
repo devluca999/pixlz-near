@@ -25,7 +25,7 @@ FRAMES = [
     "mischief_0", "mischief_1", "mischief_2",
     "emotion_happy", "emotion_annoyed", "emotion_sleepy", "emotion_startled", "emotion_proud", "emotion_curious",
 ]
-SOUND_EVENTS = ["greet", "happy", "curious", "annoyed", "startled", "sleepy", "sad", "idle"]
+SOUND_EVENTS = ["greet", "happy", "curious", "annoyed", "startled", "sleepy", "sad", "idle", "alert"]
 MOVEMENT = {"hop": "PIXL_MOVE_HOP", "walk": "PIXL_MOVE_WALK", "float": "PIXL_MOVE_FLOAT", "climb": "PIXL_MOVE_HOP"}
 MAX_LINES = 3
 

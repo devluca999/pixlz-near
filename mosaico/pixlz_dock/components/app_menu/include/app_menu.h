@@ -14,13 +14,15 @@ typedef struct app_menu *app_menu_handle_t;
 
 typedef enum {
     APP_MENU_CLOSED = 0,
-    APP_MENU_PAGE_1,   /**< Send home · Trick · Swap · More */
-    APP_MENU_PAGE_2,   /**< Answers · Memory · More · Back */
+    APP_MENU_PAGE_1,   /**< Home · Agents · Swap · More */
+    APP_MENU_PAGE_2,   /**< Answers · Memory · Trick · More */
     APP_MENU_SWAP,     /**< Swipe through the Pixls; red cancel, green confirm. */
     APP_MENU_ANSWERS,  /**< Reading the Mac's Ask answers: swipe for the next, drag to scroll. */
     APP_MENU_MEMORY,   /**< Reading the Mac's saved highlights, the same way. */
     APP_MENU_PAGE_3,   /**< Lock / Unlock · Exit · Back */
     APP_MENU_EXIT,     /**< "Leave Pixlz?": red stay, green leave (the swap's buttons). */
+    APP_MENU_AGENTS,   /**< Claude Code sessions, four rows a screen; swipe for more. */
+    APP_MENU_AGENT,    /**< One waiting request: red Deny, green Allow (greyed until pairing). */
 } app_menu_mode_t;
 
 typedef enum {
@@ -28,7 +30,7 @@ typedef enum {
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
-    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT,
+    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -44,6 +46,7 @@ typedef enum {
     APP_MENU_ACTION_CALL,       /**< Ask the Mac that has the Pixl to send it here. */
     APP_MENU_ACTION_BRING,      /**< No Mac answers: bring it back from the copy kept here. */
     APP_MENU_ACTION_EXIT,       /**< Leave the app for Vibe Mode (the Pixl goes home first). */
+    APP_MENU_ACTION_AGENT_DENY, /**< arg: the agents row whose request to deny */
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -62,6 +65,9 @@ typedef struct {
     int answers_count;  /**< Items the Mac has sent for the Answers and Memory readers. */
     int memory_count;
     bool can_bring;     /**< Away, no Mac connected, and a safety copy here: "Bring" replaces "Call". */
+    int agents_count;   /**< Sessions the Mac sent (Agents list rows). */
+    uint32_t agents_waiting; /**< Bit i: row i waits on you. */
+    bool agents_connected;   /**< A Mac is connected (Agents is greyed without one). */
 } app_menu_context_t;
 
 typedef struct {
@@ -83,7 +89,13 @@ typedef struct {
     int read_index;        /**< Answers/Memory: the item shown, and how many there are. */
     int read_count;
     int16_t scroll;        /**< Answers/Memory: pixels scrolled down. */
+    int agent_first;       /**< Agents: the first row shown; Agent: the row opened. */
+    int agent_count;
+    int16_t rows_y, row_h; /**< Agents: where the rows start and their height. */
 } app_menu_snapshot_t;
+
+/** Agents: four rows a screen. */
+enum { APP_MENU_AGENT_ROWS = 4 };
 
 app_menu_handle_t app_menu_create(uint16_t width, uint16_t height);
 void app_menu_destroy(app_menu_handle_t *handle);
@@ -96,6 +108,8 @@ bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed
 void app_menu_update(app_menu_handle_t menu);
 /** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
+/** New sessions while the Agents list may be open; a request answered elsewhere closes. */
+void app_menu_set_agents(app_menu_handle_t menu, int count, uint32_t waiting);
 /** New feed counts while a reader may be open (the Mac sends again). */
 void app_menu_set_counts(app_menu_handle_t menu, int answers_count, int memory_count);
 app_menu_snapshot_t app_menu_read(app_menu_handle_t menu);

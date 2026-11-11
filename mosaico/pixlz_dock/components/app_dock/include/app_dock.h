@@ -50,6 +50,25 @@ typedef struct {
     app_dock_feed_item_t memory[APP_DOCK_FEED_ITEMS];
 } app_dock_feed_t;
 
+/** Agent mode (SPEC §16.3): the Claude Code sessions on the Mac, as it last sent them (waiting
+ * ones first). Empty while no Mac is connected. Read-only here; Deny goes back to the Mac. */
+enum { APP_DOCK_AGENTS = 6 };
+typedef struct {
+    char id[44];
+    char project[28];
+    char doing[64];
+    char req[16];          /**< A waiting request's id; "" when it isn't waiting. */
+    char summary[64];      /**< "Run rm -rf build" */
+    char detail[144];      /**< The exact command or file. */
+    bool answerable;       /**< The Mac holds it: Deny here answers it. Else: the terminal asks. */
+} app_dock_agent_t;
+typedef struct {
+    uint32_t version;      /**< Goes up with every change. */
+    bool alerts;           /**< Agent alerts are on (the Mac's toggle): call while one waits. */
+    int count, waiting;
+    app_dock_agent_t items[APP_DOCK_AGENTS];
+} app_dock_agents_t;
+
 /** Loads the saved record and starts networking. Returns NULL on allocation failure. */
 app_dock_handle_t app_dock_create(void);
 /** Closes sockets and frees the dock; clears the handle. NULL is a no-op. */
@@ -69,6 +88,10 @@ bool app_dock_exit(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
 /** The latest feed from a Mac; empty until one arrives. Valid until the next poll. */
 const app_dock_feed_t *app_dock_feed(app_dock_handle_t dock);
+const app_dock_agents_t *app_dock_agents(app_dock_handle_t dock);
+/** Deny a waiting request on the Mac. False when no Mac is connected to tell. Allow isn't
+ * offered here until pairing (D19). */
+bool app_dock_agent_deny(app_dock_handle_t dock, const char *req);
 /** Lock or unlock the Pixl here; saved at once. False if nothing changed. */
 bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
 /** The species ids this device can draw (the strings must outlive the dock). */

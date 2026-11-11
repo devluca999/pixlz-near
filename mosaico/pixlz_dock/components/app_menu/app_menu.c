@@ -10,6 +10,8 @@ enum { STAGGER = 2, POP_TICKS = 9 };
 enum { CLOSE_AFTER = 8 * TICK_HZ, SWAP_CLOSE_AFTER = 30 * TICK_HZ };
 enum { TAP_SLOP = 14, SWIPE_MIN = 60, SIDE_TAP = 90 };
 enum { BUTTON_RADIUS = 55, BUTTON_SPREAD = 110, BUTTON_INSET = 70 };
+/* Agents rows: under a title, above nothing; 4 × 84 px = full-width targets. */
+enum { ROWS_Y = 96, ROW_H = 84 };
 
 struct app_menu {
     uint16_t width, height;
@@ -24,6 +26,7 @@ struct app_menu {
     int read_index;
     float scroll, scroll_at_down;
     int scroll_max;
+    int agent_first, agent;
     app_menu_action_t action;
 };
 
@@ -58,6 +61,8 @@ static void show(app_menu_handle_t m, app_menu_mode_t mode)
     m->read_index = 0;
     m->scroll = 0;
     m->scroll_max = 0;
+    m->agent_first = 0;
+    m->agent = 0;
 }
 
 static bool reading(const app_menu_handle_t m)
@@ -124,14 +129,14 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         } else {
             bubbles[0] = APP_MENU_BUBBLE_CALL, enabled[0] = c->can_call;   /* bring it here */
         }
-        bubbles[1] = APP_MENU_BUBBLE_TRICK, enabled[1] = c->has_pet;
+        bubbles[1] = APP_MENU_BUBBLE_AGENTS, enabled[1] = c->agents_connected;
         bubbles[2] = APP_MENU_BUBBLE_SWAP, enabled[2] = c->pet_count > 1;
         bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
     } else if (m->mode == APP_MENU_PAGE_2) {
         bubbles[0] = APP_MENU_BUBBLE_ANSWERS, enabled[0] = true;   /* empty: says how to fill it */
         bubbles[1] = APP_MENU_BUBBLE_MEMORY, enabled[1] = true;
-        bubbles[2] = APP_MENU_BUBBLE_MORE, enabled[2] = true;
-        bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
+        bubbles[2] = APP_MENU_BUBBLE_TRICK, enabled[2] = c->has_pet;
+        bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
     } else if (m->mode == APP_MENU_PAGE_3) {
         bubbles[0] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[0] = c->has_pet;
         bubbles[1] = APP_MENU_BUBBLE_EXIT, enabled[1] = true;
@@ -181,6 +186,7 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_UNLOCK: act(m, APP_MENU_ACTION_LOCK, 0); break;
     case APP_MENU_BUBBLE_BRING: act(m, APP_MENU_ACTION_BRING, 0); break;
     case APP_MENU_BUBBLE_MORE: show(m, m->mode == APP_MENU_PAGE_1 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_3); break;
+    case APP_MENU_BUBBLE_AGENTS: show(m, APP_MENU_AGENTS); break;
     case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
     case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
     case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
@@ -278,6 +284,75 @@ static void exit_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
     }
 }
 
+static bool waiting(const app_menu_handle_t m, int row)
+{
+    return row >= 0 && row < m->context.agents_count && row < 32 && (m->context.agents_waiting >> row & 1u);
+}
+
+/* Agents list: tap a waiting row to open it; swipe sideways for the next four; tap above or
+ * below the rows to go back to page 1. */
+static void agents_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    (void)was_down;
+    if (pressed) {
+        return;
+    }
+    int32_t dx = x - m->down_x, dy = y - m->down_y;
+    const int n = m->context.agents_count;
+    if (dx * dx >= dy * dy && (dx <= -SWIPE_MIN || dx >= SWIPE_MIN)) {
+        int first = m->agent_first + (dx < 0 ? APP_MENU_AGENT_ROWS : -APP_MENU_AGENT_ROWS);
+        if (first >= 0 && first < n) {
+            m->agent_first = first;
+        }
+        return;
+    }
+    if (dx * dx + dy * dy > TAP_SLOP * TAP_SLOP) {
+        return;
+    }
+    int k = y < ROWS_Y ? -1 : (int)((y - ROWS_Y) / ROW_H);
+    int row = m->agent_first + k;
+    if (k < 0 || k >= APP_MENU_AGENT_ROWS || row >= n) {
+        show(m, APP_MENU_PAGE_1);
+        return;
+    }
+    if (waiting(m, row)) {
+        int first = m->agent_first;
+        show(m, APP_MENU_AGENT);
+        m->agent_first = first;
+        m->agent = row;
+    }
+}
+
+/* One request: red denies; green is Allow, greyed until pairing; anything else goes back. */
+static void agent_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    if (pressed && !was_down) {
+        m->pressed = (int8_t)button_at(m, x, y);
+        if (m->pressed > 0) {
+            m->pressed = 0;   /* Allow can't be pressed here yet */
+        }
+        return;
+    }
+    if (pressed) {
+        if (m->pressed && button_at(m, x, y) != m->pressed) {
+            m->pressed = 0;
+        }
+        return;
+    }
+    int8_t button = m->pressed;
+    m->pressed = 0;
+    if (button < 0 && button_at(m, x, y) == button) {
+        act(m, APP_MENU_ACTION_AGENT_DENY, m->agent);
+        return;
+    }
+    int32_t dx = x - m->down_x, dy = y - m->down_y;
+    if (!button && button_at(m, x, y) == 0 && dx * dx + dy * dy <= TAP_SLOP * TAP_SLOP) {
+        int first = m->agent_first;
+        show(m, APP_MENU_AGENTS);
+        m->agent_first = first;
+    }
+}
+
 /* Readers: drag up/down to scroll, swipe sideways for the next item, tap to go back. */
 static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
 {
@@ -322,6 +397,10 @@ bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
         swap_pointer(m, x, y, pressed, was_down);
     } else if (m->mode == APP_MENU_EXIT) {
         exit_pointer(m, x, y, pressed, was_down);
+    } else if (m->mode == APP_MENU_AGENTS) {
+        agents_pointer(m, x, y, pressed, was_down);
+    } else if (m->mode == APP_MENU_AGENT) {
+        agent_pointer(m, x, y, pressed, was_down);
     } else if (reading(m)) {
         read_pointer(m, x, y, pressed, was_down);
     } else if (!pressed && was_down) {
@@ -344,7 +423,8 @@ void app_menu_update(app_menu_handle_t m)
         return;
     }
     uint32_t idle = m->tick - m->last_touch;
-    if (!m->down && idle >= (m->mode == APP_MENU_SWAP || reading(m) ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
+    const bool long_open = m->mode == APP_MENU_SWAP || reading(m) || m->mode == APP_MENU_AGENTS || m->mode == APP_MENU_AGENT;
+    if (!m->down && idle >= (long_open ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
         app_menu_close(m);   /* nothing static stays on the AMOLED (SPEC §12.1) */
         return;
     }
@@ -382,6 +462,10 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.read_index = m->read_index;
     s.read_count = read_count(m);
     s.scroll = (int16_t)m->scroll;
+    s.agent_first = m->mode == APP_MENU_AGENT ? m->agent : m->agent_first;
+    s.agent_count = m->context.agents_count;
+    s.rows_y = ROWS_Y;
+    s.row_h = ROW_H;
     app_menu_bubble_t bubbles[APP_MENU_SLOTS];
     bool enabled[APP_MENU_SLOTS];
     page(m, bubbles, enabled);
@@ -404,6 +488,23 @@ void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
     m->scroll_max = content_px > view_px ? content_px - view_px : 0;
     if (m->scroll > (float)m->scroll_max) {
         m->scroll = (float)m->scroll_max;
+    }
+}
+
+void app_menu_set_agents(app_menu_handle_t m, int count, uint32_t waiting_rows)
+{
+    if (!m) {
+        return;
+    }
+    m->context.agents_count = count;
+    m->context.agents_waiting = waiting_rows;
+    if (m->agent_first >= count) {
+        m->agent_first = 0;
+    }
+    if (m->mode == APP_MENU_AGENT && !waiting(m, m->agent)) {
+        int first = m->agent_first;
+        show(m, APP_MENU_AGENTS);   /* answered on the Mac or in the terminal */
+        m->agent_first = first;
     }
 }
 

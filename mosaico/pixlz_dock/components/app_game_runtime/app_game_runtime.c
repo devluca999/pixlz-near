@@ -45,6 +45,10 @@ typedef struct {
     trail_point_t trail[TRAIL_POINTS];
     int trail_next;
     uint32_t feed_version;
+    uint32_t agents_version;
+    uint32_t next_alert;      /* Agent alerts: when to call again (0 = at once) */
+    char banner[64];          /* a line across the top ("pixlz needs you") */
+    uint32_t banner_until;
     app_dock_event_t events[MAX_EVENTS];
 } host_state_t;
 
@@ -198,12 +202,19 @@ static void open_menu(host_state_t *state)
     const app_game_snapshot_t s = app_game_read(state->game);
     const bool here = s.phase != APP_GAME_PET_ABSENT && s.phase != APP_GAME_PET_EXITING;
     const app_dock_feed_t *feed = app_dock_feed(state->dock);
-    const app_menu_context_t ctx = {
+    app_menu_context_t ctx = {
         d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
         d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT, d.can_call && !d.in_trip,
         feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
-        d.can_bring && !here,
+        d.can_bring && !here, 0, 0, d.macs > 0,
     };
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    if (ag) {
+        ctx.agents_count = ag->count;
+        for (int i = 0; i < ag->count && i < 32; i++) {
+            ctx.agents_waiting |= ag->items[i].req[0] ? 1u << i : 0;
+        }
+    }
     app_menu_open(state->menu, &ctx);
 }
 
@@ -217,6 +228,16 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
     case APP_MENU_ACTION_TRICK: app_game_trick(state->game); break;
     case APP_MENU_ACTION_CALL: (void)app_dock_call(state->dock); break;
     case APP_MENU_ACTION_BRING: (void)app_dock_bring(state->dock); break;
+    case APP_MENU_ACTION_AGENT_DENY: {
+        const app_dock_agents_t *ag = app_dock_agents(state->dock);
+        const uint32_t tick = app_game_read(state->game).tick;
+        if (ag && a.arg >= 0 && a.arg < ag->count && ag->items[a.arg].req[0]) {
+            const bool sent = ag->items[a.arg].answerable && app_dock_agent_deny(state->dock, ag->items[a.arg].req);
+            snprintf(state->banner, sizeof state->banner, "%s", sent ? "Denied" : "Answer it in the terminal");
+            state->banner_until = tick + 3 * 30;
+        }
+        break;
+    }
     case APP_MENU_ACTION_EXIT: {
         /* With a Mac to go to, the Pixl hops home first, so it isn't left on a device that
          * stops running Pixlz; locked, it stays. Leave when the trip ends, or after 8 s. */
@@ -248,6 +269,39 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
     }
 }
 
+/* Agent mode: new sessions reach an open list; with alerts on, the Pixl calls every 20 s
+ * while one waits, a line names it, and the screen wakes from its dim. */
+static void agents_update(host_state_t *state, uint32_t tick)
+{
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    if (!ag) {
+        return;
+    }
+    if (ag->version != state->agents_version) {
+        state->agents_version = ag->version;
+        uint32_t mask = 0;
+        for (int i = 0; i < ag->count && i < 32; i++) {
+            mask |= ag->items[i].req[0] ? 1u << i : 0;
+        }
+        app_menu_set_agents(state->menu, ag->count, mask);
+        if (!ag->waiting) {
+            state->next_alert = 0;
+        }
+    }
+    if (!ag->alerts || !ag->waiting || tick < state->next_alert) {
+        return;
+    }
+    state->next_alert = tick + 20 * 30;
+    const app_dock_agent_t *first = NULL;
+    for (int i = 0; i < ag->count && !first; i++) {
+        first = ag->items[i].req[0] ? &ag->items[i] : NULL;
+    }
+    speak(state, APP_GAME_SAY_ALERT, tick);
+    snprintf(state->banner, sizeof state->banner, "%s needs you", first ? first->project : "Claude Code");
+    state->banner_until = tick + 5 * 30;
+    state->last_touch_tick = tick;   /* wake the screen */
+}
+
 static void update(void *value)
 {
     host_state_t *state = value;
@@ -276,6 +330,7 @@ static void update(void *value)
         state->feed_version = feed->version;
         app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
     }
+    agents_update(state, tick);
     int n = app_dock_poll(state->dock, state->events, MAX_EVENTS);
     for (int i = 0; i < n; i++) {
         switch (state->events[i].kind) {
@@ -568,6 +623,7 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_CALL: return "Call";
     case APP_MENU_BUBBLE_BRING: return "Bring";
     case APP_MENU_BUBBLE_EXIT: return "Exit";
+    case APP_MENU_BUBBLE_AGENTS: return "Agents";
     default: return "";
     }
 }
@@ -580,6 +636,7 @@ static Color bubble_colour(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_CALL:
     case APP_MENU_BUBBLE_BRING: return shade(110, 180, 245, 100);    /* blue: travel */
     case APP_MENU_BUBBLE_EXIT: return shade(150, 160, 200, 100);     /* slate */
+    case APP_MENU_BUBBLE_AGENTS: return shade(255, 176, 60, 100);    /* amber */
     case APP_MENU_BUBBLE_TRICK: return shade(245, 200, 80, 100);     /* gold */
     case APP_MENU_BUBBLE_SWAP: return shade(185, 150, 240, 100);     /* violet */
     case APP_MENU_BUBBLE_MORE: return shade(120, 200, 190, 100);     /* teal */
@@ -669,6 +726,86 @@ static void draw_buttons(const app_menu_snapshot_t *m)
 }
 
 static int wrap_text(const char *text, int x, int y, int width, int scale, Color colour, bool draw);
+
+/* Agents: four sessions a screen; waiting ones in amber with "needs you". */
+static void draw_agents(const host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    Color white = shade(240, 240, 235, 100), grey = shade(130, 130, 130, 100), amber = shade(255, 176, 60, 100);
+    char line[96];
+    if (ag && ag->waiting) {
+        snprintf(line, sizeof line, "Agents  %d waiting", ag->waiting);
+    } else {
+        snprintf(line, sizeof line, "Agents");
+    }
+    draw_text_centred(line, GAME_WIDTH / 2, 36, 3, white);
+    if (!ag || ag->count == 0) {
+        wrap_text("No Claude Code sessions right now. Connect Claude Code under Agents on your Mac, then start one.",
+                  60, 180, GAME_WIDTH - 120, 2, grey, true);
+        return;
+    }
+    for (int k = 0; k < APP_MENU_AGENT_ROWS; k++) {
+        const int i = m->agent_first + k;
+        if (i >= ag->count) {
+            break;
+        }
+        const app_dock_agent_t *a = &ag->items[i];
+        const int y = m->rows_y + k * m->row_h;
+        const bool wait = a->req[0] != 0;
+        DrawRectangleRounded((Rectangle){20, (float)y + 4, GAME_WIDTH - 40, (float)m->row_h - 8}, 0.25f, 6,
+                             wait ? shade(70, 48, 16, 100) : shade(28, 30, 28, 100));
+        draw_text(a->project, 36, y + 16, 2, wait ? amber : white);
+        if (wait) {
+            draw_text_centred("needs you >", GAME_WIDTH - 100, y + 18, 1, amber);
+        }
+        snprintf(line, sizeof line, "%.40s", wait ? a->summary : a->doing);
+        draw_text(line, 36, y + 48, 1, grey);
+    }
+    if (ag->count > APP_MENU_AGENT_ROWS) {
+        draw_text_centred("swipe for more", GAME_WIDTH / 2, GAME_HEIGHT - 30, 1, grey);
+    }
+}
+
+/* One request: what it wants to run, red Deny, green Allow greyed until pairing (D19). */
+static void draw_agent(const host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    if (!ag || m->agent_first >= ag->count) {
+        return;
+    }
+    const app_dock_agent_t *a = &ag->items[m->agent_first];
+    Color white = shade(240, 240, 235, 100), grey = shade(140, 140, 140, 100), amber = shade(255, 176, 60, 100);
+    draw_text_centred(a->project, GAME_WIDTH / 2, 30, 3, amber);
+    int h = wrap_text(a->summary, 40, 82, GAME_WIDTH - 80, 2, white, true);
+    if (a->detail[0] && strcmp(a->detail, a->summary) != 0) {
+        DrawRectangleRounded((Rectangle){30, (float)(92 + h), GAME_WIDTH - 60, 150}, 0.1f, 6, shade(24, 26, 24, 100));
+        BeginScissorMode(34, 96 + h, GAME_WIDTH - 68, 142);
+        wrap_text(a->detail, 42, 104 + h, GAME_WIDTH - 84, 1, grey, true);
+        EndScissorMode();
+    }
+    if (!a->answerable) {
+        draw_text_centred("Answer it in the terminal", GAME_WIDTH / 2, m->buttons_y - 90, 1, grey);
+    }
+    /* Red Deny; green Allow drawn greyed: it works on the Mac until this device is paired. */
+    const int y = m->buttons_y;
+    DrawCircle(m->cancel_x, y, (float)m->button_radius + (m->pressed < 0 ? 4.0f : 0.0f),
+               a->answerable ? shade(205, 52, 52, 100) : shade(90, 50, 50, 100));
+    DrawCircle(m->confirm_x, y, (float)m->button_radius, shade(50, 70, 55, 100));
+    draw_text_centred("Deny", m->cancel_x, y - PIXL_FONT_HEIGHT, 2, white);
+    draw_text_centred("Allow", m->confirm_x, y - PIXL_FONT_HEIGHT - 6, 2, grey);
+    draw_text_centred("on your Mac", m->confirm_x, y + 10, 1, grey);
+}
+
+/* A line across the top (an agent waiting, "Denied"), over everything. */
+static void draw_banner(const host_state_t *state, uint32_t tick)
+{
+    if (tick >= state->banner_until || !state->banner[0]) {
+        return;
+    }
+    const int w = text_width(state->banner, 2) + 32;
+    DrawRectangleRounded((Rectangle){(float)(GAME_WIDTH - w) / 2, 10, (float)w, 34}, 0.5f, 8, shade(70, 48, 16, 100));
+    draw_text_centred(state->banner, GAME_WIDTH / 2, 20, 2, shade(255, 200, 110, 100));
+}
 
 /* "Leave Pixlz?" with what happens to the Pixl, over the red and green buttons. */
 static void draw_exit(const host_state_t *state, const app_menu_snapshot_t *m)
@@ -850,6 +987,10 @@ static int render(void *value)
         draw_swap(&m, s.tick);
     } else if (m.mode == APP_MENU_EXIT) {
         draw_exit(state, &m);
+    } else if (m.mode == APP_MENU_AGENTS) {
+        draw_agents(state, &m);
+    } else if (m.mode == APP_MENU_AGENT) {
+        draw_agent(state, &m);
     } else if (m.mode == APP_MENU_ANSWERS || m.mode == APP_MENU_MEMORY) {
         draw_reader(state, &m);
     } else {
@@ -876,6 +1017,7 @@ static int render(void *value)
             draw_menu(state, &m);
         }
     }
+    draw_banner(state, s.tick);
     const app_dock_status_t dock = app_dock_status(state->dock);
     if (dock.on_battery && dock.battery_percent >= 0 && dock.battery_percent <= BATTERY_WARN) {
         draw_battery(dock.battery_percent, s.tick, brightness < 50 ? 50 : brightness);

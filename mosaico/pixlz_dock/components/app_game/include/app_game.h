@@ -78,6 +78,7 @@ typedef enum {
     APP_GAME_SAY_NONE = -1,
     APP_GAME_SAY_GREET = 0, APP_GAME_SAY_HAPPY, APP_GAME_SAY_CURIOUS, APP_GAME_SAY_ANNOYED,
     APP_GAME_SAY_STARTLED, APP_GAME_SAY_SLEEPY, APP_GAME_SAY_SAD, APP_GAME_SAY_IDLE,
+    APP_GAME_SAY_ALERT,   /**< Agent mode: a session needs you (said by the screen, not the model). */
 } app_game_say_t;
 
 typedef enum {

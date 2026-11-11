@@ -49,6 +49,8 @@ struct app_dock {
     /* Instance-owned scratch, so nothing large sits on the caller's task stack. */
     pt_outs_t outs;
     app_dock_feed_t feed;
+    app_dock_agents_t agents;
+    char agents_from[PT_ID_MAX];
     uint8_t io[512];
     char hello[HELLO_MAX];
 };
@@ -323,6 +325,48 @@ static bool handle_feed(app_dock_handle_t d, const conn_t *c, const char *body, 
     return true;
 }
 
+static void copy_field(pt_span_t o, const char *key, char *out, size_t cap)
+{
+    pt_span_t v;
+    out[0] = 0;
+    if (pt_json_find(o.p, o.len, key, &v) && !pt_json_string(v, out, cap)) {
+        out[0] = 0;
+    }
+}
+
+/* `{"agents":{"alerts":bool,"sessions":[{id,project,doing,req?,summary?,detail?,answerable?}]}}` */
+static bool handle_agents(app_dock_handle_t d, const conn_t *c, const char *body, size_t len)
+{
+    pt_span_t agents, list, item, v;
+    if (!pt_json_find(body, len, "agents", &agents)) {
+        return false;
+    }
+    app_dock_agents_t *a = &d->agents;
+    a->alerts = pt_json_find(agents.p, agents.len, "alerts", &v) && pt_json_is_true(v);
+    a->count = a->waiting = 0;
+    if (pt_json_find(agents.p, agents.len, "sessions", &list)) {
+        for (int i = 0; a->count < APP_DOCK_AGENTS && pt_json_array_item(list, i, &item); i++) {
+            app_dock_agent_t *s = &a->items[a->count];
+            copy_field(item, "id", s->id, sizeof s->id);
+            copy_field(item, "project", s->project, sizeof s->project);
+            copy_field(item, "doing", s->doing, sizeof s->doing);
+            copy_field(item, "req", s->req, sizeof s->req);
+            copy_field(item, "summary", s->summary, sizeof s->summary);
+            copy_field(item, "detail", s->detail, sizeof s->detail);
+            s->answerable = pt_json_find(item.p, item.len, "answerable", &v) && pt_json_is_true(v);
+            if (!s->id[0]) {
+                continue;
+            }
+            a->waiting += s->req[0] != 0;
+            a->count++;
+        }
+    }
+    a->version++;
+    snprintf(d->agents_from, sizeof d->agents_from, "%s", c->peer.id);
+    dock_platform_log("pixlz: agents from %s: %d sessions, %d waiting", c->peer.name, a->count, a->waiting);
+    return true;
+}
+
 static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
 {
     if (!c->hello) {
@@ -342,7 +386,7 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             return;
         }
     }
-    if (handle_feed(d, c, body, len)) {
+    if (handle_feed(d, c, body, len) || handle_agents(d, c, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
@@ -533,6 +577,58 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
         snprintf(s.away_on, sizeof s.away_on, "%s", d->node.record.away_name);
     }
     return s;
+}
+
+const app_dock_agents_t *app_dock_agents(app_dock_handle_t d)
+{
+    if (!d) {
+        return NULL;
+    }
+    int macs = 0;
+    for (int i = 0; i < MAX_CONNS; i++) {
+        macs += d->conns[i].fd >= 0 && d->conns[i].hello;
+    }
+    if (macs == 0 && d->agents.count > 0) {   /* nobody to answer to: the list is stale */
+        d->agents.count = d->agents.waiting = 0;
+        d->agents.version++;
+    }
+    return &d->agents;
+}
+
+bool app_dock_agent_deny(app_dock_handle_t d, const char *req)
+{
+    if (!d || !req || !req[0]) {
+        return false;
+    }
+    char body[96];
+    pt_jw_t w;
+    pt_jw_init(&w, body, sizeof body);
+    pt_jw_lit(&w, "{\"agentDecision\":{\"id\":");
+    pt_jw_str(&w, req);
+    pt_jw_lit(&w, ",\"behavior\":\"deny\"}}");
+    if (!w.ok) {
+        return false;
+    }
+    size_t n = w.len;
+    conn_t *fallback = NULL;
+    for (int i = 0; i < MAX_CONNS; i++) {
+        conn_t *c = &d->conns[i];
+        if (c->fd < 0 || !c->hello) {
+            continue;
+        }
+        if (strcmp(c->peer.id, d->agents_from) == 0) {
+            fallback = c;
+            break;
+        }
+        if (!fallback) {
+            fallback = c;
+        }
+    }
+    if (!fallback || !enqueue(fallback, body, n)) {
+        return false;
+    }
+    dock_platform_log("pixlz: denied %s on %s", req, fallback->peer.name);
+    return true;
 }
 
 const app_dock_feed_t *app_dock_feed(app_dock_handle_t d)
