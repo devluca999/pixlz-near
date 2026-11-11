@@ -58,9 +58,20 @@ typedef enum {
     APP_MENU_ACTION_AGENT_REPLY,/**< arg: row * 16 + quick reply (0..3) */
 } app_menu_action_kind_t;
 
+/** Agents rows: the session id and, while it waits, its request id (the dock's sizes). */
+enum { APP_MENU_AGENT_MAX = 8, APP_MENU_ID_MAX = 44, APP_MENU_REQ_MAX = 16 };
+typedef struct {
+    char id[APP_MENU_ID_MAX];
+    char req[APP_MENU_REQ_MAX];   /**< "" when it isn't waiting. */
+} app_menu_agent_row_t;
+
 typedef struct {
     app_menu_action_kind_t kind;
     int arg;
+    /** Agent actions: the session (and request) the view was opened on. Act on these, never on
+     * the row, which may have moved. */
+    char id[APP_MENU_ID_MAX];
+    char req[APP_MENU_REQ_MAX];
 } app_menu_action_t;
 
 /** What the screen can do right now, given when the menu opens. */
@@ -73,12 +84,11 @@ typedef struct {
     bool can_call;      /**< The Pixl is away and a Mac is connected: "Call" replaces "Home". */
     int answers_count;  /**< Items the Mac has sent for the Answers and Memory readers. */
     int memory_count;
-    bool can_bring;     /**< Away, no Mac connected, and a safety copy here: "Bring" replaces "Call". */
-    int agents_count;   /**< Sessions the Mac sent (Agents list rows). */
-    uint32_t agents_waiting; /**< Bit i: row i waits on you. */
+    bool can_bring;     /**< Away, its holder unreachable, and a safety copy here: "Bring" replaces "Call". */
     bool agents_connected;   /**< A Mac is connected (Agents is greyed without one). */
     bool agents_paired;      /**< Paired with the Mac whose sessions these are: Allow works. */
     bool paired;             /**< Paired with a Mac: Unpair on page 3. */
+    bool can_swap;           /**< The Pixl is here and not in a trip: Swap works. */
 } app_menu_context_t;
 
 typedef struct {
@@ -103,6 +113,8 @@ typedef struct {
     int agent_first;       /**< Agents: the first row shown; Agent: the row opened. */
     int agent_count;
     int16_t rows_y, row_h; /**< Agents: where the rows start and their height. */
+    char agent_id[APP_MENU_ID_MAX];   /**< Agent, Chat, Quick: the session opened (draw it by id). */
+    char agent_req[APP_MENU_REQ_MAX]; /**< Agent: its request. */
 } app_menu_snapshot_t;
 
 /** Agents: four rows a screen. */
@@ -119,14 +131,18 @@ bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed
 void app_menu_update(app_menu_handle_t menu);
 /** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
-/** Chat: whether the open session takes a reply from here now (held open, and paired). */
+/** Chat: whether the open session takes a reply from here now (held open, and paired). Quick
+ * replies go back to the chat when it stops. */
 void app_menu_set_chat(app_menu_handle_t menu, bool reply_ok);
+/** Leave a chat or request view for the list (the Mac couldn't be asked). */
+void app_menu_back_to_agents(app_menu_handle_t menu);
 /** A Mac asks to pair: show its code over anything else, with red and green. */
 void app_menu_open_pair(app_menu_handle_t menu);
 /** New pairing state (paired now, or not) while the menu is open. */
 void app_menu_set_paired(app_menu_handle_t menu, bool paired, bool agents_paired);
-/** New sessions while the Agents list may be open; a request answered elsewhere closes. */
-void app_menu_set_agents(app_menu_handle_t menu, int count, uint32_t waiting);
+/** The sessions (copied; call after open and on every change). An open request whose request
+ * id is gone goes back to the list; open views follow their session when rows move. */
+void app_menu_set_agents(app_menu_handle_t menu, const app_menu_agent_row_t *rows, int count);
 /** New feed counts while a reader may be open (the Mac sends again). */
 void app_menu_set_counts(app_menu_handle_t menu, int answers_count, int memory_count);
 app_menu_snapshot_t app_menu_read(app_menu_handle_t menu);
