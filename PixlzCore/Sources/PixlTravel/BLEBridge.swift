@@ -74,14 +74,31 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         peripheral = p
         p.delegate = self
         central.connect(p)
+        watch("connecting")
+    }
+
+    /// macOS never times out a connect or a discovery: if the link isn't fully up (the
+    /// Mosaico's id read and the local port open) 10 s after a step began, start over.
+    private var watchGen = 0
+    private func watch(_ step: String) {
+        watchGen += 1
+        let gen = watchGen
+        queue.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self, self.watchGen == gen, self.listener == nil, let p = self.peripheral else { return }
+            self.log("bluetooth: stuck \(step); starting over")
+            self.central.cancelPeripheralConnection(p)
+            self.reset(retry: true)
+        }
     }
 
     public func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
         log("bluetooth: connected to \(p.name ?? "?")")
         p.discoverServices([Self.service])
+        watch("finding the Pixlz service")
     }
 
     public func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
+        log("bluetooth: couldn't connect (\(error?.localizedDescription ?? "no reason")); trying again")
         reset(retry: true)
     }
 
@@ -91,6 +108,7 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     private func reset(retry: Bool) {
+        watchGen += 1   // any pending watchdog is for the old link
         let gone = device?.deviceId
         client?.cancel(); client = nil
         listener?.cancel(); listener = nil
@@ -101,7 +119,12 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     public func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
-        guard let s = p.services?.first(where: { $0.uuid == Self.service }) else { reset(retry: true); return }
+        guard let s = p.services?.first(where: { $0.uuid == Self.service }) else {
+            log("bluetooth: no Pixlz service on \(p.name ?? "?"); starting over")
+            central.cancelPeripheralConnection(p)
+            reset(retry: true)
+            return
+        }
         p.discoverCharacteristics([Self.rxUUID, Self.txUUID, Self.infoUUID], for: s)
     }
 
