@@ -29,6 +29,8 @@ public enum BubbleIcons {
                  ".kaaawwaaak.", ".kaaaaaaaak.", "kaaaawwaaaak", "kaaaaaaaaaak", "kkkkkkkkkkkk"],
         "energy": ["......kkkk..", ".....kaaak..", "....kaaak...", "...kaaak....", "..kaaakkkk..", ".kaaaaaaak..", ".kkkkaaak...",
                    "....kaaak...", "...kaaak....", "...kaak.....", "..kak.......", "..kk........"],
+        "agents": ["kkkkkkkkkkkk", "kaaaaaaaaaak", "kkkkkkkkkkkk", "kwwwwwwwwwwk", "kwkwwwwwwwwk", "kwwkwwwwwwwk", "kwwwkwwwwwwk",
+                   "kwwkwwwwwwwk", "kwkwwkkkkwwk", "kwwwwwwwwwwk", "kwwwwwwwwwwk", "kkkkkkkkkkkk"],
         "play": ["............", "..kk........", "..kak.......", "..kaak......", "..kaaak.....", "..kaaaak....", "..kaaaak....",
                  "..kaaak.....", "..kaak......", "..kak.......", "..kk........", "............"],
                 "hide": ["............", "............", "..kkkkkkkk..", ".kwwwwwwwwk.", "kwwkkwwkkwwk", "kwwkkwwkkwwk", "kwwwwwwwwwwk",
@@ -39,7 +41,7 @@ public enum BubbleIcons {
         "ask": ["#7CD93A"], "polish": ["#FFD23F"], "memory": ["#2F6FE0"], "wallet": ["#FFD23F", "#FF8A1F"],
         "send": ["#2FB3A6"], "more": [], "settings": ["#9AA295"], "hide": [], "search": ["#86C5F0"],
         "info": ["#2F6FE0"], "check": ["#7CD93A"], "warn": ["#FF8A1F"],
-        "energy": ["#7CD93A"], "play": ["#FF8A1F"],
+        "energy": ["#7CD93A"], "play": ["#FF8A1F"], "agents": ["#7CD93A"],
     ]
 
     public static var names: [String] { grids.keys.sorted() }

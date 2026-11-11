@@ -48,6 +48,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var intents = IntentRunner(app: self)
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
+    lazy var agents = AgentController(app: self)
     lazy var presence = PresenceController(app: self)
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
@@ -155,6 +156,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // bridge and the service with the first: it doesn't start its own
         let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil
         if !secondCopy { bridge.start() }
+        if !secondCopy && !CommandLine.arguments.contains("--selftest") { agents.start() }
         if !secondCopy { Task { @MainActor in
             if let why = await service.ensureRunning() {
                 Debug.log("service: \(why)")
@@ -2019,7 +2021,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func quit() { NSApp.terminate(nil) }
 
-    func applicationWillTerminate(_ notification: Notification) { service.stop() }
+    func applicationWillTerminate(_ notification: Notification) { agents.stop(); service.stop() }
 
     // MARK: self-test (--selftest): clicks through the real panels with posted events
 
