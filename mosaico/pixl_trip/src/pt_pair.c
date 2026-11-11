@@ -184,7 +184,7 @@ size_t pt_pair_sign_reply(pt_pair_record_t *rec, const pt_device_t *me, const ch
     for (const char *c = text; *c; c++) {   /* the quick replies: letters and spaces */
         if (!((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || *c == ' ')) return 0;
     }
-    char signed_body[320];
+    static char signed_body[320];
     size_t n = pt_pair_sign_decision(rec, me, session, "reply", "reply", text, signed_body, sizeof signed_body);
     if (!n) return 0;
     /* Same fields under "agentReply", with the text: {"agentReply":{"behavior":…,"text":"…"}} */

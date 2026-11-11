@@ -54,11 +54,12 @@ struct app_dock {
     app_dock_feed_t feed;
     app_dock_agents_t agents;
     char agents_from[PT_ID_MAX];
+    app_dock_chat_t chat;
     pt_pair_t pair;
     pt_pair_record_t paired;
     pt_pair_out_t pair_out;
     uint8_t rnd[32];
-    char decision[320];
+    char decision[400];
     uint8_t io[512];
     char hello[HELLO_MAX];
 };
@@ -367,6 +368,7 @@ static bool handle_agents(app_dock_handle_t d, const conn_t *c, const char *body
             copy_field(item, "summary", s->summary, sizeof s->summary);
             copy_field(item, "detail", s->detail, sizeof s->detail);
             s->answerable = pt_json_find(item.p, item.len, "answerable", &v) && pt_json_is_true(v);
+            s->reply_open = pt_json_find(item.p, item.len, "reply", &v) && pt_json_is_true(v);
             if (!s->id[0]) {
                 continue;
             }
@@ -413,6 +415,36 @@ static bool handle_pair(app_dock_handle_t d, conn_t *c, const char *body, size_t
     return used;
 }
 
+/* `{"chat":{"id","title","lines":[{"r","t"}]}}`: the chat this device asked for. */
+static bool handle_chat(app_dock_handle_t d, const char *body, size_t len)
+{
+    pt_span_t chat, list, item, v;
+    if (!pt_json_find(body, len, "chat", &chat)) {
+        return false;
+    }
+    app_dock_chat_t *ch = &d->chat;
+    char id[44];
+    copy_field(chat, "id", id, sizeof id);
+    if (strcmp(id, ch->id) != 0) {
+        return true;   /* an answer to an older question */
+    }
+    copy_field(chat, "title", ch->title, sizeof ch->title);
+    ch->count = 0;
+    if (pt_json_find(chat.p, chat.len, "lines", &list)) {
+        for (int i = 0; ch->count < APP_DOCK_CHAT_LINES && pt_json_array_item(list, i, &item); i++) {
+            app_dock_chat_line_t *l = &ch->lines[ch->count];
+            char r[4];
+            copy_field(item, "r", r, sizeof r);
+            l->role = r[0] ? r[0] : 't';
+            if (pt_json_find(item.p, item.len, "t", &v) && pt_json_string(v, l->text, sizeof l->text)) {
+                ch->count++;
+            }
+        }
+    }
+    ch->version++;
+    return true;
+}
+
 static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_t len)
 {
     if (!c->hello) {
@@ -432,7 +464,8 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             return;
         }
     }
-    if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len)) {
+    if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len) ||
+            handle_chat(d, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
@@ -676,6 +709,48 @@ bool app_dock_agent_decide(app_dock_handle_t d, int index, bool allow)
         return true;
     }
     return !allow && app_dock_agent_deny(d, a->req);
+}
+
+bool app_dock_agent_chat(app_dock_handle_t d, int index)
+{
+    if (!d || index < 0 || index >= d->agents.count) {
+        return false;
+    }
+    conn_t *c = conn_for(d, d->agents_from);
+    app_dock_chat_t *ch = &d->chat;
+    snprintf(ch->id, sizeof ch->id, "%s", d->agents.items[index].id);
+    ch->title[0] = 0;
+    ch->count = -1;   /* loading */
+    ch->version++;
+    pt_jw_t w;
+    pt_jw_init(&w, d->decision, sizeof d->decision);
+    pt_jw_lit(&w, "{\"agentChat\":{\"id\":");
+    pt_jw_str(&w, ch->id);
+    pt_jw_lit(&w, "}}");
+    return c && w.ok && enqueue(c, d->decision, w.len);
+}
+
+const app_dock_chat_t *app_dock_chat(app_dock_handle_t d)
+{
+    return d ? &d->chat : NULL;
+}
+
+bool app_dock_agent_reply(app_dock_handle_t d, int index, const char *text)
+{
+    if (!d || index < 0 || index >= d->agents.count || !d->agents.items[index].reply_open) {
+        return false;
+    }
+    conn_t *c = conn_for(d, d->agents_from);
+    if (!c || !d->paired.paired || strcmp(d->paired.mac_id, d->agents_from) != 0) {
+        return false;
+    }
+    size_t n = pt_pair_sign_reply(&d->paired, &d->node.me, d->agents.items[index].id, text, d->decision,
+                                  sizeof d->decision);
+    if (!n || !dock_platform_save_pair(&d->paired) || !enqueue(c, d->decision, n)) {
+        return false;
+    }
+    dock_platform_log("pixlz: replied \"%s\" to %s", text, d->agents.items[index].project);
+    return true;
 }
 
 void app_dock_pair_answer(app_dock_handle_t d, bool accept)

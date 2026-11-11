@@ -24,6 +24,8 @@ typedef enum {
     APP_MENU_AGENTS,   /**< Claude Code sessions, four rows a screen; swipe for more. */
     APP_MENU_AGENT,    /**< One waiting request: red Deny, green Allow (greyed until pairing). */
     APP_MENU_PAIR,     /**< A Mac's pairing code: red no, green "same code" (D20). */
+    APP_MENU_CHAT,     /**< One session's chat: drag to scroll, tap to go back; green Reply when it can. */
+    APP_MENU_QUICK,    /**< Quick replies: Continue · Yes · No · Run the tests. */
 } app_menu_mode_t;
 
 typedef enum {
@@ -32,6 +34,7 @@ typedef enum {
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
     APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS, APP_MENU_BUBBLE_UNPAIR,
+    APP_MENU_BUBBLE_Q0, APP_MENU_BUBBLE_Q1, APP_MENU_BUBBLE_Q2, APP_MENU_BUBBLE_Q3,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -51,6 +54,8 @@ typedef enum {
     APP_MENU_ACTION_AGENT_ALLOW,/**< arg: the agents row (only when paired with that Mac) */
     APP_MENU_ACTION_PAIR,       /**< arg: 1 the codes match, 0 no */
     APP_MENU_ACTION_UNPAIR,
+    APP_MENU_ACTION_AGENT_CHAT, /**< arg: the agents row; the menu stays open (ask the Mac for its chat) */
+    APP_MENU_ACTION_AGENT_REPLY,/**< arg: row * 16 + quick reply (0..3) */
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -114,6 +119,8 @@ bool app_menu_pointer(app_menu_handle_t menu, int32_t x, int32_t y, bool pressed
 void app_menu_update(app_menu_handle_t menu);
 /** Answers/Memory: the shown item's text height vs. the space for it, so scrolling stops at the end. */
 void app_menu_set_read_extent(app_menu_handle_t menu, int content_px, int view_px);
+/** Chat: whether the open session takes a reply from here now (held open, and paired). */
+void app_menu_set_chat(app_menu_handle_t menu, bool reply_ok);
 /** A Mac asks to pair: show its code over anything else, with red and green. */
 void app_menu_open_pair(app_menu_handle_t menu);
 /** New pairing state (paired now, or not) while the menu is open. */

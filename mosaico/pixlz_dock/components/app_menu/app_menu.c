@@ -27,6 +27,8 @@ struct app_menu {
     float scroll, scroll_at_down;
     int scroll_max;
     int agent_first, agent;
+    bool chat_reply_ok;
+    bool to_end;           /* chat: jump to the newest turn once its size is known */
     app_menu_action_t action;
 };
 
@@ -63,10 +65,14 @@ static void show(app_menu_handle_t m, app_menu_mode_t mode)
     m->scroll_max = 0;
     m->agent_first = 0;
     m->agent = 0;
+    m->to_end = mode == APP_MENU_CHAT;
 }
 
 static bool reading(const app_menu_handle_t m)
 {
+    if (m->mode == APP_MENU_CHAT) {
+        return true;
+    }
     return m->mode == APP_MENU_ANSWERS || m->mode == APP_MENU_MEMORY;
 }
 
@@ -137,6 +143,10 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         bubbles[1] = APP_MENU_BUBBLE_MEMORY, enabled[1] = true;
         bubbles[2] = APP_MENU_BUBBLE_TRICK, enabled[2] = c->has_pet;
         bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
+    } else if (m->mode == APP_MENU_QUICK) {
+        for (int i = 0; i < APP_MENU_SLOTS; i++) {
+            bubbles[i] = (app_menu_bubble_t)(APP_MENU_BUBBLE_Q0 + i), enabled[i] = true;
+        }
     } else if (m->mode == APP_MENU_PAGE_3) {
         bubbles[0] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[0] = c->has_pet;
         bubbles[1] = APP_MENU_BUBBLE_EXIT, enabled[1] = true;
@@ -174,6 +184,12 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     page(m, bubbles, enabled);
     int i = hit_slot(m, x, y);
     if (i < 0 || bubbles[i] == APP_MENU_BUBBLE_NONE) {
+        if (m->mode == APP_MENU_QUICK) {
+            int row = m->agent;
+            show(m, APP_MENU_CHAT);   /* not now: back to the chat */
+            m->agent = row;
+            return;
+        }
         app_menu_close(m);   /* a tap anywhere else closes it */
         return;
     }
@@ -193,6 +209,9 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
     case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
     case APP_MENU_BUBBLE_UNPAIR: act(m, APP_MENU_ACTION_UNPAIR, 0); break;
+    case APP_MENU_BUBBLE_Q0: case APP_MENU_BUBBLE_Q1: case APP_MENU_BUBBLE_Q2: case APP_MENU_BUBBLE_Q3:
+        act(m, APP_MENU_ACTION_AGENT_REPLY, m->agent * 16 + (int)(bubbles[i] - APP_MENU_BUBBLE_Q0));
+        break;
     case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
     case APP_MENU_BUBBLE_MEMORY: show(m, APP_MENU_MEMORY); break;
     case APP_MENU_BUBBLE_SWAP:
@@ -319,11 +338,13 @@ static void agents_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool press
         show(m, APP_MENU_PAGE_1);
         return;
     }
-    if (waiting(m, row)) {
-        int first = m->agent_first;
-        show(m, APP_MENU_AGENT);
-        m->agent_first = first;
-        m->agent = row;
+    int first = m->agent_first;
+    show(m, waiting(m, row) ? APP_MENU_AGENT : APP_MENU_CHAT);   /* a request first; else its chat */
+    m->agent_first = first;
+    m->agent = row;
+    if (m->mode == APP_MENU_CHAT) {
+        m->action.kind = APP_MENU_ACTION_AGENT_CHAT;   /* the menu stays open */
+        m->action.arg = row;
     }
 }
 
@@ -399,6 +420,17 @@ static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
         m->scroll = 0;
         m->scroll_max = 0;
     } else if (dx * dx + dy * dy <= TAP_SLOP * TAP_SLOP) {
+        if (m->mode == APP_MENU_CHAT) {
+            int row = m->agent, first = m->agent_first;
+            if (m->chat_reply_ok && button_at(m, x, y) > 0) {
+                show(m, APP_MENU_QUICK);
+                m->agent = row;
+                return;
+            }
+            show(m, APP_MENU_AGENTS);   /* back to the sessions */
+            m->agent_first = first;
+            return;
+        }
         show(m, APP_MENU_PAGE_2);   /* a tap goes back to the page it came from */
     }
 }
@@ -452,7 +484,8 @@ void app_menu_update(app_menu_handle_t m)
     if (m->mode == APP_MENU_PAIR) {
         return;   /* stays until answered, or until the dock says the pairing ended */
     }
-    const bool long_open = m->mode == APP_MENU_SWAP || reading(m) || m->mode == APP_MENU_AGENTS || m->mode == APP_MENU_AGENT;
+    const bool long_open = m->mode == APP_MENU_SWAP || reading(m) || m->mode == APP_MENU_AGENTS ||
+                           m->mode == APP_MENU_AGENT || m->mode == APP_MENU_QUICK;
     if (!m->down && idle >= (long_open ? SWAP_CLOSE_AFTER : CLOSE_AFTER)) {
         app_menu_close(m);   /* nothing static stays on the AMOLED (SPEC §12.1) */
         return;
@@ -491,7 +524,8 @@ app_menu_snapshot_t app_menu_read(app_menu_handle_t m)
     s.read_index = m->read_index;
     s.read_count = read_count(m);
     s.scroll = (int16_t)m->scroll;
-    s.agent_first = m->mode == APP_MENU_AGENT ? m->agent : m->agent_first;
+    s.agent_first = (m->mode == APP_MENU_AGENT || m->mode == APP_MENU_CHAT || m->mode == APP_MENU_QUICK) ? m->agent
+                                                                                                       : m->agent_first;
     s.agent_count = m->context.agents_count;
     s.rows_y = ROWS_Y;
     s.row_h = ROW_H;
@@ -515,8 +549,19 @@ void app_menu_set_read_extent(app_menu_handle_t m, int content_px, int view_px)
         return;
     }
     m->scroll_max = content_px > view_px ? content_px - view_px : 0;
+    if (m->to_end && m->scroll_max > 0) {
+        m->scroll = (float)m->scroll_max;
+        m->to_end = false;
+    }
     if (m->scroll > (float)m->scroll_max) {
         m->scroll = (float)m->scroll_max;
+    }
+}
+
+void app_menu_set_chat(app_menu_handle_t m, bool reply_ok)
+{
+    if (m) {
+        m->chat_reply_ok = reply_ok;
     }
 }
 

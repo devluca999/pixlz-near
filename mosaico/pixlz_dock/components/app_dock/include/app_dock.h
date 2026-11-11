@@ -67,7 +67,22 @@ typedef struct {
     char summary[64];      /**< "Run rm -rf build" */
     char detail[144];      /**< The exact command or file. */
     bool answerable;       /**< The Mac holds it: Deny here answers it. Else: the terminal asks. */
+    bool reply_open;       /**< Finished and held open for a reply (Reply from Pixlz on the Mac). */
 } app_dock_agent_t;
+
+/** One session's chat, as the Mac sent it on request (newest last). count < 0: still loading. */
+enum { APP_DOCK_CHAT_LINES = 12, APP_DOCK_CHAT_TEXT = 292 };
+typedef struct {
+    char role;             /**< 'y' you, 'c' Claude, 't' a tool it ran */
+    char text[APP_DOCK_CHAT_TEXT];
+} app_dock_chat_line_t;
+typedef struct {
+    uint32_t version;
+    char id[44];
+    char title[64];
+    int count;
+    app_dock_chat_line_t lines[APP_DOCK_CHAT_LINES];
+} app_dock_chat_t;
 typedef struct {
     uint32_t version;      /**< Goes up with every change. */
     bool alerts;           /**< Agent alerts are on (the Mac's toggle): call while one waits. */
@@ -101,6 +116,11 @@ bool app_dock_agent_deny(app_dock_handle_t dock, const char *req);
 /** Answer a waiting request: signed with the pairing key when paired with the Mac that sent the
  * list (Allow needs that); otherwise only Deny, unsigned. */
 bool app_dock_agent_decide(app_dock_handle_t dock, int index, bool allow);
+/** Ask the Mac for that session's chat; it arrives in app_dock_chat(). */
+bool app_dock_agent_chat(app_dock_handle_t dock, int index);
+const app_dock_chat_t *app_dock_chat(app_dock_handle_t dock);
+/** A quick reply to a session held open for one: signed, so only when paired with that Mac. */
+bool app_dock_agent_reply(app_dock_handle_t dock, int index, const char *text);
 /** The user's answer to the pairing code on screen. */
 void app_dock_pair_answer(app_dock_handle_t dock, bool accept);
 /** Forget the paired Mac (Allow turns off here). */

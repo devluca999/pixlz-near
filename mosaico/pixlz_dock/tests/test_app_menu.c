@@ -277,8 +277,11 @@ static void test_agents(void)
     s = app_menu_read(m);
     CHECK(s.mode == APP_MENU_AGENTS && s.agent_first == 0 && s.agent_count == 6);
     const int row = s.rows_y + s.row_h / 2;
-    // A session that isn't waiting: nothing opens.
+    // A session that isn't waiting opens its chat; a tap there comes back.
     tap(m, 240, row + s.row_h);
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT);
+    (void)app_menu_take_action(m);
+    tap(m, 240, 200);
     CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
     // Swipe for the next four; row 5 is the second there.
     swipe(m, 360, 200);
@@ -341,6 +344,30 @@ static void test_agents(void)
     tap(m, 240, app_menu_read(m).slots[2].y);
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_UNPAIR);
     ctx.paired = false;
+
+    // A session that isn't waiting opens its chat (asking the Mac for it, menu still open).
+    app_menu_open(m, &ctx);
+    tap(m, s.slots[1].x, app_menu_read(m).slots[1].y);
+    tap(m, 240, row + s.row_h);   // row 1: not waiting
+    app_menu_snapshot_t c = app_menu_read(m);
+    CHECK(c.mode == APP_MENU_CHAT && c.agent_first == 1);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_CHAT && a.arg == 1 && app_menu_is_open(m));
+    // No reply allowed: the green spot does nothing special, a tap goes back to the list.
+    tap(m, c.confirm_x, c.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_AGENTS);
+    tap(m, 240, row + s.row_h);
+    (void)app_menu_take_action(m);
+    app_menu_set_chat(m, true);
+    tap(m, c.confirm_x, c.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_QUICK && app_menu_read(m).slots[3].bubble == APP_MENU_BUBBLE_Q3);
+    tap(m, 240, 240);   // not a bubble: back to the chat
+    CHECK(app_menu_read(m).mode == APP_MENU_CHAT && app_menu_read(m).agent_first == 1);
+    tap(m, c.confirm_x, c.buttons_y);
+    tap(m, app_menu_read(m).slots[3].x, app_menu_read(m).slots[3].y);
+    a = app_menu_take_action(m);
+    CHECK(a.kind == APP_MENU_ACTION_AGENT_REPLY && a.arg == 1 * 16 + 3 && !app_menu_is_open(m));
+    app_menu_set_chat(m, false);
 
     // No Mac: Agents is greyed.
     ctx.agents_connected = false;

@@ -247,6 +247,24 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         }
         break;
     }
+    case APP_MENU_ACTION_AGENT_CHAT:
+        (void)app_dock_agent_chat(state->dock, a.arg);
+        break;
+    case APP_MENU_ACTION_AGENT_REPLY: {
+        static const char *const quick[4] = {"Continue", "Yes", "No", "Run the tests"};
+        const app_dock_agents_t *ag = app_dock_agents(state->dock);
+        const app_dock_chat_t *ch = app_dock_chat(state->dock);
+        int row = a.arg / 16, q = a.arg % 16;
+        /* The list may have moved since the chat opened: find that session by id. */
+        for (int i = 0; ag && ch && i < ag->count; i++) {
+            if (strcmp(ag->items[i].id, ch->id) == 0) {
+                row = i;
+            }
+        }
+        const bool sent = q >= 0 && q < 4 && app_dock_agent_reply(state->dock, row, quick[q]);
+        say_banner(state, sent ? "Sent. Claude carries on." : "It isn't waiting for a reply now");
+        break;
+    }
     case APP_MENU_ACTION_PAIR:
         app_dock_pair_answer(state->dock, a.arg != 0);
         say_banner(state, a.arg ? "Now confirm on your Mac" : "Pairing cancelled");
@@ -348,6 +366,15 @@ static void update(void *value)
         app_menu_set_counts(state->menu, feed->answers_count, feed->memory_count);
     }
     agents_update(state, tick);
+    {   /* the open chat takes a reply from here: held open on the Mac, and paired with it */
+        const app_dock_agents_t *ag = app_dock_agents(state->dock);
+        const app_dock_chat_t *ch = app_dock_chat(state->dock);
+        bool ok = false;
+        for (int i = 0; ag && ch && i < ag->count; i++) {
+            ok |= strcmp(ag->items[i].id, ch->id) == 0 && ag->items[i].reply_open;
+        }
+        app_menu_set_chat(state->menu, ok && app_dock_status(state->dock).agents_paired);
+    }
     {
         const app_dock_status_t ds = app_dock_status(state->dock);
         app_menu_set_paired(state->menu, ds.paired, ds.agents_paired);
@@ -666,6 +693,10 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_EXIT: return "Exit";
     case APP_MENU_BUBBLE_AGENTS: return "Agents";
     case APP_MENU_BUBBLE_UNPAIR: return "Unpair";
+    case APP_MENU_BUBBLE_Q0: return "Continue";
+    case APP_MENU_BUBBLE_Q1: return "Yes";
+    case APP_MENU_BUBBLE_Q2: return "No";
+    case APP_MENU_BUBBLE_Q3: return "Tests";
     default: return "";
     }
 }
@@ -680,6 +711,10 @@ static Color bubble_colour(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_EXIT: return shade(150, 160, 200, 100);     /* slate */
     case APP_MENU_BUBBLE_AGENTS: return shade(255, 176, 60, 100);    /* amber */
     case APP_MENU_BUBBLE_UNPAIR: return shade(150, 160, 200, 100);   /* slate */
+    case APP_MENU_BUBBLE_Q0: return shade(140, 215, 120, 100);       /* green: carry on */
+    case APP_MENU_BUBBLE_Q1: return shade(110, 180, 245, 100);
+    case APP_MENU_BUBBLE_Q2: return shade(240, 115, 105, 100);
+    case APP_MENU_BUBBLE_Q3: return shade(245, 200, 80, 100);
     case APP_MENU_BUBBLE_TRICK: return shade(245, 200, 80, 100);     /* gold */
     case APP_MENU_BUBBLE_SWAP: return shade(185, 150, 240, 100);     /* violet */
     case APP_MENU_BUBBLE_MORE: return shade(120, 200, 190, 100);     /* teal */
@@ -842,6 +877,65 @@ static void draw_agent(const host_state_t *state, const app_menu_snapshot_t *m)
     } else {
         draw_text_centred("Allow", m->confirm_x, y - PIXL_FONT_HEIGHT - 6, 2, grey);
         draw_text_centred("pair first", m->confirm_x, y + 10, 1, grey);
+    }
+}
+
+/* One session's chat: your prompts, Claude's replies, the tools it ran; newest at the bottom. */
+static void draw_chat(host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const app_dock_chat_t *ch = app_dock_chat(state->dock);
+    const app_dock_agents_t *ag = app_dock_agents(state->dock);
+    Color white = shade(240, 240, 235, 100), grey = shade(130, 130, 130, 100), amber = shade(255, 176, 60, 100);
+    const char *project = "Session";
+    bool reply_open = false;
+    for (int i = 0; ag && ch && i < ag->count; i++) {
+        if (strcmp(ag->items[i].id, ch->id) == 0) {
+            project = ag->items[i].project;
+            reply_open = ag->items[i].reply_open;
+        }
+    }
+    draw_text_centred(project, GAME_WIDTH / 2, 22, 2, amber);
+    if (!ch || ch->count < 0) {
+        draw_text_centred("Loading the chat...", GAME_WIDTH / 2, 200, 2, grey);
+        return;
+    }
+    if (ch->count == 0) {
+        wrap_text("Nothing to show yet. The chat appears once this session does something.", 50, 180, GAME_WIDTH - 100, 2,
+                  grey, true);
+        return;
+    }
+    const bool reply_ok = app_dock_status(state->dock).agents_paired && reply_open;
+    const int bottom = reply_ok ? m->buttons_y - m->button_radius - 10 : READ_BOTTOM;
+    const int view = bottom - READ_TOP;
+    /* Measure, then draw scrolled; the view starts at the newest turn. */
+    int h = 0;
+    for (int i = 0; i < ch->count; i++) {
+        const app_dock_chat_line_t *l = &ch->lines[i];
+        h += (l->role == 't' ? 0 : 18) + wrap_text(l->text, READ_LEFT, 0, READ_WIDTH, l->role == 't' ? 1 : 2, white, false) + 10;
+    }
+    app_menu_set_read_extent(state->menu, h, view);
+    BeginScissorMode(READ_LEFT - 4, READ_TOP, READ_WIDTH + 8, view);
+    int y = READ_TOP - m->scroll;
+    for (int i = 0; i < ch->count; i++) {
+        const app_dock_chat_line_t *l = &ch->lines[i];
+        if (l->role == 't') {
+            char line[APP_DOCK_CHAT_TEXT + 4];
+            snprintf(line, sizeof line, "> %s", l->text);
+            y += wrap_text(line, READ_LEFT, y, READ_WIDTH, 1, grey, true) + 10;
+            continue;
+        }
+        draw_text(l->role == 'y' ? "You" : "Claude", READ_LEFT, y, 1, l->role == 'y' ? grey : amber);
+        y += 18;
+        y += wrap_text(l->text, READ_LEFT, y, READ_WIDTH, 2, white, true) + 10;
+    }
+    EndScissorMode();
+    if (reply_ok) {
+        DrawCircle(m->confirm_x, m->buttons_y, (float)m->button_radius, shade(58, 170, 82, 100));
+        draw_text_centred("Reply", m->confirm_x, m->buttons_y - PIXL_FONT_HEIGHT, 2, white);
+        draw_text("tap to go back", 30, m->buttons_y - 4, 1, grey);
+    } else {
+        draw_text_centred(reply_open ? "pair with your Mac to reply" : "drag to scroll - tap to go back", GAME_WIDTH / 2,
+                          GAME_HEIGHT - 26, 1, grey);
     }
 }
 
@@ -1049,6 +1143,8 @@ static int render(void *value)
         draw_swap(&m, s.tick);
     } else if (m.mode == APP_MENU_EXIT) {
         draw_exit(state, &m);
+    } else if (m.mode == APP_MENU_CHAT) {
+        draw_chat(state, &m);
     } else if (m.mode == APP_MENU_PAIR) {
         draw_pair(state, &m);
     } else if (m.mode == APP_MENU_AGENTS) {
