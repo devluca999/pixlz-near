@@ -181,6 +181,8 @@ final class TravelController {
             Debug.log("travel: manual peers \(manual.map { "\($0.ref.deviceName) @ \($0.host)" })")
         }
         runner = r
+        // The Pixl on screen is the one that travels (a swap made before this fix, or elsewhere).
+        if let s = r.owned, s.species != PixlSkins.currentID { r.restyle(species: PixlSkins.currentID, name: app.settings.name) }
         Debug.log("travel: I'm \(me.deviceName) (\(me.deviceId.prefix(8)))")
         // Bluetooth to a Mosaico (D21): while linked, the transport reaches it through the
         // bridge's local port instead of Wi-Fi.

@@ -375,6 +375,32 @@ void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_out
 static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const char *away_name,
                        const char *state, size_t state_len);
 
+bool pt_node_restyle(pt_node_t *n, const char *species, const char *name, pt_outs_t *out)
+{
+    begin(n, out);
+    pt_record_t *r = &n->record;
+    if (n->session.kind != PT_SES_NONE || r->kind != PT_REC_OWNED || r->state_len == 0) return false;
+    char now_species[PT_ID_MAX] = "", now_name[PT_NAME_MAX] = "";
+    (void)state_str(r->state, r->state_len, "species", now_species, sizeof now_species);
+    (void)state_str(r->state, r->state_len, "name", now_name, sizeof now_name);
+    if (strcmp(now_species, species) == 0 && strcmp(now_name, name) == 0) return false;
+    /* Work on a copy: a failed splice leaves the saved state as it was. */
+    char *buf = n->session.next;
+    size_t len = r->state_len;
+    memcpy(buf, r->state, len);
+    static char quoted[PT_NAME_MAX * 2 + 4];
+    pt_jw_t w;
+    pt_jw_init(&w, quoted, sizeof quoted);
+    pt_jw_str(&w, species);
+    if (!w.ok || !splice(buf, &len, "species", quoted)) return false;
+    pt_jw_init(&w, quoted, sizeof quoted);
+    pt_jw_str(&w, name);
+    if (!w.ok || !splice(buf, &len, "name", quoted)) return false;
+    set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, "", buf, len);
+    saved(out);
+    return true;
+}
+
 bool pt_node_can_reclaim(const pt_node_t *n)
 {
     return n->session.kind == PT_SES_NONE && n->record.kind == PT_REC_AWAY && n->record.state_len > 0;

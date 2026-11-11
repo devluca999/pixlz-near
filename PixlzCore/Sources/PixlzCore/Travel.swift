@@ -313,6 +313,17 @@ public struct TravelNode: Sendable {
         return false
     }
 
+    /// The Pixl here becomes another species (a swap): it travels as that one from now on.
+    /// Only while it's here and not mid-trip.
+    public mutating func restyle(species: String, name: String, at now: Date) -> [Output] {
+        guard session == nil, case .owned(var s)? = record, s.species != species || s.name != name else { return [] }
+        s.species = species
+        s.name = name
+        s.savedAt = now
+        record = .owned(s)
+        return [.saved(record!)]
+    }
+
     private mutating func reclaim(at now: Date) -> [Output] {
         guard session == nil, case .away(_, let e, _, let tombstone?)? = record else { return [] }
         var restored = tombstone

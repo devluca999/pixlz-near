@@ -70,6 +70,12 @@ public final class TripRunner {
     /// Brings the Pixl back from the safety copy while its holder is unreachable (SPEC §10.5).
     public func reclaim() { feed(.reclaim) }
     public var canReclaim: Bool { node.canReclaim }
+    /// A swap: the Pixl here travels as `species` (with its name) from now on.
+    public func restyle(species: String, name: String) {
+        for o in node.restyle(species: species, name: name, at: Date()) {
+            if case .saved(let rec) = o { try? store.save(rec) }
+        }
+    }
 
     private func incoming(_ env: Envelope, from peer: DeviceRef) {
         // first contact: an offer from a device the user hasn't trusted waits for a yes

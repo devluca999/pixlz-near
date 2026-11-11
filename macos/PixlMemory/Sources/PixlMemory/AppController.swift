@@ -1783,6 +1783,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 PixlSkins.currentID = id
                 self.settings.switchSkin(to: id, default: nextName)   // each Pixl keeps its own name
                 self.settings.save()
+                // the swapped-in Pixl is the one that travels from now on
+                self.travel.runner?.restyle(species: id, name: self.settings.name)
                 let at = self.foot
                 self.buildFrogg()  // new canvas size, same feet
                 if let at { self.place(at: at) }

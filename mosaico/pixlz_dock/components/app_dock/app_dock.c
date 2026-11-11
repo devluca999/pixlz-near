@@ -711,6 +711,16 @@ bool app_dock_agent_decide(app_dock_handle_t d, int index, bool allow)
     return !allow && app_dock_agent_deny(d, a->req);
 }
 
+bool app_dock_restyle(app_dock_handle_t d, const char *species, const char *name)
+{
+    if (!d || !pt_node_restyle(&d->node, species, name, &d->outs)) {
+        return false;
+    }
+    perform(d, &d->outs);   /* saves the record */
+    dock_platform_log("pixlz: the Pixl here is now %s (%s)", name, species);
+    return true;
+}
+
 bool app_dock_agent_chat(app_dock_handle_t d, int index)
 {
     if (!d || index < 0 || index >= d->agents.count) {

@@ -98,6 +98,10 @@ static int initial_look(host_state_t *state)
     char id[24] = "";
     app_dock_load_look(id, sizeof id);
     int i = look_index(id);
+    /* The Pixl here travels as the one on screen: a swap made before swaps travelled. */
+    if (i >= 0 && app_dock_status(state->dock).owns_pet) {
+        (void)app_dock_restyle(state->dock, pixl_pets[i].id, pixl_pets[i].name);
+    }
     if (i < 0 && app_dock_pet_species(state->dock, id, sizeof id)) {
         i = look_index(id);
     }
@@ -294,6 +298,7 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         if (a.arg >= 0 && a.arg < PIXL_PET_COUNT && a.arg != state->look) {
             state->look = a.arg;
             app_dock_save_look(pixl_pets[a.arg].id);
+            (void)app_dock_restyle(state->dock, pixl_pets[a.arg].id, pixl_pets[a.arg].name);   /* it travels as this one */
             const app_game_config_t c = config_for(a.arg, 0);
             state->scale = c.scale;
             state->last_line = -1;
@@ -383,11 +388,10 @@ static void update(void *value)
     for (int i = 0; i < n; i++) {
         switch (state->events[i].kind) {
         case APP_DOCK_EVENT_ARRIVED: {
-            /* A visitor of another species shows as itself unless this device chose a look. */
-            char id[24] = "", saved[24] = "";
-            app_dock_load_look(saved, sizeof saved);
-            if (!saved[0] && app_dock_pet_species(state->dock, id, sizeof id) && look_index(id) >= 0 &&
-                    look_index(id) != state->look) {
+            /* The Pixl shows as what it is (a swap on another device travels with it). */
+            char id[24] = "";
+            if (app_dock_pet_species(state->dock, id, sizeof id) && look_index(id) >= 0 && look_index(id) != state->look) {
+                app_dock_save_look(id);
                 state->look = look_index(id);
                 const app_game_config_t c = config_for(state->look, 0);
                 state->scale = c.scale;

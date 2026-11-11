@@ -114,6 +114,9 @@ void pt_node_send(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs
 /// Ask the owner to send the Pixl here.
 void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_outs_t *out);
 /// A peer connected: reconcile with `status`.
+/// A swap: the Pixl here travels as `species` named `name` from now on (splices the saved state).
+/// Only while owned here and not mid-trip; emits SAVED. False when nothing changed.
+bool pt_node_restyle(pt_node_t *n, const char *species, const char *name, pt_outs_t *out);
 /// Away, no trip, and a safety copy kept here: reclaim is possible.
 bool pt_node_can_reclaim(const pt_node_t *n);
 /// The holder is off or out of reach: own the Pixl again from the safety copy (epoch + 2).

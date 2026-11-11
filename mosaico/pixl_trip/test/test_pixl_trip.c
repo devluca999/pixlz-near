@@ -444,6 +444,12 @@ static void test_receiver_declines(void)
     free(m);
 }
 
+static bool state_field(const pt_node_t *n, const char *key, char *out, size_t cap)
+{
+    pt_span_t v;
+    return pt_json_find(n->record.state, n->record.state_len, key, &v) && pt_json_string(v, out, cap);
+}
+
 static void test_recovery(void)
 {
     pt_outs_t o;
@@ -549,6 +555,19 @@ static void test_recovery(void)
     n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 12, "{\"held\":\"owned\",\"inTrip\":false}");
     pt_node_received(m, &MAC, msg, n, T1, &o);
     CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 12);
+    free(m);
+
+    // A swap on the Mosaico: the Pixl travels as the new species from now on.
+    m = owning_mosaico();
+    CHECK(pt_node_restyle(m, "shiba", "Mochi", &o));
+    CHECK(out_at(&o, 0, PT_OUT_SAVED));
+    char sp[PT_ID_MAX], nm[PT_NAME_MAX];
+    CHECK(state_field(m, "species", sp, sizeof sp) && state_field(m, "name", nm, sizeof nm));
+    CHECK_STR(sp, "shiba");
+    CHECK_STR(nm, "Mochi");
+    CHECK(!pt_node_restyle(m, "shiba", "Mochi", &o));   // nothing changed
+    pt_node_send(m, &MAC, T1, &o);
+    CHECK(!pt_node_restyle(m, "cat", "Kiti", &o));      // mid-trip
     free(m);
 
     // Status from the Mac is answered with what we hold.

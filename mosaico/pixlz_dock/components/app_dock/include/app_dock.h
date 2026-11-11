@@ -131,6 +131,8 @@ bool app_dock_set_locked(app_dock_handle_t dock, bool locked);
 void app_dock_set_known_species(app_dock_handle_t dock, const char *const *ids, int count);
 /** The species of the Pixl here (from its state), or false when none. */
 bool app_dock_pet_species(app_dock_handle_t dock, char *out, int cap);
+/** A swap while the Pixl is here: it travels as that species from now on. */
+bool app_dock_restyle(app_dock_handle_t dock, const char *species, const char *name);
 /** The look chosen on this device (Pixl swap), saved across restarts; "" when none. */
 void app_dock_load_look(char *out, int cap);
 void app_dock_save_look(const char *id);
