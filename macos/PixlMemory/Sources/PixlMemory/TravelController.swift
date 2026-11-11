@@ -51,6 +51,52 @@ final class TravelController {
         }
     }
 
+    // MARK: Agent mode on the Mosaico (SPEC §16.3): the session list out, Deny back
+
+    private var agentsPushPending = false
+
+    /// Sessions changed: send the list to the feed devices, at most about once a second.
+    func scheduleAgentsPush() {
+        guard !agentsPushPending else { return }
+        agentsPushPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.agentsPushPending = false
+            self?.pushAgents()
+        }
+    }
+
+    func pushAgents() {
+        let wanted = MosaicoFeed.devices()
+        let targets = peers.filter { wanted.contains($0.deviceId) }
+        guard !targets.isEmpty, let r = runner else { return }
+        let agents = app.agents
+        let rows = agents.hub.list.map { s -> MosaicoFeed.AgentRow in
+            let req = agents.hub.requests.first { $0.sessionID == s.id }
+            return MosaicoFeed.AgentRow(id: s.id, project: s.project, doing: s.doing, request: req?.id,
+                                        summary: req?.summary ?? "", detail: req?.detail ?? "",
+                                        answerable: req.map { agents.canAnswer($0.id) } ?? false)
+        }
+        let body = MosaicoFeed.agentsBody(rows, alerts: agents.alertsOn, from: me)
+        for p in targets { r.transport.sendFrame(body, to: p) }
+        Debug.log("travel: agents to \(targets.map(\.deviceName)): \(rows.count) sessions, \(agents.hub.requests.count) waiting")
+    }
+
+    /// A frame from a device that isn't a trip message: a Mosaico's answer to a request.
+    /// Deny only: Allow from the Mosaico waits for pairing (D19), since the link isn't secured.
+    func frame(_ body: Data, from peer: DeviceRef) {
+        guard let d = MosaicoFeed.agentDecision(body) else { return }
+        guard MosaicoFeed.devices().contains(peer.deviceId) else {
+            Debug.log("travel: agent decision from \(peer.deviceName) ignored (not a feed device)")
+            return
+        }
+        guard d.behavior == "deny" else {
+            Debug.log("travel: \(d.behavior) from \(peer.deviceName) refused: Allow works on the Mac until pairing")
+            return
+        }
+        Debug.log("travel: \(peer.deviceName) denied \(d.id)")
+        app.agents.decide(d.id, .deny)
+    }
+
     var me: DeviceRef { ThisDevice.ref() }
 
     /// Where this device keeps its Pixl's state (a second copy of the app gets its own).
@@ -74,12 +120,14 @@ final class TravelController {
             self.peers = list
             Debug.log("travel: nearby \(list.map(\.deviceName))")
             // after the trip runner's own hello (status), so the Mosaico knows who we are
-            if fresh { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.pushFeed() } }
+            if fresh { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.pushFeed(); self?.pushAgents() } }
         }
         feedTimer?.invalidate()
         feedTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pushFeed() }
         }
+        r.transport.onFrame = { [weak self] body, peer in self?.frame(body, from: peer) }
+        app.agents.onHubChange = { [weak self] in self?.scheduleAgentsPush() }
         r.onAsk = { [weak self] peer, name in self?.ask(peer: peer, name: name) }
         r.onExit = { [weak self] to in self?.leave(to: to) }
         r.onEntrance = { [weak self] state in self?.arrive(state) }

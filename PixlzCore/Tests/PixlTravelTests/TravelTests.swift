@@ -121,4 +121,22 @@ struct BonjourTripTests {
         let first = (bigFeed["answers"] as? [[String: String]])?.first?["q"] ?? ""
         #expect(first.hasPrefix("q0 "))
     }
+
+    @Test func agentsForTheMosaicoFitAndDecisionsParse() throws {
+        let rows = (0..<10).map { i in
+            MosaicoFeed.AgentRow(id: "s\(i)", project: "project-\(i)", doing: String(repeating: "Running a very long command ", count: 6),
+                                 request: i == 0 ? "req-1" : nil, summary: "Run rm -rf build", detail: String(repeating: "x", count: 900),
+                                 answerable: true)
+        }
+        let body = MosaicoFeed.agentsBody(rows, alerts: true)
+        #expect(body.count <= MosaicoFeed.maxBytes)
+        let o = try #require((try JSONSerialization.jsonObject(with: body) as? [String: Any])?["agents"] as? [String: Any])
+        let sessions = try #require(o["sessions"] as? [[String: Any]])
+        #expect(o["alerts"] as? Bool == true && sessions.count == MosaicoFeed.maxAgents)
+        #expect(sessions[0]["req"] as? String == "req-1" && (sessions[0]["detail"] as? String)?.count == 140)
+        #expect(sessions[1]["req"] == nil)
+        let d = MosaicoFeed.agentDecision(Data(#"{"agentDecision":{"id":"req-1","behavior":"deny"}}"#.utf8))
+        #expect(d?.id == "req-1" && d?.behavior == "deny")
+        #expect(MosaicoFeed.agentDecision(Data(#"{"feed":{}}"#.utf8)) == nil)
+    }
 }

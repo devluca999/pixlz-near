@@ -99,14 +99,18 @@ public enum Framing {
         public init() {}
 
         public mutating func feed(_ bytes: Data) throws -> [Envelope] {
+            try frames(bytes).map { try PetState.decoder.decode(Envelope.self, from: $0) }
+        }
+
+        /// Whole frame bodies, undecoded (a link may carry other messages beside envelopes).
+        public mutating func frames(_ bytes: Data) throws -> [Data] {
             buffer.append(bytes)
-            var out: [Envelope] = []
+            var out: [Data] = []
             while buffer.count >= 4 {
                 let length = buffer.prefix(4).reduce(0) { Int($0) << 8 | Int($1) }
                 guard length <= maxFrame else { throw FramingError.frameTooLarge(length) }
                 guard buffer.count >= 4 + length else { break }
-                let body = buffer.dropFirst(4).prefix(length)
-                out.append(try PetState.decoder.decode(Envelope.self, from: Data(body)))
+                out.append(Data(buffer.dropFirst(4).prefix(length)))
                 buffer = Data(buffer.dropFirst(4 + length))
             }
             return out

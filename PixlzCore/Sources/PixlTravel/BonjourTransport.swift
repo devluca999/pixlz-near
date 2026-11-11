@@ -17,6 +17,8 @@ public final class BonjourTransport: @unchecked Sendable {
     /// Called on the main queue.
     public var onPeers: (([DeviceRef]) -> Void)?
     public var onEnvelope: ((Envelope, DeviceRef) -> Void)?
+    /// A frame that isn't an envelope (a Mosaico's agent decision), with the device it came from.
+    public var onFrame: ((Data, DeviceRef) -> Void)?
     /// Diagnostics: listener/browser state changes ("waiting: PolicyDenied" = Local Network not allowed yet).
     public var onState: ((String) -> Void)?
 
@@ -171,9 +173,15 @@ public final class BonjourTransport: @unchecked Sendable {
             guard let self, let c else { return }
             if let data, !data.isEmpty {
                 var d = self.decoders[ObjectIdentifier(c)] ?? Framing.Decoder()
-                let envelopes = (try? d.feed(data)) ?? []
+                let frames = (try? d.frames(data)) ?? []
                 self.decoders[ObjectIdentifier(c)] = d
-                for env in envelopes { self.deliver(env, on: c) }
+                for body in frames {
+                    if let env = try? PetState.decoder.decode(Envelope.self, from: body) {
+                        self.deliver(env, on: c)
+                    } else {
+                        self.deliverFrame(body, on: c)
+                    }
+                }
             }
             if done || error != nil { self.drop(c); return }
             self.receive(on: c)
@@ -189,6 +197,13 @@ public final class BonjourTransport: @unchecked Sendable {
         inboundPeer[ObjectIdentifier(c)] = peer
         if conns[peer.deviceId] == nil { conns[peer.deviceId] = c }
         DispatchQueue.main.async { self.onEnvelope?(env, peer) }
+    }
+
+    private func deliverFrame(_ body: Data, on c: NWConnection) {
+        let id = ObjectIdentifier(c)
+        let peer = inboundPeer[id] ?? conns.first(where: { $0.value === c }).flatMap { found[$0.key]?.ref ?? manual[$0.key]?.ref }
+        guard let peer else { return }
+        DispatchQueue.main.async { self.onFrame?(body, peer) }
     }
 
     private func drop(_ c: NWConnection) {

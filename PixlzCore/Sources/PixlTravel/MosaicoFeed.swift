@@ -39,6 +39,55 @@ public enum MosaicoFeed {
         }
     }
 
+    /// One Claude Code session for the Mosaico's Agents page (SPEC §16.3).
+    public struct AgentRow: Sendable {
+        public var id, project, doing: String
+        public var request: String?      // a waiting request's id
+        public var summary, detail: String
+        public var answerable: Bool      // Pixlz holds it: Deny on the Mosaico answers it
+        public init(id: String, project: String, doing: String, request: String? = nil, summary: String = "",
+                    detail: String = "", answerable: Bool = false) {
+            self.id = id; self.project = project; self.doing = doing; self.request = request
+            self.summary = summary; self.detail = detail; self.answerable = answerable
+        }
+    }
+    public static let maxAgents = 6
+
+    /// `{"agents":{"alerts":bool,"sessions":[{id,project,doing,req,summary,detail,answerable}]}}`,
+    /// waiting sessions first; trimmed until it fits `maxBytes`.
+    public static func agentsBody(_ rows: [AgentRow], alerts: Bool, from: DeviceRef? = nil) -> Data {
+        var r = Array(rows.prefix(maxAgents))
+        while true {
+            var json: [String: Any] = ["agents": [
+                "alerts": alerts,
+                "sessions": r.map { a -> [String: Any] in
+                    var o: [String: Any] = ["id": ascii(a.id, 40), "project": ascii(a.project, 24), "doing": ascii(a.doing, 60)]
+                    if let req = a.request {
+                        o["req"] = ascii(req, 15)
+                        o["summary"] = ascii(a.summary, 60)
+                        o["detail"] = ascii(a.detail, 140)
+                        o["answerable"] = a.answerable
+                    }
+                    return o
+                },
+            ]]
+            if let from {
+                json["from"] = from.deviceId
+                json["fromName"] = from.deviceName
+            }
+            let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+            if data.count <= maxBytes || r.isEmpty { return data }
+            r.removeLast()
+        }
+    }
+
+    /// The Mosaico's answer to a request: `{"agentDecision":{"id","behavior"}}`. Nil otherwise.
+    public static func agentDecision(_ body: Data) -> (id: String, behavior: String)? {
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let d = o["agentDecision"] as? [String: Any], let id = d["id"] as? String, let b = d["behavior"] as? String else { return nil }
+        return (id, b)
+    }
+
     /// Printable ASCII, single spaces, at most `limit` characters (an ellipsis when cut).
     public static func ascii(_ text: String, _ limit: Int) -> String {
         let swaps: [Character: String] = ["’": "'", "‘": "'", "“": "\"", "”": "\"", "—": "-", "–": "-",
