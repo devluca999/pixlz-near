@@ -172,7 +172,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         updateHover()
         if !CommandLine.arguments.contains("--selftest") { sleep.start() }
-        froggPanel.orderFrontRegardless()
+        // away on another device (a Mosaico, a phone): it isn't here, so nothing to show
+        if awayOn == nil { froggPanel.orderFrontRegardless() }
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
             Task { @MainActor in await self.selfTest() }
@@ -528,6 +529,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shows Frogg and invalidates any fade-out still running, so its completion can't hide him.
     func showFrogg() {
+        guard awayOn == nil else { return }   // one Pixl, one place: never on screen while it's away
         visGen += 1
         froggPanel.animator().alphaValue = 1  // replaces a running fade animation…
         froggPanel.alphaValue = 1             // …and lands on 1 at once
@@ -1642,6 +1644,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func toggleHidden() {
+        // Away on another device: ⌃⌥H offers to call it here instead (it's on one device at a time)
+        if awayOn != nil { summon(); return }
         userHidden.toggle()
         Debug.log("hide toggled hidden=\(userHidden)")
         closeMenus()
@@ -1834,7 +1838,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.scale = s
         cancelMotion()
         buildFrogg()
-        froggPanel.orderFrontRegardless()
+        if awayOn == nil { froggPanel.orderFrontRegardless() }
         if live { return }
         settings.save()
         userPlaced = false
