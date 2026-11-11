@@ -31,9 +31,37 @@ The Mosaico was the first device that isn't a Mac. Getting it right fixed severa
 3. **The phone as an agents screen.** The Mosaico's agents feed and pairing, shown on the phone.
 4. **Anywhere.** The iroh spike from IOS-PLAN.md, then a `P2PTransport`. Only after 1 to 3 hold up, since this is where the hard failures live (phones in the background, cellular).
 
-## Decisions needed
+## Decisions (2026-11-11)
 
-1. **Which phone:** iPhone or Android? iPhone reuses the Swift code and has a plan already. Android means Kotlin, plus the C library through the NDK.
-2. **Windows UI stack:** WPF/.NET with the C library through P/Invoke (WINDOWS.md's plan), or something cross-platform that could also cover Android (e.g. Flutter, Tauri)? Cross-platform saves work but loses the native overlay feel, which matters most for a desktop pet.
-3. **What travels at first:** only the Pixl (name, mood, style), or also memory (the "backpack") and the wallet key? Starting with the Pixl alone keeps the first version small.
-4. **Away from home:** does the Pixl need to reach your Mac from a phone on cellular in the first version, or is same-Wi-Fi enough to start?
+1. **Phone:** iPhone (an iPhone 11).
+2. **One cross-platform app** for Windows and the iPhone. The Mac app stays native Swift.
+3. **Memory and wallet travel too**, not just the Pixl.
+4. **It must work from the phone on cellular**, not only on the same Wi-Fi.
+
+### Proposed stack: Tauri 2 with a Rust core (to be confirmed)
+
+React Native isn't required. The candidates for one app on Windows and iPhone are React Native (with Microsoft's `react-native-windows`), Flutter, and Tauri 2. Tauri 2 is proposed because:
+
+- **The hard parts are native code anyway.** Reaching the phone on cellular means iroh (IOS-PLAN.md), which is written in Rust. Tauri's core is Rust, so iroh is used directly, with no bridge. React Native or Flutter would each need a native module for it on both platforms.
+- **The trip and pairing code is reused.** The C `pixl_trip` compiles into the Rust core, so Windows and the iPhone follow exactly the Mosaico's tested rules.
+- **The desktop pet needs an overlay:** a transparent, always-on-top window that lets clicks through except on the Pixl. Tauri has transparent windows and click-through on Windows. With React Native on Windows this is the weakest spot.
+- **One core for memory and the wallet.** The Mac's memory service is Python and can't run on an iPhone. The phone needs its own store (SQLite, encrypted) and wallet code (the NEAR key in the Keychain, the spending limits). Both are written once in the Rust core.
+- The UI (the Pixl's sprites, bubbles, cards) is web tech drawn on a canvas, the same on both.
+
+Risks to check in a spike first: Tauri's iPhone support is younger than its desktop support; click-through only off the Pixl's pixels on Windows; iroh's build size and its background behaviour on iOS.
+
+### What "memory and wallet travel" needs
+
+- **Memory (the backpack):** you pick which folders travel. They go with the trip, encrypted under the pairing key, and are stored encrypted on the other device. Edits on both sides merge per highlight, newest wins (IOS-PLAN.md).
+- **The Pixl's brain on the phone:** Ask and Polish call NEAR AI from the phone, so the attestation checks (`memory/verify.py`, `tdx.py`) are ported to the Rust core. The phone checks the enclave before sending your text, as the Mac does.
+- **Wallet:** the phone gets its own key on the Pixl's NEAR sub-account, added with your approval, with the same daily and weekly limits enforced on the phone. A lost phone's key can be removed.
+
+### Updated order
+
+1. **Spike (a few days):** a Tauri 2 app on Windows and the iPhone simulator that shows Frogg in an overlay, links `pixl_trip`, and does one trip with the Mac over Bonjour. Then the same trip over iroh, phone on cellular. Measure size and battery.
+2. Windows and iPhone trips on the same Wi-Fi, with the duplicate tests (pull the network mid-trip).
+3. Trips over cellular (iroh, with a relay we run).
+4. Memory travels (the backpack).
+5. Ask/Polish on the phone (ported attestation checks).
+6. Wallet on the phone.
+7. The phone as an agents screen (the Mosaico's feed).
