@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import PixlMemoryKit
 import Speech
 
 /// Turns a Mosaico's dictation clip into text with Apple's speech recognizer (the Speech
@@ -33,12 +34,26 @@ enum Dictation {
                     done = true
                     let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
                     text.isEmpty ? cont.resume(throwing: Failure.nothingHeard) : cont.resume(returning: text)
-                } else if error != nil {
+                } else if let error {
                     done = true
+                    Debug.log("dictation: recognizer said \(error.localizedDescription)")
                     cont.resume(throwing: Failure.nothingHeard)
                 }
             }
         }
+    }
+
+    /// 16-bit mono WAV, for checking what the microphone picked up.
+    static func saveWAV(_ samples: [Int16], to url: URL, rate: Int = 16000) {
+        var d = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        let bytes = UInt32(samples.count * 2)
+        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + bytes); d.append(contentsOf: Array("WAVEfmt ".utf8))
+        u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate * 2)); u16(2); u16(16)
+        d.append(contentsOf: Array("data".utf8)); u32(bytes)
+        samples.withUnsafeBytes { d.append(contentsOf: $0) }
+        try? d.write(to: url)
     }
 
     static func authorized() async -> Bool {

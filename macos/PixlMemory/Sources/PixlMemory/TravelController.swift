@@ -97,7 +97,12 @@ final class TravelController {
         }
         if MosaicoDictation.isDictation(body) {
             guard MosaicoFeed.devices().contains(peer.deviceId), let clip = dictation.receive(body) else { return }
-            Debug.log("travel: dictation from \(peer.deviceName): \(clip.samples.count / 16) ms")
+            // How loud it is (silence or clipping means the microphone, not the recognizer), and
+            // the last clip kept as a WAV next to the log for listening.
+            let peak = clip.samples.map { abs(Int($0)) }.max() ?? 0
+            let rms = sqrt(clip.samples.reduce(0.0) { $0 + Double($1) * Double($1) } / Double(max(1, clip.samples.count)))
+            Debug.log("travel: dictation from \(peer.deviceName): \(clip.samples.count / 16) ms, peak \(peak), rms \(Int(rms))")
+            if Debug.enabled { Dictation.saveWAV(clip.samples, to: Debug.url.deletingLastPathComponent().appending(path: "last-dictation.wav")) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 var out: Data
@@ -112,6 +117,7 @@ final class TravelController {
                                                           error: "Allow Speech Recognition for Pixl Memory on your Mac")
                     self.app.notify(.agentsError("Dictation needs Speech Recognition: System Settings → Privacy & Security."))
                 } catch {
+                    Debug.log("travel: dictation not understood: \(error)")
                     out = MosaicoDictation.transcriptBody(id: clip.id, session: clip.session, text: nil, error: "Didn't catch that. Try again?")
                 }
                 self.runner?.transport.sendFrame(out, to: peer)
