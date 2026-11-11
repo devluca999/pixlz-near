@@ -26,8 +26,15 @@ enum E2EState {
                 guard let app else { return }
                 switch info["do"] {
                 case "send": if let p = app.travel.peers.first(where: { $0.deviceName == info["to"] }) { app.travel.send(to: p) } else { Debug.log("e2e: no peer \(info["to"] ?? "")") }
-                case "consent": app.menu.list.flatMap { l in l.rows.firstIndex { $0.id == (info["answer"] == "yes" ? "yes" : "no") }.map { (l, $0) } }
-                    .map { l, i in l.onSelect?(l.rows[i]) }
+                // only the "Catch …?" prompt, and only "just this time": never trust a device or
+                // confirm a pairing code from here
+                case "consent":
+                    guard let l = app.menu.list, l.rows.contains(where: { $0.id == "once" }),
+                          let i = l.rows.firstIndex(where: { $0.id == (info["answer"] == "yes" ? "once" : "no") }) else {
+                        Debug.log("e2e: consent ignored (no catch prompt open)")
+                        return
+                    }
+                    l.onSelect?(l.rows[i])
                 case "ask": Debug.log("e2e: local answer: \(app.travel.localAnswer(info["q"] ?? "") ?? "(for the model)")")
                 case "callback": app.travel.callBack()
                 // types a question into the Ask card and presses return, as a person would

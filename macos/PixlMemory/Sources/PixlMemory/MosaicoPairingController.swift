@@ -21,11 +21,17 @@ final class MosaicoPairingController {
 
     func rows() -> [ListMenuView.Row] {
         let wanted = MosaicoFeed.devices()
-        return travel.peers.filter { wanted.contains($0.deviceId) }.map { p in
-            Self.load(p.deviceId) != nil
-                ? ListMenuView.Row(id: "unpair.\(p.deviceId)", title: "Unpair \(p.deviceName)", icon: nil, trailing: "Allow off")
-                : ListMenuView.Row(id: "pair.\(p.deviceId)", title: "Pair \(p.deviceName) so it can Allow", icon: "send")
+        let paired = Self.all()
+        // reachable feed devices not paired yet: Pair
+        let pair = travel.peers.filter { wanted.contains($0.deviceId) && paired[$0.deviceId] == nil }.map { p in
+            ListMenuView.Row(id: "pair.\(p.deviceId)", title: "Pair \(p.deviceName) so it can Allow", icon: "send")
         }
+        // every paired device, reachable or not (a lost Mosaico can be unpaired too)
+        let unpair = paired.sorted { $0.value.name < $1.value.name }.map { id, p in
+            ListMenuView.Row(id: "unpair.\(id)", title: "Unpair \(p.name)", icon: nil,
+                             trailing: travel.peers.contains { $0.deviceId == id } ? "Allow off" : "not nearby")
+        }
+        return pair + unpair
     }
 
     func chose(_ id: String) {
@@ -87,11 +93,11 @@ final class MosaicoPairingController {
                 Debug.log("pairing: code shown")
                 app.menu.showList([ListMenuView.Row(id: "q", title: "Does \(peer.deviceName) show \(spaced)?", icon: "info", enabled: false),
                                    ListMenuView.Row(id: "yes", title: "Yes, the same code", icon: "check", trailing: "↵"),
-                                   ListMenuView.Row(id: "no", title: "No, cancel", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
+                                   ListMenuView.Row(id: "no", title: "No, cancel", icon: nil, trailing: "esc")], near: nil, onSelect: { [weak self] row in
                     guard row.id != "q" else { return }
                     self?.app.menu.closeList()
                     self?.answer(row.id == "yes")
-                }
+                }, onDismiss: { [weak self] in self?.answer(false) })   // Esc or a click away: No
             case .paired(let key):
                 Self.save(peer.deviceId, Paired(name: peer.deviceName, key: key, last: 0))
                 pairing = nil
@@ -118,6 +124,11 @@ final class MosaicoPairingController {
               let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let d = o["agentDecision"] as? [String: Any], d["tag"] != nil, let id = d["id"] as? String,
               let req = app.agents.hub.requests.first(where: { $0.id == id }) else { return nil }
+        // a request nobody can answer any more: don't use up the device's counter on it
+        guard app.agents.canAnswer(id) else {
+            Debug.log("pairing: a decision from \(peer.deviceName) for \(id) can't be answered; not checked")
+            return nil
+        }
         let summary = MosaicoFeed.ascii(req.summary, 60), detail = MosaicoFeed.ascii(req.detail, 140)
         guard let ok = MosaicoPairing.verifyDecision(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last,
                                                      summary: summary, detail: detail) else {
@@ -131,7 +142,7 @@ final class MosaicoPairingController {
 
     /// A signed quick reply from a paired device (only the known replies pass).
     func verifiedReply(_ body: Data, from peer: DeviceRef) -> (id: String, text: String)? {
-        guard var paired = Self.load(peer.deviceId),
+        guard MosaicoFeed.devices().contains(peer.deviceId), var paired = Self.load(peer.deviceId),
               let ok = MosaicoPairing.verifyReply(body, deviceId: peer.deviceId, key: paired.key, lastCounter: paired.last) else { return nil }
         paired.last = ok.n
         Self.save(peer.deviceId, paired)
@@ -151,16 +162,36 @@ final class MosaicoPairingController {
         return try? JSONDecoder().decode(Paired.self, from: data)
     }
 
+    /// Every paired device in the Keychain, by id.
+    static func all() -> [String: Paired] {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecMatchLimit as String: kSecMatchLimitAll, kSecReturnAttributes as String: true]
+        var out: CFTypeRef?
+        let s = SecItemCopyMatching(q as CFDictionary, &out)
+        guard s == errSecSuccess, let items = out as? [[String: Any]] else {
+            if s != errSecItemNotFound { Debug.log("pairing: keychain list failed \(s)") }
+            return [:]
+        }
+        var found: [String: Paired] = [:]
+        for item in items {
+            if let id = item[kSecAttrAccount as String] as? String, let p = load(id) { found[id] = p }
+        }
+        return found
+    }
+
     static func save(_ deviceId: String, _ p: Paired) {
         guard let data = try? JSONEncoder().encode(p) else { return }
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: deviceId]
-        if SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
+        let u = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if u == errSecItemNotFound {
             var add = q
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let s = SecItemAdd(add as CFDictionary, nil)
             if s != errSecSuccess { Debug.log("pairing: keychain add failed \(s)") }
+        } else if u != errSecSuccess {
+            Debug.log("pairing: keychain update failed \(u)")
         }
     }
 

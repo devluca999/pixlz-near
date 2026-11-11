@@ -141,8 +141,9 @@ struct AppearanceTests {
 
     @Test func changesApplyAtOnce() {
         var got: [PixlSettings] = []
+        var app = PixlSettings()
         let v = view()
-        v.onChange = { got.append($0) }
+        v.onEdit = { edit in edit(&app); got.append(app) }
         v.descendants(of: ChoiceCard.self)[2].onPress?()   // Chaos
         #expect(got.last?.behavior == "chaos" && got.last?.roams == true && got.last?.chaos == true)
         v.descendants(of: SizeCard.self)[3].onPress?()     // XL
@@ -150,6 +151,22 @@ struct AppearanceTests {
         let toggle = v.descendants(of: PixelToggle.self).first { $0.accessibilityLabel() == "Let me wake them by hovering" }!
         toggle.accessibilityPerformPress()
         #expect(got.last?.hoverWakes == true)
+    }
+
+    /// M4: the panel sends only what changed, so a panel opened before an arrival (or a rename
+    /// elsewhere) can't write the old values back.
+    @Test func editsAreDeltasSoAStalePanelCantUndoOtherChanges() {
+        let v = view()   // shows Frogg
+        var app = PixlSettings()
+        app.name = "Nox"
+        app.skin = "cat"
+        v.onEdit = { $0(&app) }
+        v.descendants(of: SizeCard.self)[3].onPress?()
+        #expect(app.scale == 5 && app.name == "Nox" && app.skin == "cat")
+        // ending an edit of the name field without changing it sends nothing
+        v.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification,
+                                                object: v.descendants(of: NSTextField.self).first { $0.accessibilityLabel() == "Name" }))
+        #expect(app.name == "Nox")
     }
 
     @Test func fromTheMemoryBubbleItOpensAtPrivacyWithTheRealModel() {
