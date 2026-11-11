@@ -141,7 +141,13 @@ public struct TravelNode: Sendable {
 
         case .decline:
             guard case .sending(let p, .offered(let e), _) = session, p == peer, env.epoch == e else { return [] }
-            return abortTrip(peer, petId: env.petId, epoch: e, reason: env.payload.reason ?? DeclineReason.userDeclined.rawValue, at: now)
+            let reason = env.payload.reason ?? DeclineReason.userDeclined.rawValue
+            var out = abortTrip(peer, petId: env.petId, epoch: e, reason: reason, at: now)
+            // It's already there: two copies. Ask, so the older one steps aside (here or there).
+            if reason == DeclineReason.alreadyHere.rawValue, let r = record {
+                out.append(.send(envelope(.status, to: peer, petId: r.petId, epoch: r.epoch, at: now), to: peer))
+            }
+            return out
 
         case .transfer:
             guard case .receiving(let p, let e, _) = session, p == peer, env.epoch == e else { return [] }
@@ -216,7 +222,7 @@ public struct TravelNode: Sendable {
         if !knownSpecies.contains(env.payload.species ?? "") { return .unsupportedSpecies }
         switch record {
         case nil: return nil
-        case .owned(let s): return s.petId == env.petId ? .busy : .hasOtherPet
+        case .owned(let s): return s.petId == env.petId ? .alreadyHere : .hasOtherPet
         case .pendingArrival: return .busy
         case .away(let id, let e, _, _):
             if id != env.petId { return .hasOtherPet }

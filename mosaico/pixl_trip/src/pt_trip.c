@@ -456,7 +456,7 @@ static const char *decline_reason(const pt_node_t *n, const env_t *e)
     bool same = strcmp(n->record.pet_id, e->pet_id) == 0;
     switch (n->record.kind) {
     case PT_REC_NONE: return NULL;
-    case PT_REC_OWNED: return same ? "busy" : "hasOtherPet";
+    case PT_REC_OWNED: return same ? "alreadyHere" : "hasOtherPet";
     case PT_REC_PENDING: return "busy";
     case PT_REC_AWAY:
         if (!same) return "hasOtherPet";
@@ -621,6 +621,10 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
         char reason[32] = "userDeclined";
         payload_str(&e, "reason", reason, sizeof reason);
         abort_trip(n, out, peer, e.pet_id, n->session.epoch, reason, now_ms);
+        /* It's already there: two copies. Ask, so the older one steps aside. */
+        if (strcmp(reason, "alreadyHere") == 0 && n->record.kind != PT_REC_NONE) {
+            send_plain(n, out, peer, "status", n->record.pet_id, n->record.epoch, now_ms);
+        }
 
     } else if (strcmp(t, "transfer") == 0) {
         if (n->session.kind != PT_SES_RECEIVING || !same_peer(&n->session.peer, peer) || e.epoch != n->session.epoch) return;
@@ -697,6 +701,11 @@ void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, s
         p.held = held;
         p.in_trip = pt_node_in_trip(n) ? 1 : 0;
         send_env(n, out, peer, "statusReply", e.pet_id, epoch, &p, now_ms);
+        /* The asker's copy is newer than ours: ask back, so its answer settles it here too. */
+        if (r->kind != PT_REC_NONE && strcmp(r->pet_id, e.pet_id) == 0 && e.epoch > r->epoch &&
+                n->session.kind == PT_SES_NONE) {
+            send_plain(n, out, peer, "status", r->pet_id, r->epoch, now_ms);
+        }
 
     } else if (strcmp(t, "statusReply") == 0) {
         reconcile(n, &e, peer, now_ms, out);

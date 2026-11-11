@@ -424,6 +424,9 @@ static void update(void *value)
             say_banner(state, "Pairing cancelled");
             break;
         case APP_DOCK_EVENT_SHRUG:
+            if (strcmp(state->events[i].reason, "alreadyHere") == 0) {
+                say_banner(state, "Already there. Sorting out the copies.");
+            }
             state->sending = false;
             app_game_pet_shrug(state->game);
             if (state->exit_tick) {

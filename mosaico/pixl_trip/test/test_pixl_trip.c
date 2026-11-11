@@ -532,11 +532,29 @@ static void test_recovery(void)
     CHECK_STR(m->record.away_name, MAC.name);
     free(m);
 
+    // An offer of the Pixl we already own: "alreadyHere" (two copies), not just "busy".
+    char held[16];
+    m = owning_mosaico();
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "offer", 8, "{\"name\":\"Frogg\",\"species\":\"frogg\"}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.reason", held, sizeof held));
+    CHECK_STR(held, "alreadyHere");
+    // Asked by a newer copy (epoch 12 > 8): answer, then ask back so its reply settles it.
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "status", 12, "{}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "type", type, sizeof type));
+    CHECK_STR(type, "statusReply");
+    CHECK(sent_field(out_at(&o, 1, PT_OUT_SEND), "type", type, sizeof type));
+    CHECK_STR(type, "status");
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 12, "{\"held\":\"owned\",\"inTrip\":false}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 12);
+    free(m);
+
     // Status from the Mac is answered with what we hold.
     m = owning_mosaico();
     n = env(msg, sizeof msg, &MAC, &MOSAICO, "status", 8, "{}");
     pt_node_received(m, &MAC, msg, n, T1, &o);
-    char held[16];
     CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "payload.held", held, sizeof held));
     CHECK_STR(held, "owned");
     CHECK(sent_int(out_at(&o, 0, PT_OUT_SEND), "epoch") == 8);

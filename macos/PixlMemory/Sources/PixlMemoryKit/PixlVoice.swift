@@ -130,6 +130,8 @@ public extension Notice {
     static let noOtherApp = Notice(.info, "No other app is open to hand this to.", seconds: 2)
     static let localNetworkOff = Notice(.warn, "To see your other devices, turn on Pixl Memory in System Settings → Privacy & Security → Local Network.", seconds: 5)
     static let tripDeclined = Notice(.info, "The other device said not now.")
+    /// Sent to where it already was: two copies; the older steps aside.
+    static func alreadyThere(_ name: String) -> Notice { Notice(.info, "\(name) is already there. Sorting out which copy is newest.") }
     static func tripFailed(_ why: String) -> Notice { Notice(.error, "Couldn't travel there (\(why)). Staying here.") }
     static func notHere(_ name: String) -> Notice { Notice(.info, "\(name) isn't on this device right now.", seconds: 2) }
     static func travelling(_ name: String, to device: String) -> Notice { Notice(.info, "\(name) is heading to \(device)…", seconds: 8) }

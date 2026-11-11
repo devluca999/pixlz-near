@@ -268,6 +268,29 @@ struct TravelSim {
         #expect(other.handle(.received(ask, from: mac), at: tripStart).count == 1)
     }
 
+    /// Sending a Pixl that's already on the other device: it says so, and the copies settle.
+    @Test func sendingToWhereItAlreadyIsSettlesTheCopies() throws {
+        var older = sampleFrogg(); older.epoch = 11
+        var newer = sampleFrogg(); newer.epoch = 13
+        var m = TravelNode(me: mac, record: .owned(older))
+        var p = TravelNode(me: phone, record: .owned(newer))
+        // Mac → offer → phone declines "alreadyHere"
+        var toPhone = m.handle(.send(to: phone), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(toPhone.first?.type == .offer)
+        let decline = p.handle(.received(toPhone[0], from: mac), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(decline.first?.type == .decline && decline.first?.payload.reason == "alreadyHere")
+        // The Mac shrugs and asks; the phone answers; the Mac (older) leaves.
+        let afterDecline = m.handle(.received(decline[0], from: phone), at: tripStart)
+        #expect(afterDecline.contains(.shrug(reason: "alreadyHere")))
+        toPhone = afterDecline.compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(toPhone.last?.type == .status)
+        let reply = p.handle(.received(toPhone.last!, from: mac), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(reply.map(\.type) == [.statusReply])   // the phone is newer: it just answers
+        let settled = m.handle(.received(reply[0], from: phone), at: tripStart)
+        #expect(settled.contains(.playExit(to: phone)))
+        guard case .away? = m.record, case .owned? = p.record else { Issue.record("the Mac should have let go"); return }
+    }
+
     /// SPEC §14: kill either process (or both) between any two messages, and right after any save,
     /// then reconnect. The invariant holds throughout and exactly one device ends up with the Pixl.
     @Test func crashAtEveryStep() {

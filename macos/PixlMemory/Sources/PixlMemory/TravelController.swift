@@ -161,6 +161,10 @@ final class TravelController {
         r.onEntrance = { [weak self] state in self?.arrive(state) }
         r.onShrug = { [weak self] why in
             Debug.log("travel: shrug \(why)")
+            if why == "alreadyHere", let self {   // no annoyed shrug: it's there; the copies settle
+                self.app.notify(.alreadyThere(self.app.settings.name))
+                return
+            }
             self?.app.show("emotion_annoyed", for: 2)
             self?.app.notify(why == "userDeclined" ? .tripDeclined : .tripFailed(why), voice: .sad)
         }

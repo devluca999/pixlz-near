@@ -10,6 +10,8 @@ public enum EnvelopeType: String, Codable, Sendable, CaseIterable {
 
 public enum DeclineReason: String, Codable, Sendable {
     case busy, hasOtherPet, unsupportedSpecies, userDeclined
+    /// The receiver already holds this very Pixl: two copies; status settles which is newer.
+    case alreadyHere
 }
 
 /// What a device holds for a pet, as reported in `statusReply`.
