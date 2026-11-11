@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// The onboard microphone (LMA2718B331) on the ES8311's ADC, read over I2S RX on the pins
-// Espressif documents for ESP-Mosaico V1.0/V1.2: MCLK 54, BCLK 37, WS 49, DIN 52. The codec is
+// The onboard microphone (LMA2718B331) on the ES8311's ADC, read over I2S RX: MCLK 54, BCLK 37,
+// WS 49. Which pin carries the codec's data is unclear: Espressif's pin table says DIN 52 (and
+// DOUT 40), the vendor's board file drives the speaker on 52. So it tries 52, and if that's
+// dead (exact zeros for a moment) it switches to 40 and remembers what worked. The codec is
 // set up in ADC mode only and closed after each recording, so it draws nothing in between.
 #include "include/app_audio.h"
 
@@ -34,10 +36,26 @@ static struct {
     atomic_int level;
     TaskHandle_t task;
     int16_t pcm[READ_SAMPLES];
+    int din;               /* the data pin in use; 0 = not chosen yet */
+    bool din_known;        /* it gave real sound before */
     uint8_t enc[READ_SAMPLES / 2];
 } s;
 
-static bool open_mic(void)
+static bool open_mic(int din);
+
+static void close_mic(void)
+{
+    if (s.dev) {
+        esp_codec_dev_delete(s.dev);
+        s.dev = NULL;
+    }
+    if (s.rx) {
+        i2s_del_channel(s.rx);
+        s.rx = NULL;
+    }
+}
+
+static bool open_mic(int din)
 {
     i2c_master_bus_handle_t bus = NULL;
     if (esp_board_manager_get_periph_handle("i2c_master", (void **)&bus) != ESP_OK || !bus) {
@@ -53,9 +71,10 @@ static bool open_mic(void)
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(APP_AUDIO_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {.mclk = GPIO_NUM_54, .bclk = GPIO_NUM_37, .ws = GPIO_NUM_49, .dout = I2S_GPIO_UNUSED,
-                     .din = GPIO_NUM_52},
+                     .din = (gpio_num_t)din},
     };
     std.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+    s.din = din;
     if (i2s_channel_init_std_mode(s.rx, &std) != ESP_OK) {
         ESP_LOGE(TAG, "I2S RX setup failed (pins busy?)");
         i2s_del_channel(s.rx);
@@ -83,6 +102,7 @@ static bool open_mic(void)
 static void record_task(void *arg)
 {
     (void)arg;
+    int silent_reads = 0;
     while (atomic_load(&s.recording)) {
         if (esp_codec_dev_read(s.dev, s.pcm, sizeof s.pcm) != ESP_CODEC_DEV_OK) {
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -93,6 +113,28 @@ static void record_task(void *arg)
             int v = s.pcm[i] < 0 ? -s.pcm[i] : s.pcm[i];
             if (v > peak) peak = v;
         }
+        /* A live microphone always has some noise. Exact zeros for ~0.3 s: wrong data pin. */
+        if (!s.din_known) {
+            if (peak > 0) {
+                s.din_known = true;
+                ESP_LOGI(TAG, "microphone data on GPIO%d", s.din);
+            } else if (++silent_reads == 10) {
+                const int other = s.din == 52 ? 40 : 52;
+                ESP_LOGW(TAG, "GPIO%d gives only zeros; trying GPIO%d", s.din, other);
+                esp_codec_dev_close(s.dev);
+                close_mic();
+                esp_codec_dev_sample_info_t fs = {.bits_per_sample = 16, .channel = 1, .sample_rate = APP_AUDIO_RATE};
+                if (!open_mic(other) || esp_codec_dev_open(s.dev, &fs) != ESP_CODEC_DEV_OK) {
+                    ESP_LOGE(TAG, "GPIO%d didn't open either", other);
+                    atomic_store(&s.recording, false);
+                    break;
+                }
+                (void)esp_codec_dev_set_in_gain(s.dev, 30.0f);
+                s.len = 0;   /* drop the silence */
+                pt_adpcm_init(&s.adpcm);
+                continue;
+            }
+        }
         atomic_store(&s.level, peak * 100 / 32768);
         if (s.len + READ_SAMPLES / 2 > CLIP_MAX) {
             atomic_store(&s.recording, false);   /* 30 s: full */
@@ -100,7 +142,9 @@ static void record_task(void *arg)
         }
         s.len += pt_adpcm_encode(&s.adpcm, s.pcm, READ_SAMPLES, s.clip + s.len);
     }
-    esp_codec_dev_close(s.dev);   /* powers the ADC down */
+    if (s.dev) {
+        esp_codec_dev_close(s.dev);   /* powers the ADC down */
+    }
     atomic_store(&s.level, 0);
     ESP_LOGI(TAG, "recorded %u bytes (%u ms)", (unsigned)s.len, (unsigned)(s.len * 2000 / APP_AUDIO_RATE));
     s.task = NULL;
@@ -115,7 +159,7 @@ bool app_audio_start(void)
     if (!s.clip) {
         s.clip = heap_caps_malloc(CLIP_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
-    if (!s.clip || (!s.dev && !open_mic())) {
+    if (!s.clip || (!s.dev && !open_mic(s.din ? s.din : 52))) {
         return false;
     }
     esp_codec_dev_sample_info_t fs = {.bits_per_sample = 16, .channel = 1, .sample_rate = APP_AUDIO_RATE};
