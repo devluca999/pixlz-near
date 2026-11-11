@@ -8,7 +8,7 @@ public enum HookSettings {
     /// Tool events take a matcher ("*" = every tool); the others don't.
     public static let events: [(name: String, toolMatcher: Bool, timeout: Int)] = [
         ("SessionStart", false, 10), ("SessionEnd", false, 10), ("UserPromptSubmit", false, 10),
-        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("PostToolUseFailure", true, 10), ("Stop", false, 10), ("Notification", false, 10),
+        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("PostToolUseFailure", true, 10), ("Stop", false, 330), ("Notification", false, 10),
         ("PermissionRequest", true, 60),
     ]
 
@@ -23,9 +23,16 @@ public enum HookSettings {
         return hooks.contains { ($0["command"] as? String)?.contains(marker) == true }
     }
 
+    /// Every event has Pixlz's hook, with the timeout this version needs (an older install
+    /// shows "Update" so Connect adds what's new).
     public static func installed(in settings: [String: Any]) -> Bool {
         guard let hooks = settings["hooks"] as? [String: Any] else { return false }
-        return events.allSatisfy { ev in (hooks[ev.name] as? [Any])?.contains(where: isPixlz) == true }
+        return events.allSatisfy { ev in
+            (hooks[ev.name] as? [Any])?.contains { e in
+                guard isPixlz(e), let list = (e as? [String: Any])?["hooks"] as? [[String: Any]] else { return false }
+                return list.contains { ($0["timeout"] as? Int) == ev.timeout }
+            } == true
+        }
     }
 
     public static func removing(from settings: [String: Any]) -> [String: Any] {

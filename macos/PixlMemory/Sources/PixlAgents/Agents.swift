@@ -12,11 +12,17 @@ public struct HookEvent: Sendable, Equatable {
     public var toolName: String?       // PreToolUse, PostToolUse, PermissionRequest
     public var toolInput: [String: String]
     public var message: String?        // Notification
+    public var transcriptPath: String? // transcript_path: the session's JSONL
 
     public init(name: String, sessionID: String, cwd: String = "", prompt: String? = nil, toolName: String? = nil,
                 toolInput: [String: String] = [:], message: String? = nil) {
         self.name = name; self.sessionID = sessionID; self.cwd = cwd; self.prompt = prompt
         self.toolName = toolName; self.toolInput = toolInput; self.message = message
+    }
+
+    public init(name: String, sessionID: String, cwd: String = "", transcriptPath: String?) {
+        self.init(name: name, sessionID: sessionID, cwd: cwd)
+        self.transcriptPath = transcriptPath
     }
 
     /// From the raw stdin JSON. Nil when it isn't a hook event Pixlz understands.
@@ -31,6 +37,7 @@ public struct HookEvent: Sendable, Equatable {
         }
         self.init(name: name, sessionID: id, cwd: o["cwd"] as? String ?? "", prompt: o["prompt"] as? String,
                   toolName: o["tool_name"] as? String, toolInput: input, message: o["message"] as? String)
+        transcriptPath = o["transcript_path"] as? String
     }
 }
 
@@ -43,6 +50,9 @@ public struct AgentSession: Sendable, Equatable, Identifiable {
     public var doing: String            // "Running swift test", "Editing App.swift", "Done"
     public var state: State
     public var lastHeard: Date
+    public var transcriptPath: String?
+    /// Finished, and Pixlz holds it open for your reply (Reply from Pixlz).
+    public var replyOpen = false
 }
 
 public struct AgentRequest: Sendable, Equatable, Identifiable {
@@ -87,7 +97,9 @@ public struct AgentHub: Sendable {
     public mutating func receive(_ e: HookEvent, at now: Date) -> String? {
         var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd, prompt: nil, doing: "Starting", state: .idle, lastHeard: now)
         if !e.cwd.isEmpty { s.cwd = e.cwd }
+        if let t = e.transcriptPath, !t.isEmpty { s.transcriptPath = t }
         s.lastHeard = now
+        if e.name != "Stop" { s.replyOpen = false }   // it moved on: no longer waiting for a reply
         var newRequest: String?
         switch e.name {
         case "SessionStart":
@@ -133,6 +145,16 @@ public struct AgentHub: Sendable {
         }
         sessions[e.sessionID] = s
         return newRequest
+    }
+
+    /// A finished session held open for a reply (or not any more).
+    public mutating func setReplyOpen(_ sessionID: String, _ open: Bool) {
+        sessions[sessionID]?.replyOpen = open
+    }
+
+    /// What the Stop hook prints to carry on with `text` as the next instruction.
+    public static func stopReply(_ text: String) -> Data {
+        (try? JSONSerialization.data(withJSONObject: ["decision": "block", "reason": text], options: [.sortedKeys])) ?? Data()
     }
 
     /// Pixlz keeps the hook waiting for an answer here.

@@ -20,6 +20,8 @@ final class BubbleMenu {
     var monitors: [Any] = []
     /// Bumped whenever a card opens or closes, so a slow fetch never pops up a stale card.
     var cardGen = 0
+    /// The session whose chat card is open (Agent mode), so it can refresh.
+    var chatSession: String?
 
     /// The last app the user switched to that isn't the Pixl: the "page in front" for "save this",
     /// even when the Ask card stayed open while they moved to another window.
@@ -323,13 +325,18 @@ final class BubbleMenu {
         }
         let waiting = Set(agents.hub.requests.map(\.sessionID))
         rows += agents.hub.list.filter { !waiting.contains($0.id) }.map { s in
-            ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: nil, trailing: age(s.lastHeard), enabled: false)
+            ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: s.replyOpen ? "agents" : nil,
+                             trailing: s.replyOpen ? "reply" : age(s.lastHeard))
         }
         if agents.hub.sessions.isEmpty {
             rows.append(ListMenuView.Row(id: "none", title: "No Claude Code sessions right now", icon: "info", enabled: false))
         }
+        if !agents.hooksInstalled {
+            rows.append(ListMenuView.Row(id: "update", title: "Update Claude Code hooks (needed for replies)", icon: "warn"))
+        }
         rows += agents.extraRows?() ?? []
         rows += [ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
+                 ListMenuView.Row(id: "reply", title: "Reply from Pixlz", icon: nil, trailing: agents.replyHere ? "on" : "off"),
                  ListMenuView.Row(id: "alerts", title: "Agent alerts", icon: nil, trailing: agents.alertsOn ? "on" : "off"),
                  ListMenuView.Row(id: "cloud", title: "Cloud sessions: open claude.ai/code", icon: nil),
                  ListMenuView.Row(id: "disconnect", title: "Disconnect Claude Code", icon: nil)]
@@ -338,6 +345,9 @@ final class BubbleMenu {
             guard let self else { return }
             switch row.id {
             case let id where id.hasPrefix("req."): self.showRequest(String(id.dropFirst(4)))
+            case let id where id.hasPrefix("ses."): self.closeList(); self.showChat(String(id.dropFirst(4)))
+            case "reply": agents.replyHere.toggle(); self.showAgents(near: nil)
+            case "update": self.closeList(); self.showConnectAgents(near: nil)
             case "answer": agents.answerHere.toggle(); self.showAgents(near: nil)
             case "alerts": agents.alertsOn.toggle(); self.showAgents(near: nil)
             case "cloud": self.closeList(); NSWorkspace.shared.open(URL(string: "https://claude.ai/code")!)
@@ -351,6 +361,42 @@ final class BubbleMenu {
         agents.onChange = { [weak self] in
             guard let self, self.listPanel != nil, self.list?.rows.contains(where: { $0.id == "answer" }) == true else { return }
             self.showAgents(near: nil)
+        }
+    }
+
+    /// One session's chat, and a reply field while it's held open for one.
+    func showChat(_ sessionID: String) {
+        let agents = app.agents
+        guard let s = agents.hub.sessions[sessionID] else { return }
+        let (title, lines) = agents.chat(sessionID)
+        let mapped = lines.map { l -> ChatCard.Line in
+            switch l.role { case .you: .init(.you, l.text); case .claude: .init(.claude, l.text); case .tool: .init(.tool, l.text) }
+        }
+        let note = agents.replyHere ? "you can reply when it finishes" : "turn on Reply from Pixlz (Agents) to reply here"
+        let card = ChatCard(title: [s.project, title].compactMap { $0 }.joined(separator: " · "), lines: mapped,
+                            replyOpen: s.replyOpen, replyNote: note, look: cardLook)
+        card.fit()
+        card.onClose = { [weak self] in self?.chatSession = nil; self?.closeCard() }
+        card.onReply = { [weak self] text in
+            guard let self else { return }
+            if agents.reply(sessionID, text) {
+                self.chatSession = nil
+                self.closeCard()
+                self.app.notify(.agents("Sent to \(s.project). Claude carries on."))
+            } else {
+                self.app.notify(.agentsError("\(s.project) isn't waiting for a reply any more."))
+            }
+        }
+        showCard(card, name: "chat")
+        chatSession = sessionID
+        card.scrollToEnd()
+        if s.replyOpen { cardPanel?.makeFirstResponder(card.field) }
+        // New turns, or the reply window opening or closing: redraw unless you're typing.
+        agents.onChange = { [weak self] in
+            guard let self, self.chatSession == sessionID, self.cardPanel != nil, card.input.stringValue.isEmpty else { return }
+            if agents.hub.sessions[sessionID]?.replyOpen != s.replyOpen || agents.hub.sessions[sessionID]?.lastHeard != s.lastHeard {
+                self.showChat(sessionID)
+            }
         }
     }
 
