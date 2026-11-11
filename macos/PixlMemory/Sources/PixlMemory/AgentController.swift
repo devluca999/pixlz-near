@@ -143,9 +143,7 @@ final class AgentController {
 
     func decide(_ requestID: String, _ decision: AgentDecision) {
         guard let fd = held.removeValue(forKey: requestID) else {
-            Debug.log("agents: \(requestID) is no longer waiting")
-            hub.resolve(requestID)
-            changed()
+            Debug.log("agents: \(requestID) isn't held here (answer it in the terminal)")
             return
         }
         Debug.log("agents: \(requestID) \(decision.rawValue)")
@@ -202,7 +200,9 @@ final class AgentController {
 
     /// The menu or a request is open: show what changed.
     var onChange: (@MainActor () -> Void)?
-    private func changed() { onChange?() }
+    /// Anything else showing the sessions (another screen): told on every change.
+    var onHubChange: (@MainActor () -> Void)?
+    private func changed() { onChange?(); onHubChange?() }
 
     // MARK: hooks in Claude Code's settings
 
