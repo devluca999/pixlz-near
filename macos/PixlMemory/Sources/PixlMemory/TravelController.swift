@@ -106,6 +106,8 @@ final class TravelController {
 
     lazy var pairingController = MosaicoPairingController(travel: self)
 
+    private var bluetooth: BLEBridge?
+
     var me: DeviceRef { ThisDevice.ref() }
 
     /// Where this device keeps its Pixl's state (a second copy of the app gets its own).
@@ -161,6 +163,14 @@ final class TravelController {
         }
         runner = r
         Debug.log("travel: I'm \(me.deviceName) (\(me.deviceId.prefix(8)))")
+        // Bluetooth to a Mosaico (D21): while linked, the transport reaches it through the
+        // bridge's local port instead of Wi-Fi.
+        let ble = BLEBridge(me: me)
+        ble.onState = { Debug.log("travel: \($0)") }
+        ble.onLink = { [weak r] ref, port in r?.transport.setRoute(ref, host: "127.0.0.1", port: port) }
+        ble.onUnlink = { [weak r] id in r?.transport.clearRoute(id) }
+        ble.start()
+        bluetooth = ble
         // away on another device since last time (or never had it): stay hidden until it comes
         if case .away(_, _, let owner, _)? = r.record {
             app.awayOn = owner

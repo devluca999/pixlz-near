@@ -244,3 +244,13 @@ Replaces the typed-code TLS-PSK plan for the Mac ↔ Mosaico link (open question
 - The link itself still isn't encrypted (the feed and the sessions list travel in the clear on the local network). Encrypting frames with the paired key is the next step before the iPhone (M3).
 - Pair and Unpair from the Agents list on the Mac; Unpair on the Mosaico's page 3. The key lives in the Mac's Keychain and the Mosaico's own NVS.
 
+## D21. Bluetooth LE link to the Mosaico (2026-11-11)
+
+The Mosaico's Wi-Fi can be weak where it sits (-82 dBm measured), and calls and trips got lost. The Mac and the Mosaico now also talk over **Bluetooth LE**, directly, with no router:
+
+- The Mosaico advertises a GATT service (`6E1B0001-8F3C-4C6A-9B1E-70697868C0DE`): RX (write), TX (notify), INFO (read: id and name). Its bridge feeds RX bytes into a loopback connection to its own trip port and sends what comes back as notifications. The dock can't tell the link apart, so trips, the feed, agents and pairing are unchanged.
+- The Mac's bridge (CoreBluetooth) connects, reads INFO, opens a local port and tells the transport to reach that Mosaico at 127.0.0.1:port while linked (a route that wins over Wi-Fi). Its first bytes are a hello with the Mac's clock, since a Mosaico with no Wi-Fi has no time server.
+- Writes are acknowledged and ordered; notifications carry up to MTU − 3 bytes each. A trip (about 4 KB) takes a second or two.
+- Security is the same as Wi-Fi today: Allow is signed (D20); encrypting frames with the paired key is still the next step.
+- Range is about 10 m. Wi-Fi stays as the fallback when Bluetooth isn't linked.
+

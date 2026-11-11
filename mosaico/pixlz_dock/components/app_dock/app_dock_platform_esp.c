@@ -17,6 +17,7 @@
 #include "esp_event.h"
 #include "esp_iris.h"
 #include "iris_ota_support.h"
+#include "app_ble.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -208,6 +209,8 @@ void dock_platform_start(const pt_device_t *me)
         /* Never erase on our own: report and run without saving trips. */
         ESP_LOGE(TAG, "app NVS unavailable (%s); trips disabled", esp_err_to_name(err));
     }
+    /* Bluetooth first: it carries trips and agents to the Mac even with no Wi-Fi at all (D21). */
+    app_ble_start(me->id, me->name, APP_DOCK_PORT);
     memset(&s_wifi_config, 0, sizeof s_wifi_config);
     if (!read_credentials(&s_wifi_config)) {
         return;

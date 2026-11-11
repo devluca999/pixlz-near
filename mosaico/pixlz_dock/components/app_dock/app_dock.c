@@ -29,6 +29,7 @@ enum { MAX_CONNS = 3, RX_CAP = PT_MSG_MAX + 4, TX_CAP = 2 * (PT_MSG_MAX + 4), HE
 typedef struct {
     int fd;              /* -1 = free */
     bool hello;          /* the Mac said who it is */
+    bool local;          /* from this device (the Bluetooth bridge, 127.0.0.1): survives Wi-Fi loss */
     pt_device_t peer;
     pt_framer_t framer;
     uint8_t rx[RX_CAP];
@@ -41,6 +42,7 @@ struct app_dock {
     int listen_fd;
     conn_t conns[MAX_CONNS];
     bool send_requested;
+    bool net_was_ready;
     bool started;
     int battery_percent;
     bool on_battery;
@@ -246,7 +248,9 @@ static void open_listener(app_dock_handle_t d)
 static void accept_new(app_dock_handle_t d)
 {
     for (;;) {
-        int fd = accept(d->listen_fd, NULL, NULL);
+        struct sockaddr_in from;
+        socklen_t from_len = sizeof from;
+        int fd = accept(d->listen_fd, (struct sockaddr *)&from, &from_len);
         if (fd < 0) {
             return;
         }
@@ -263,6 +267,7 @@ static void accept_new(app_dock_handle_t d)
         set_nonblocking(fd);
         c->fd = fd;
         c->hello = false;
+        c->local = from.sin_family == AF_INET && ntohl(from.sin_addr.s_addr) == INADDR_LOOPBACK;
         memset(&c->peer, 0, sizeof c->peer);
         c->tx_len = 0;
         pt_framer_init(&c->framer, c->rx, sizeof c->rx);
@@ -498,16 +503,23 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
             d->on_battery = on_battery;
         }
     }
-    if (dock_platform_net_ready()) {
-        if (d->listen_fd < 0) {
-            open_listener(d);
-        }
-        if (d->listen_fd >= 0) {
-            accept_new(d);
-        }
-    } else if (d->listen_fd >= 0) {
-        close_all(d);
+    /* Always listening: the Bluetooth bridge reaches this port over loopback without Wi-Fi.
+     * When Wi-Fi goes, its connections go; the bridge's stay. */
+    if (d->listen_fd < 0) {
+        open_listener(d);
     }
+    if (d->listen_fd >= 0) {
+        accept_new(d);
+    }
+    const bool net = dock_platform_net_ready();
+    if (!net && d->net_was_ready) {
+        for (int i = 0; i < MAX_CONNS; i++) {
+            if (!d->conns[i].local) {
+                close_conn(&d->conns[i], "lost with Wi-Fi");
+            }
+        }
+    }
+    d->net_was_ready = net;
     for (int i = 0; i < MAX_CONNS; i++) {
         read_conn(d, &d->conns[i]);
     }

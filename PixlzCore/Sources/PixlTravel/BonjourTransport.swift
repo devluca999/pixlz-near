@@ -29,6 +29,8 @@ public final class BonjourTransport: @unchecked Sendable {
     private var found: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
     private var bonjour: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
     private var manual: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
+    /// A better route to a device than Wi-Fi (the Bluetooth bridge's local port): wins while set.
+    private var routes: [String: (ref: DeviceRef, endpoint: NWEndpoint)] = [:]
     /// Open connections by device id.
     private var conns: [String: NWConnection] = [:]
     private var decoders: [ObjectIdentifier: Framing.Decoder] = [:]
@@ -99,9 +101,29 @@ public final class BonjourTransport: @unchecked Sendable {
     }
 
     private func publish() {
-        found = manual.merging(bonjour) { _, b in b }
+        found = manual.merging(bonjour) { _, b in b }.merging(routes) { _, r in r }
         let list = found.values.map(\.ref).sorted { $0.deviceName < $1.deviceName }
         DispatchQueue.main.async { self.onPeers?(list) }
+    }
+
+    /// Reach `ref` at `host:port` instead (a local bridge), until `clearRoute`. The open
+    /// connection to it is dropped, so the next message takes the new way.
+    public func setRoute(_ ref: DeviceRef, host: String, port: UInt16) {
+        queue.async {
+            self.routes[ref.deviceId] = (ref, .hostPort(host: .init(host), port: .init(rawValue: port)!))
+            if let c = self.conns.removeValue(forKey: ref.deviceId) { self.drop(c) }
+            self.publish()
+            DispatchQueue.main.async { self.onState?("route \(ref.deviceName) via \(host):\(port)") }
+        }
+    }
+
+    public func clearRoute(_ deviceId: String) {
+        queue.async {
+            guard self.routes.removeValue(forKey: deviceId) != nil else { return }
+            if let c = self.conns.removeValue(forKey: deviceId) { self.drop(c) }
+            self.publish()
+            DispatchQueue.main.async { self.onState?("route for \(deviceId.prefix(14)) cleared") }
+        }
     }
 
     // MARK: sending
