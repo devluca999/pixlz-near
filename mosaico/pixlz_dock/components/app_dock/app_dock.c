@@ -70,8 +70,7 @@ static void queue_event(app_dock_handle_t d, app_dock_event_kind_t kind, const c
     e->kind = kind;
     e->reason[0] = 0;
     if (reason) {
-        strncpy(e->reason, reason, sizeof e->reason - 1);
-        e->reason[sizeof e->reason - 1] = 0;
+        snprintf(e->reason, sizeof e->reason, "%.*s", (int)sizeof e->reason - 1, reason);   /* cut to fit */
     }
 }
 
