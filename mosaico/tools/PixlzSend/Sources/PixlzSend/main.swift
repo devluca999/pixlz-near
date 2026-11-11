@@ -47,7 +47,25 @@ func describe(_ record: StoredPet?) -> String {
     }
 }
 
-/// Resolves the endpoint (fixed or by Bonjour), then calls `then` on the main queue.
+/// The last Mosaico address that answered, for networks that drop multicast (Bonjour).
+let lastHostFile = supportDir.appendingPathComponent("last-mosaico.txt")
+
+func rememberHost(_ endpoint: NWEndpoint) {
+    guard case .hostPort(let host, let port) = endpoint else { return }
+    let text = "\(host) \(port.rawValue)".replacingOccurrences(of: "%", with: " ").split(separator: " ")
+    guard text.count >= 2 else { return }
+    try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
+    try? "\(text[0]) \(text.last!)".write(to: lastHostFile, atomically: true, encoding: .utf8)
+}
+
+func lastHost() -> NWEndpoint? {
+    guard let text = try? String(contentsOf: lastHostFile, encoding: .utf8) else { return nil }
+    let parts = text.split(separator: " ")
+    guard parts.count == 2, let port = UInt16(parts[1]), let p = NWEndpoint.Port(rawValue: port) else { return nil }
+    return .hostPort(host: .init(String(parts[0])), port: p)
+}
+
+/// Resolves the endpoint (--host, Bonjour, then the last address that worked) and calls `then`.
 func endpoint(_ args: [String], then: @escaping (NWEndpoint) -> Void) {
     if let host = option("--host", in: args) {
         let port = option("--port", in: args).flatMap(UInt16.init) ?? Discovery.defaultPort
@@ -55,9 +73,15 @@ func endpoint(_ args: [String], then: @escaping (NWEndpoint) -> Void) {
         return
     }
     log("looking for a Mosaico on the network…")
-    Discovery.findMosaico(timeout: 10, queue: .main) { e in
-        guard let e else { log("no Mosaico found (is it plugged in and on this Wi-Fi?)"); exit(2) }
-        then(e)
+    Discovery.findMosaico(timeout: 6, queue: .main) { e in
+        if let e { then(e); return }
+        if let last = lastHost() {
+            log("Bonjour found nothing (this Wi-Fi may drop multicast); trying the last address, \(last)")
+            then(last)
+            return
+        }
+        log("no Mosaico found (is it plugged in and on this Wi-Fi?). Try --host <its IP> once.")
+        exit(2)
     }
 }
 

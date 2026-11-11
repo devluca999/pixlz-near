@@ -50,7 +50,8 @@ typedef struct {
 } record_blob_t;
 
 static atomic_bool s_net_ready;
-static bool s_started, s_store_ok, s_sntp_started, s_mdns_ours;
+static bool s_started, s_store_ok, s_sntp_started, s_service_added;
+static esp_netif_t *s_netif;
 static pt_device_t s_me;
 static record_blob_t s_blob;       /* single owner: the dock loop */
 static wifi_config_t s_wifi_config; /* kept off the stack */
@@ -62,25 +63,37 @@ static void on_time_sync(struct timeval *tv)
     ESP_LOGI(TAG, "clock set from SNTP: %s", date);
 }
 
-static void advertise(void)
+/* mDNS starts before Wi-Fi connects: the component enables its responder on an interface when
+ * that interface's IP event fires, so starting it later leaves it silent. */
+static void mdns_start(void)
 {
     esp_err_t err = mdns_init();
     if (err == ESP_OK) {
-        s_mdns_ours = true;
         char host[24];
         snprintf(host, sizeof host, "pixlz-%s", s_me.id + strlen(s_me.id) - 6);
         (void)mdns_hostname_set(host);
+        ESP_LOGI(TAG, "mDNS host %s.local", host);
     } else if (err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "mDNS init failed: %s", esp_err_to_name(err));
+    }
+}
+
+/* Once we have an address: enable and announce on the Wi-Fi interface (harmless if the
+ * component already did), and add the trip service once (SPEC §10.3). */
+static void advertise(void)
+{
+    if (s_netif) {
+        (void)mdns_netif_action(s_netif, MDNS_EVENT_ENABLE_IP4 | MDNS_EVENT_ANNOUNCE_IP4);
+    }
+    if (s_service_added) {
         return;
     }
     mdns_txt_item_t txt[] = {
         {"id", s_me.id}, {"name", s_me.name}, {"kind", "mosaico"}, {"proto", "2"},
     };
-    err = mdns_service_add(s_me.name, "_pixlz", "_tcp", APP_DOCK_PORT, txt, sizeof txt / sizeof txt[0]);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_ARG) {
-        ESP_LOGW(TAG, "mDNS service failed: %s", esp_err_to_name(err));
-    }
+    esp_err_t err = mdns_service_add(s_me.name, "_pixlz", "_tcp", APP_DOCK_PORT, txt, sizeof txt / sizeof txt[0]);
+    s_service_added = err == ESP_OK;
+    ESP_LOGI(TAG, "mDNS _pixlz._tcp %s", s_service_added ? "advertised" : esp_err_to_name(err));
 }
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -158,7 +171,12 @@ void dock_platform_start(const pt_device_t *me)
     s_wifi_config.sta.threshold.authmode = s_wifi_config.sta.password[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     if (tolerate(esp_netif_init()) != ESP_OK || tolerate(esp_event_loop_create_default()) != ESP_OK ||
-            !esp_netif_create_default_wifi_sta() || esp_wifi_init(&init) != ESP_OK ||
+            !(s_netif = esp_netif_create_default_wifi_sta())) {
+        ESP_LOGE(TAG, "network interface setup failed");
+        return;
+    }
+    mdns_start();
+    if (esp_wifi_init(&init) != ESP_OK ||
             esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL) != ESP_OK ||
             esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL) != ESP_OK ||
             esp_wifi_set_storage(WIFI_STORAGE_RAM) != ESP_OK || esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK ||

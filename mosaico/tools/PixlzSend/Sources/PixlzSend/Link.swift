@@ -43,6 +43,7 @@ final class Link: @unchecked Sendable {
             guard let self else { return }
             switch state {
             case .ready:
+                if let remote = self.conn.currentPath?.remoteEndpoint { rememberHost(remote) }
                 self.sayHello()
                 self.receive()
             case .failed(let e): self.close("connection failed: \(e)")
