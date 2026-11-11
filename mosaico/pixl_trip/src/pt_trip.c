@@ -372,6 +372,33 @@ void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_out
     send_plain(n, out, owner, "call", n->record.pet_id, n->record.epoch, now_ms);
 }
 
+static void set_record(pt_node_t *n, pt_rec_kind_t kind, const char *pet_id, int64_t epoch, const char *away_name,
+                       const char *state, size_t state_len);
+
+bool pt_node_can_reclaim(const pt_node_t *n)
+{
+    return n->session.kind == PT_SES_NONE && n->record.kind == PT_REC_AWAY && n->record.state_len > 0;
+}
+
+// Its holder doesn't answer: come back from the safety copy, two epochs up, so this copy wins
+// over one the holder may have made meanwhile (one epoch up). The holder gives way on its next
+// status; its time with the Pixl is lost (SPEC §10.5).
+bool pt_node_reclaim(pt_node_t *n, int64_t now_ms, pt_outs_t *out)
+{
+    begin(n, out);
+    if (!pt_node_can_reclaim(n)) return false;
+    pt_record_t *r = &n->record;
+    int64_t epoch = r->epoch + 2;
+    if (!rewrite_state(n, r->state, r->state_len, n->session.next, &n->session.next_len, epoch, &n->me, now_ms,
+                       false)) {
+        return false;
+    }
+    set_record(n, PT_REC_OWNED, r->pet_id, epoch, "", n->session.next, n->session.next_len);
+    saved(out);
+    push(out, PT_OUT_PLAY_ENTRANCE, NULL);
+    return true;
+}
+
 void pt_node_connected(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out)
 {
     begin(n, out);

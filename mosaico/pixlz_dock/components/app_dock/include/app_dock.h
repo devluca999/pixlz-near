@@ -32,6 +32,8 @@ typedef struct {
     bool on_battery;     /**< Unplugged (discharging). */
     bool locked;         /**< The Pixl here is locked to this device (SPEC §10.6). */
     bool can_call;       /**< It knows a Pixl that's away, and a Mac is connected to ask. */
+    bool can_bring;      /**< Away, no Mac connected, and a safety copy here (app_dock_bring). */
+    char away_on[96];    /**< Where the Pixl is when it's away ("" otherwise). */
 } app_dock_status_t;
 
 /** What the Mac shows on the Mosaico (SPEC §12.1: results only, no AI here): its latest Ask
@@ -58,6 +60,12 @@ int app_dock_poll(app_dock_handle_t dock, app_dock_event_t *events, int max);
 void app_dock_send_home(app_dock_handle_t dock);
 /** Ask the connected Mac to send the Pixl here ("Call"). Arrives as ARRIVED, or nothing. */
 bool app_dock_call(app_dock_handle_t dock);
+/** Its Mac is off: bring the Pixl back from the copy kept here. Arrives as ARRIVED. When that
+ * Mac comes back it gives way, and the Pixl's time there is lost (SPEC §10.5). */
+bool app_dock_bring(app_dock_handle_t dock);
+/** Leave for Vibe Mode: the device restarts into it. Whatever is here stays saved (the screen
+ * sends the Pixl home first when a Mac is connected). */
+bool app_dock_exit(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
 /** The latest feed from a Mac; empty until one arrives. Valid until the next poll. */
 const app_dock_feed_t *app_dock_feed(app_dock_handle_t dock);

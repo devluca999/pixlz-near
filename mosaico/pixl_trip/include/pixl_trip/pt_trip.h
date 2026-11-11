@@ -114,6 +114,11 @@ void pt_node_send(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs
 /// Ask the owner to send the Pixl here.
 void pt_node_call(pt_node_t *n, const pt_device_t *owner, int64_t now_ms, pt_outs_t *out);
 /// A peer connected: reconcile with `status`.
+/// Away, no trip, and a safety copy kept here: reclaim is possible.
+bool pt_node_can_reclaim(const pt_node_t *n);
+/// The holder is off or out of reach: own the Pixl again from the safety copy (epoch + 2).
+/// Emits SAVED then PLAY_ENTRANCE (peer NULL). False when it can't.
+bool pt_node_reclaim(pt_node_t *n, int64_t now_ms, pt_outs_t *out);
 void pt_node_connected(pt_node_t *n, const pt_device_t *peer, int64_t now_ms, pt_outs_t *out);
 /// One envelope arrived from `peer` (the JSON body of a frame).
 void pt_node_received(pt_node_t *n, const pt_device_t *peer, const char *body, size_t len, int64_t now_ms,

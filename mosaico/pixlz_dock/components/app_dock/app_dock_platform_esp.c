@@ -16,6 +16,7 @@
 #include "esp_board_manager.h"
 #include "esp_event.h"
 #include "esp_iris.h"
+#include "iris_ota_support.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -233,6 +234,25 @@ void dock_platform_start(const pt_device_t *me)
 void dock_platform_stop(void)
 {
     /* Wi-Fi stays up: Iris shares the network interface. */
+}
+
+bool dock_platform_enter_vibe_mode(void)
+{
+    /* Schedule first (boot intent saved, restart in 500 ms), then go quiet on the network before
+     * the restart: switching with mDNS and Wi-Fi still busy has tripped the interrupt watchdog. */
+    esp_err_t err = iris_ota_support_enter_recovery();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "can't switch to Vibe Mode: %s", esp_err_to_name(err));
+        return false;
+    }
+    ESP_LOGI(TAG, "leaving for Vibe Mode");
+    atomic_store(&s_net_ready, false);
+    if (s_started) {
+        mdns_free();
+        (void)esp_wifi_disconnect();
+        (void)esp_wifi_stop();
+    }
+    return true;
 }
 
 bool dock_platform_net_ready(void)

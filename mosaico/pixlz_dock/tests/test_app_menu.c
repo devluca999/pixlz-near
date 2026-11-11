@@ -24,7 +24,7 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3};
+static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3, false};
 
 static void test_pages(void)
 {
@@ -53,7 +53,7 @@ static void test_pages(void)
     tap(m, s.slots[3].x, s.slots[3].y);
     s = app_menu_read(m);
     CHECK(s.mode == APP_MENU_PAGE_2 && s.slots[0].bubble == APP_MENU_BUBBLE_ANSWERS);
-    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_MEMORY && s.slots[2].bubble == APP_MENU_BUBBLE_LOCK);
+    CHECK(s.slots[1].bubble == APP_MENU_BUBBLE_MEMORY && s.slots[2].bubble == APP_MENU_BUBBLE_MORE);
     CHECK(s.slots[3].bubble == APP_MENU_BUBBLE_BACK);
     tap(m, s.slots[3].x, s.slots[3].y);
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_1);
@@ -64,7 +64,7 @@ static void test_pages(void)
     CHECK(a.kind == APP_MENU_ACTION_TRICK && !app_menu_is_open(m));
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
 
-    // Send home; and Lock (Unlock when locked) on page 2.
+    // Send home; and Lock (Unlock when locked) on page 3.
     app_menu_open(m, &CTX);
     tap(m, 240, s.slots[0].y);
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_SEND_HOME);
@@ -72,10 +72,32 @@ static void test_pages(void)
     locked.locked = true;
     app_menu_open(m, &locked);
     tap(m, s.slots[3].x, s.slots[3].y);
-    CHECK(app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_UNLOCK);
     tap(m, 240, s.slots[2].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3);
+    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_UNLOCK);
+    CHECK(app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_EXIT && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_NONE);
+    // Back from page 3 is page 2.
+    tap(m, s.slots[3].x, s.slots[3].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
+    tap(m, 240, s.slots[2].y);
+    tap(m, 240, s.slots[0].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_LOCK && a.arg == 0);
+
+    // Exit asks first: red stays (back to page 3), green leaves.
+    app_menu_open(m, &CTX);
+    tap(m, s.slots[3].x, s.slots[3].y);
+    tap(m, 240, s.slots[2].y);
+    tap(m, s.slots[1].x, s.slots[1].y);
+    app_menu_snapshot_t e = app_menu_read(m);
+    CHECK(e.mode == APP_MENU_EXIT);
+    tap(m, 240, 240);   // not a button: nothing
+    CHECK(app_menu_read(m).mode == APP_MENU_EXIT && app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
+    tap(m, e.cancel_x, e.buttons_y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3 && app_menu_take_action(m).kind == APP_MENU_ACTION_NONE);
+    tap(m, s.slots[1].x, s.slots[1].y);
+    tap(m, e.confirm_x, e.buttons_y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_EXIT && !app_menu_is_open(m));
 
     // Greyed out (no Mac): a tap does nothing and the menu stays.
     app_menu_context_t no_mac = CTX;
@@ -98,6 +120,15 @@ static void test_pages(void)
     away.can_call = false;
     app_menu_open(m, &away);
     CHECK(!app_menu_read(m).slots[0].enabled);
+    // Its Mac is off but a copy is kept here: Bring takes Call's place.
+    away.can_bring = true;
+    app_menu_open(m, &away);
+    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_BRING && app_menu_read(m).slots[0].enabled);
+    tap(m, 240, s.slots[0].y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_BRING);
+    away.can_call = true;   // a Mac is there to ask: Call wins
+    app_menu_open(m, &away);
+    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_CALL);
     app_menu_open(m, &no_mac);
 
     // A tap anywhere else closes it; so does 8 s without a touch.

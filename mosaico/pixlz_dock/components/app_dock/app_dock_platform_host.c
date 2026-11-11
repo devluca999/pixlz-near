@@ -45,6 +45,12 @@ void dock_platform_start(const pt_device_t *me)
 
 void dock_platform_stop(void) {}
 
+bool dock_platform_enter_vibe_mode(void)
+{
+    dock_platform_log("pixlz: would restart into Vibe Mode (simulator: nothing happens)");
+    return true;
+}
+
 bool dock_platform_net_ready(void)
 {
     return true;

@@ -334,9 +334,11 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
         c->hello = true;
         dock_platform_log("pixlz: %s connected (clock %s)", c->peer.name,
                           dock_platform_clock_ok() ? "set" : "not set");
+        // Ask who has the Pixl, whatever the first frame was: a Mac that brought it back while
+        // this device was off owns a newer copy, and this one gives way (SPEC §10.5).
+        pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
+        perform(d, &d->outs);
         if (was_hello) {
-            pt_node_connected(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
-            perform(d, &d->outs);
             return;
         }
     }
@@ -476,6 +478,32 @@ bool app_dock_call(app_dock_handle_t d)
     return false;
 }
 
+bool app_dock_bring(app_dock_handle_t d)
+{
+    if (!d) {
+        return false;
+    }
+    char away[PT_NAME_MAX];
+    snprintf(away, sizeof away, "%s", d->node.record.away_name);
+    if (!pt_node_reclaim(&d->node, dock_platform_now_ms(), &d->outs)) {
+        return false;
+    }
+    dock_platform_log("pixlz: brought the Pixl back (%s didn't answer)", away);
+    perform(d, &d->outs);
+    return true;
+}
+
+bool app_dock_exit(app_dock_handle_t d)
+{
+    if (!d) {
+        return false;
+    }
+    for (int i = 0; i < MAX_CONNS; i++) {
+        close_conn(&d->conns[i], "leaving for Vibe Mode");
+    }
+    return dock_platform_enter_vibe_mode();
+}
+
 void app_dock_send_home(app_dock_handle_t d)
 {
     if (d) {
@@ -500,6 +528,10 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     s.on_battery = d->on_battery;
     s.locked = pt_node_locked(&d->node);
     s.can_call = d->node.record.kind == PT_REC_AWAY && s.macs > 0;
+    s.can_bring = s.macs == 0 && pt_node_can_reclaim(&d->node);
+    if (d->node.record.kind == PT_REC_AWAY) {
+        snprintf(s.away_on, sizeof s.away_on, "%s", d->node.record.away_name);
+    }
     return s;
 }
 

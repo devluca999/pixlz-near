@@ -36,6 +36,8 @@ typedef struct {
     uint8_t scale;
     uint32_t last_touch_tick;
     bool sending;             /* a menu "Send home" is waiting on the trip */
+    uint32_t exit_tick;       /* Exit: when to leave for Vibe Mode (0 = not leaving) */
+    bool exited;              /* the switch is scheduled: the device restarts shortly */
     char speech[SPEECH_MAX];
     uint32_t speech_until;
     int last_line;
@@ -200,6 +202,7 @@ static void open_menu(host_state_t *state)
         d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
         d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT, d.can_call && !d.in_trip,
         feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
+        d.can_bring && !here,
     };
     app_menu_open(state->menu, &ctx);
 }
@@ -213,6 +216,22 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         break;
     case APP_MENU_ACTION_TRICK: app_game_trick(state->game); break;
     case APP_MENU_ACTION_CALL: (void)app_dock_call(state->dock); break;
+    case APP_MENU_ACTION_BRING: (void)app_dock_bring(state->dock); break;
+    case APP_MENU_ACTION_EXIT: {
+        /* With a Mac to go to, the Pixl hops home first, so it isn't left on a device that
+         * stops running Pixlz; locked, it stays. Leave when the trip ends, or after 8 s. */
+        const app_dock_status_t d = app_dock_status(state->dock);
+        const app_game_snapshot_t s = app_game_read(state->game);
+        const bool here = s.phase != APP_GAME_PET_ABSENT && s.phase != APP_GAME_PET_EXITING;
+        if (d.owns_pet && here && d.macs > 0 && !d.locked && !d.in_trip) {
+            state->sending = true;
+            app_dock_send_home(state->dock);
+            state->exit_tick = s.tick + 8 * 30;
+        } else {
+            state->exit_tick = s.tick + 30;   /* a moment to read "See you soon" */
+        }
+        break;
+    }
     case APP_MENU_ACTION_NAP: app_game_nap(state->game); break;
     case APP_MENU_ACTION_LOCK: (void)app_dock_set_locked(state->dock, a.arg != 0); break;
     case APP_MENU_ACTION_SWAP:
@@ -274,8 +293,34 @@ static void update(void *value)
             app_game_pet_arrive(state->game);
             break;
         }
-        case APP_DOCK_EVENT_LEFT: state->sending = false; app_game_pet_leave(state->game); break;
-        case APP_DOCK_EVENT_SHRUG: state->sending = false; app_game_pet_shrug(state->game); break;
+        case APP_DOCK_EVENT_LEFT:
+            state->sending = false;
+            app_game_pet_leave(state->game);
+            if (state->exit_tick) {
+                state->exit_tick = tick + 45;   /* let him hop off first */
+            }
+            break;
+        case APP_DOCK_EVENT_SHRUG:
+            state->sending = false;
+            app_game_pet_shrug(state->game);
+            if (state->exit_tick) {
+                state->exit_tick = tick + 30;   /* he stays here, saved */
+            }
+            break;
+        }
+    }
+    /* Another device owns the Pixl now (its Mac brought it back while this one was off): it
+     * isn't here any more, so it walks off instead of lingering as a copy. */
+    const app_dock_status_t d = app_dock_status(state->dock);
+    const app_game_snapshot_t after = app_game_read(state->game);
+    if (!d.owns_pet && !d.in_trip && !state->sending && after.phase != APP_GAME_PET_ABSENT &&
+            after.phase != APP_GAME_PET_EXITING) {
+        app_game_pet_leave(state->game);
+    }
+    if (state->exit_tick && !state->exited && tick >= state->exit_tick) {
+        state->exited = app_dock_exit(state->dock);
+        if (!state->exited) {
+            state->exit_tick = 0;   /* couldn't switch: stay in the app */
         }
     }
 }
@@ -521,6 +566,8 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_ANSWERS: return "Answers";
     case APP_MENU_BUBBLE_MEMORY: return "Memory";
     case APP_MENU_BUBBLE_CALL: return "Call";
+    case APP_MENU_BUBBLE_BRING: return "Bring";
+    case APP_MENU_BUBBLE_EXIT: return "Exit";
     default: return "";
     }
 }
@@ -530,7 +577,9 @@ static Color bubble_colour(app_menu_bubble_t b)
 {
     switch (b) {
     case APP_MENU_BUBBLE_SEND:
-    case APP_MENU_BUBBLE_CALL: return shade(110, 180, 245, 100);     /* blue: travel */
+    case APP_MENU_BUBBLE_CALL:
+    case APP_MENU_BUBBLE_BRING: return shade(110, 180, 245, 100);    /* blue: travel */
+    case APP_MENU_BUBBLE_EXIT: return shade(150, 160, 200, 100);     /* slate */
     case APP_MENU_BUBBLE_TRICK: return shade(245, 200, 80, 100);     /* gold */
     case APP_MENU_BUBBLE_SWAP: return shade(185, 150, 240, 100);     /* violet */
     case APP_MENU_BUBBLE_MORE: return shade(120, 200, 190, 100);     /* teal */
@@ -567,6 +616,8 @@ static void draw_menu(const host_state_t *state, const app_menu_snapshot_t *m)
     }
 }
 
+static void draw_buttons(const app_menu_snapshot_t *m);
+
 /* The swap carousel: name, the Pixl idling large, dots, arrows, red cancel, green confirm. */
 static void draw_swap(const app_menu_snapshot_t *m, uint32_t tick)
 {
@@ -594,7 +645,12 @@ static void draw_swap(const app_menu_snapshot_t *m, uint32_t tick)
         DrawCircle(x0 + i * gap, 336, i == m->pet_index ? 6.0f : 4.0f, dot);
     }
 
-    /* Red ✕ cancel, green ✓ confirm; a held button grows a little. */
+    draw_buttons(m);
+}
+
+/* Red ✕ cancel, green ✓ confirm (swap and exit); a held button grows a little. */
+static void draw_buttons(const app_menu_snapshot_t *m)
+{
     const int y = m->buttons_y;
     float rc = (float)m->button_radius + (m->pressed < 0 ? 4.0f : 0.0f);
     float rk = (float)m->button_radius + (m->pressed > 0 ? 4.0f : 0.0f);
@@ -610,6 +666,65 @@ static void draw_swap(const app_menu_snapshot_t *m, uint32_t tick)
     Vector2 r2 = {(float)m->confirm_x + 22, (float)y - 16};
     DrawLineEx(p, q, 8.0f, white);
     DrawLineEx(q, r2, 8.0f, white);
+}
+
+static int wrap_text(const char *text, int x, int y, int width, int scale, Color colour, bool draw);
+
+/* "Leave Pixlz?" with what happens to the Pixl, over the red and green buttons. */
+static void draw_exit(const host_state_t *state, const app_menu_snapshot_t *m)
+{
+    const app_dock_status_t d = app_dock_status(state->dock);
+    const app_game_snapshot_t s = app_game_read(state->game);
+    const bool here = d.owns_pet && s.phase != APP_GAME_PET_ABSENT;
+    const char *name = pixl_pets[state->look].name;
+    char line[128];
+    Color white = shade(255, 255, 255, 100), grey = shade(170, 170, 170, 100);
+    draw_text_centred("Leave Pixlz?", GAME_WIDTH / 2, 110, 4, white);
+    if (here && d.macs > 0 && !d.locked) {
+        snprintf(line, sizeof line, "%s hops home to your Mac first.", name);
+    } else if (here) {
+        snprintf(line, sizeof line, "%s stays here, saved.", name);
+    } else {
+        snprintf(line, sizeof line, "Nothing is lost.");
+    }
+    (void)wrap_text(line, 60, 190, GAME_WIDTH - 120, 2, grey, true);
+    (void)wrap_text("Vibe Mode opens next. Open Pixlz from there to come back.", 60, 250, GAME_WIDTH - 120, 2,
+                    grey, true);
+    draw_buttons(m);
+}
+
+/* Nothing on screen: say where the Pixl is and how to get it, drifting slowly so no pixel
+ * stays lit in one place on the AMOLED (SPEC §12.1). */
+static void draw_empty(const host_state_t *state, uint32_t tick, unsigned brightness)
+{
+    const app_dock_status_t d = app_dock_status(state->dock);
+    const int dx = (int)((tick / 600) % 5) * 8 - 16, dy = (int)((tick / 900) % 5) * 8 - 16;
+    const int cx = GAME_WIDTH / 2 + dx, y = 180 + dy;
+    const pixl_pet_t *pet = &pixl_pets[state->look];
+    Color title = shade(pet->accent[0], pet->accent[1], pet->accent[2], brightness);
+    Color body = shade(200, 200, 200, brightness), hint = shade(130, 130, 130, brightness);
+    char line[128];
+    if (state->exit_tick) {
+        draw_text_centred("See you soon", cx, y + 30, 3, body);
+        return;
+    }
+    if (d.in_trip) {
+        snprintf(line, sizeof line, "%s is on the way...", pet->name);
+        draw_text_centred(line, cx, y + 30, 2, body);
+        return;
+    }
+    if (d.away_on[0]) {
+        snprintf(line, sizeof line, "%s is on", pet->name);
+        draw_text_centred(line, cx, y, 2, body);
+        draw_text_centred(d.away_on, cx, y + 30, 2, title);
+        draw_text_centred(d.can_call ? "Double-tap, then Call" :
+                          d.can_bring ? "Mac off? Double-tap, then Bring" : "Waiting for your Mac",
+                          cx, y + 80, 1, hint);
+    } else {
+        draw_text_centred("No Pixl here yet", cx, y, 2, body);
+        draw_text_centred("Send one from your Mac", cx, y + 30, 2, title);
+        draw_text_centred("Double-tap for the menu", cx, y + 80, 1, hint);
+    }
 }
 
 /* The slime trail: dots on the edge it crawled, fading out. */
@@ -733,10 +848,15 @@ static int render(void *value)
 
     if (m.mode == APP_MENU_SWAP) {
         draw_swap(&m, s.tick);
+    } else if (m.mode == APP_MENU_EXIT) {
+        draw_exit(state, &m);
     } else if (m.mode == APP_MENU_ANSWERS || m.mode == APP_MENU_MEMORY) {
         draw_reader(state, &m);
     } else {
         draw_trail(state, s.tick, m.mode == APP_MENU_CLOSED ? brightness : 45);
+        if (s.phase == APP_GAME_PET_ABSENT && m.mode == APP_MENU_CLOSED) {
+            draw_empty(state, s.tick, brightness < 50 ? 50 : brightness);
+        }
         if (s.phase != APP_GAME_PET_ABSENT) {
             /* Behind an open menu the Pixl is dimmed so the bubbles stand out. */
             unsigned b = m.mode == APP_MENU_CLOSED ? brightness : 45;

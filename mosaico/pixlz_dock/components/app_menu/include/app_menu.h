@@ -15,10 +15,12 @@ typedef struct app_menu *app_menu_handle_t;
 typedef enum {
     APP_MENU_CLOSED = 0,
     APP_MENU_PAGE_1,   /**< Send home · Trick · Swap · More */
-    APP_MENU_PAGE_2,   /**< Answers · Memory · Lock / Unlock · Back */
+    APP_MENU_PAGE_2,   /**< Answers · Memory · More · Back */
     APP_MENU_SWAP,     /**< Swipe through the Pixls; red cancel, green confirm. */
     APP_MENU_ANSWERS,  /**< Reading the Mac's Ask answers: swipe for the next, drag to scroll. */
     APP_MENU_MEMORY,   /**< Reading the Mac's saved highlights, the same way. */
+    APP_MENU_PAGE_3,   /**< Lock / Unlock · Exit · Back */
+    APP_MENU_EXIT,     /**< "Leave Pixlz?": red stay, green leave (the swap's buttons). */
 } app_menu_mode_t;
 
 typedef enum {
@@ -26,6 +28,7 @@ typedef enum {
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
+    APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -39,6 +42,8 @@ typedef enum {
     APP_MENU_ACTION_LOCK,       /**< arg: 1 lock, 0 unlock */
     APP_MENU_ACTION_SWAP,       /**< arg: the chosen Pixl's index */
     APP_MENU_ACTION_CALL,       /**< Ask the Mac that has the Pixl to send it here. */
+    APP_MENU_ACTION_BRING,      /**< No Mac answers: bring it back from the copy kept here. */
+    APP_MENU_ACTION_EXIT,       /**< Leave the app for Vibe Mode (the Pixl goes home first). */
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -56,6 +61,7 @@ typedef struct {
     bool can_call;      /**< The Pixl is away and a Mac is connected: "Call" replaces "Home". */
     int answers_count;  /**< Items the Mac has sent for the Answers and Memory readers. */
     int memory_count;
+    bool can_bring;     /**< Away, no Mac connected, and a safety copy here: "Bring" replaces "Call". */
 } app_menu_context_t;
 
 typedef struct {

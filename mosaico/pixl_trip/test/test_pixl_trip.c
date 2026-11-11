@@ -492,6 +492,44 @@ static void test_recovery(void)
     CHECK(pt_json_find(m->record.state, m->record.state_len, "epoch", &v) && pt_json_int(v, &e) && e == 10);
     free(m);
 
+    // Reclaim: the Mac took him and went quiet. Bring him back from the tombstone, two epochs
+    // up, so a copy the Mac made meanwhile (one up) gives way to ours.
+    m = owning_mosaico();
+    CHECK(!pt_node_can_reclaim(m));
+    pt_node_send(m, &MAC, T1, &o);
+    CHECK(!pt_node_can_reclaim(m));   // mid-trip
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "accept", 8, "{}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    sum = load("return_state.sum", NULL);
+    snprintf(payload, sizeof payload, "{\"checksum\":\"%s\"}", sum);
+    free(sum);
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "ack", 9, payload);
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "commitAck", 9, "{}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 9 && pt_node_can_reclaim(m));
+    CHECK(pt_node_reclaim(m, T1, &o));
+    CHECK(out_at(&o, 0, PT_OUT_SAVED) && out_at(&o, 1, PT_OUT_PLAY_ENTRANCE));
+    CHECK(m->record.kind == PT_REC_OWNED && m->record.epoch == 11 && !pt_node_can_reclaim(m));
+    CHECK(pt_json_find(m->record.state, m->record.state_len, "epoch", &v) && pt_json_int(v, &e) && e == 11);
+    CHECK(!pt_node_reclaim(m, T1, &o));
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED);   // ours is newer: the Mac gives way
+    free(m);
+
+    // The other way round: the Mac reclaimed while this device was off. On connect the device
+    // asks, sees a newer owned copy, and gives way (no exit to play: he's just not here).
+    m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "type", type, sizeof type));
+    CHECK_STR(type, "status");
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 10, "{\"held\":\"owned\",\"inTrip\":false}");
+    pt_node_received(m, &MAC, msg, n, T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 10);
+    CHECK_STR(m->record.away_name, MAC.name);
+    free(m);
+
     // Status from the Mac is answered with what we hold.
     m = owning_mosaico();
     n = env(msg, sizeof msg, &MAC, &MOSAICO, "status", 8, "{}");

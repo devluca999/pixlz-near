@@ -119,6 +119,8 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
     if (m->mode == APP_MENU_PAGE_1) {
         if (c->has_pet) {
             bubbles[0] = APP_MENU_BUBBLE_SEND, enabled[0] = c->can_send;
+        } else if (!c->can_call && c->can_bring) {
+            bubbles[0] = APP_MENU_BUBBLE_BRING, enabled[0] = true;     /* its Mac is off */
         } else {
             bubbles[0] = APP_MENU_BUBBLE_CALL, enabled[0] = c->can_call;   /* bring it here */
         }
@@ -128,7 +130,11 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
     } else if (m->mode == APP_MENU_PAGE_2) {
         bubbles[0] = APP_MENU_BUBBLE_ANSWERS, enabled[0] = true;   /* empty: says how to fill it */
         bubbles[1] = APP_MENU_BUBBLE_MEMORY, enabled[1] = true;
-        bubbles[2] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[2] = c->has_pet;
+        bubbles[2] = APP_MENU_BUBBLE_MORE, enabled[2] = true;
+        bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
+    } else if (m->mode == APP_MENU_PAGE_3) {
+        bubbles[0] = c->locked ? APP_MENU_BUBBLE_UNLOCK : APP_MENU_BUBBLE_LOCK, enabled[0] = c->has_pet;
+        bubbles[1] = APP_MENU_BUBBLE_EXIT, enabled[1] = true;
         bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
     }
 }
@@ -173,8 +179,10 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_NAP: act(m, APP_MENU_ACTION_NAP, 0); break;
     case APP_MENU_BUBBLE_LOCK: act(m, APP_MENU_ACTION_LOCK, 1); break;
     case APP_MENU_BUBBLE_UNLOCK: act(m, APP_MENU_ACTION_LOCK, 0); break;
-    case APP_MENU_BUBBLE_MORE: show(m, APP_MENU_PAGE_2); break;
-    case APP_MENU_BUBBLE_BACK: show(m, APP_MENU_PAGE_1); break;
+    case APP_MENU_BUBBLE_BRING: act(m, APP_MENU_ACTION_BRING, 0); break;
+    case APP_MENU_BUBBLE_MORE: show(m, m->mode == APP_MENU_PAGE_1 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_3); break;
+    case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
+    case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
     case APP_MENU_BUBBLE_ANSWERS: show(m, APP_MENU_ANSWERS); break;
     case APP_MENU_BUBBLE_MEMORY: show(m, APP_MENU_MEMORY); break;
     case APP_MENU_BUBBLE_SWAP:
@@ -246,6 +254,30 @@ static void swap_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed
     }
 }
 
+/* "Leave Pixlz?": red goes back to page 3, green leaves. Anything else does nothing. */
+static void exit_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
+{
+    if (pressed && !was_down) {
+        m->pressed = (int8_t)button_at(m, x, y);
+        return;
+    }
+    if (pressed) {
+        if (m->pressed && button_at(m, x, y) != m->pressed) {
+            m->pressed = 0;
+        }
+        return;
+    }
+    int8_t button = m->pressed;
+    m->pressed = 0;
+    if (button && button_at(m, x, y) == button) {
+        if (button < 0) {
+            show(m, APP_MENU_PAGE_3);
+        } else {
+            act(m, APP_MENU_ACTION_EXIT, 0);
+        }
+    }
+}
+
 /* Readers: drag up/down to scroll, swipe sideways for the next item, tap to go back. */
 static void read_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed, bool was_down)
 {
@@ -288,6 +320,8 @@ bool app_menu_pointer(app_menu_handle_t m, int32_t x, int32_t y, bool pressed)
     m->last_touch = m->tick;
     if (m->mode == APP_MENU_SWAP) {
         swap_pointer(m, x, y, pressed, was_down);
+    } else if (m->mode == APP_MENU_EXIT) {
+        exit_pointer(m, x, y, pressed, was_down);
     } else if (reading(m)) {
         read_pointer(m, x, y, pressed, was_down);
     } else if (!pressed && was_down) {

@@ -703,8 +703,11 @@ protocol PetTransport {
 
 **Small-screen menu (Mosaico, and any screen too small for the arc):**
 - Double-tap shows **up to 4 bubbles**, one at the middle of each screen edge, each at least 110 px (about 9 mm). Nothing else is tappable while it's open except the Pixl (closes it).
-- Page 1: **Send to** · **Answers** (the latest Ask results the Mac pushed; read-only) · **Memory** (recent highlights, read-only) · **more**.
-- Page 2 ("more"): **Lock to this Mosaico** · **Do a trick** · **Settings** (size, brightness, edge map, pairing) · **back**.
+- Page 1: **Home** (send it to the Mac; **Call** when it's away and a Mac is connected; **Bring** when it's away, no Mac answers, and a safety copy is here, §10.5) · **Trick** · **Swap** · **More**.
+- Page 2: **Answers** (the latest Ask results the Mac pushed; read-only) · **Memory** (recent highlights, read-only) · **More** · **Back**.
+- Page 3: **Lock / Unlock** · **Exit** · **Back**. Exit asks first (red stay, green leave), then restarts into Vibe Mode. With a Mac connected and the Pixl unlocked, the Pixl hops home first so it isn't left on a device that stopped running Pixlz.
+- With no Pixl on screen, the screen says where it is ("Frogg is on M's MacBook Pro" with the way to get it back, or "No Pixl here yet"), drifting slowly (§12.1).
+- When a Mac connects, the Mosaico asks it for status: if the Mac brought the Pixl back while the Mosaico was off, the Mosaico gives way and the Pixl walks off.
 - Lists (Send to, Answers) show at most 3 rows plus "back" or "more" per screen.
 - Closes after 8 s without a touch (no static UI on the AMOLED, §12.1).
 
