@@ -117,7 +117,11 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         enabled[i] = false;
     }
     if (m->mode == APP_MENU_PAGE_1) {
-        bubbles[0] = APP_MENU_BUBBLE_SEND, enabled[0] = c->can_send;
+        if (c->has_pet) {
+            bubbles[0] = APP_MENU_BUBBLE_SEND, enabled[0] = c->can_send;
+        } else {
+            bubbles[0] = APP_MENU_BUBBLE_CALL, enabled[0] = c->can_call;   /* bring it here */
+        }
         bubbles[1] = APP_MENU_BUBBLE_TRICK, enabled[1] = c->has_pet;
         bubbles[2] = APP_MENU_BUBBLE_SWAP, enabled[2] = c->pet_count > 1;
         bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
@@ -164,6 +168,7 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     }
     switch (bubbles[i]) {
     case APP_MENU_BUBBLE_SEND: act(m, APP_MENU_ACTION_SEND_HOME, 0); break;
+    case APP_MENU_BUBBLE_CALL: act(m, APP_MENU_ACTION_CALL, 0); break;
     case APP_MENU_BUBBLE_TRICK: act(m, APP_MENU_ACTION_TRICK, 0); break;
     case APP_MENU_BUBBLE_NAP: act(m, APP_MENU_ACTION_NAP, 0); break;
     case APP_MENU_BUBBLE_LOCK: act(m, APP_MENU_ACTION_LOCK, 1); break;

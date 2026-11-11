@@ -25,7 +25,7 @@ typedef enum {
     APP_MENU_BUBBLE_NONE = 0,
     APP_MENU_BUBBLE_SEND, APP_MENU_BUBBLE_TRICK, APP_MENU_BUBBLE_SWAP, APP_MENU_BUBBLE_MORE,
     APP_MENU_BUBBLE_LOCK, APP_MENU_BUBBLE_UNLOCK, APP_MENU_BUBBLE_NAP, APP_MENU_BUBBLE_BACK,
-    APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY,
+    APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -38,6 +38,7 @@ typedef enum {
     APP_MENU_ACTION_NAP,
     APP_MENU_ACTION_LOCK,       /**< arg: 1 lock, 0 unlock */
     APP_MENU_ACTION_SWAP,       /**< arg: the chosen Pixl's index */
+    APP_MENU_ACTION_CALL,       /**< Ask the Mac that has the Pixl to send it here. */
 } app_menu_action_kind_t;
 
 typedef struct {
@@ -52,6 +53,7 @@ typedef struct {
     bool has_pet;       /**< Trick and Nap need a Pixl here. */
     int pet_index;      /**< The current look, where the carousel starts. */
     int pet_count;      /**< How many Pixls the carousel offers, >= 1. */
+    bool can_call;      /**< The Pixl is away and a Mac is connected: "Call" replaces "Home". */
     int answers_count;  /**< Items the Mac has sent for the Answers and Memory readers. */
     int memory_count;
 } app_menu_context_t;

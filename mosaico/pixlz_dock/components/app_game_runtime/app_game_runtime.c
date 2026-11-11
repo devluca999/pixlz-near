@@ -198,7 +198,7 @@ static void open_menu(host_state_t *state)
     const app_dock_feed_t *feed = app_dock_feed(state->dock);
     const app_menu_context_t ctx = {
         d.macs > 0 && d.owns_pet && !d.locked && !d.in_trip && here,
-        d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT,
+        d.locked, d.owns_pet && here, state->look, PIXL_PET_COUNT, d.can_call && !d.in_trip,
         feed ? feed->answers_count : 0, feed ? feed->memory_count : 0,
     };
     app_menu_open(state->menu, &ctx);
@@ -212,6 +212,7 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
         app_dock_send_home(state->dock);
         break;
     case APP_MENU_ACTION_TRICK: app_game_trick(state->game); break;
+    case APP_MENU_ACTION_CALL: (void)app_dock_call(state->dock); break;
     case APP_MENU_ACTION_NAP: app_game_nap(state->game); break;
     case APP_MENU_ACTION_LOCK: (void)app_dock_set_locked(state->dock, a.arg != 0); break;
     case APP_MENU_ACTION_SWAP:
@@ -519,28 +520,47 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_BACK: return "Back";
     case APP_MENU_BUBBLE_ANSWERS: return "Answers";
     case APP_MENU_BUBBLE_MEMORY: return "Memory";
+    case APP_MENU_BUBBLE_CALL: return "Call";
     default: return "";
     }
 }
 
-/* Four bubbles in the Pixl's accent colour; greyed when they can't be used. */
+/* Each action keeps its own colour, whichever Pixl is here, so it's found by colour too. */
+static Color bubble_colour(app_menu_bubble_t b)
+{
+    switch (b) {
+    case APP_MENU_BUBBLE_SEND:
+    case APP_MENU_BUBBLE_CALL: return shade(110, 180, 245, 100);     /* blue: travel */
+    case APP_MENU_BUBBLE_TRICK: return shade(245, 200, 80, 100);     /* gold */
+    case APP_MENU_BUBBLE_SWAP: return shade(185, 150, 240, 100);     /* violet */
+    case APP_MENU_BUBBLE_MORE: return shade(120, 200, 190, 100);     /* teal */
+    case APP_MENU_BUBBLE_ANSWERS: return shade(140, 215, 120, 100);  /* green */
+    case APP_MENU_BUBBLE_MEMORY: return shade(245, 165, 95, 100);    /* orange */
+    case APP_MENU_BUBBLE_LOCK:
+    case APP_MENU_BUBBLE_UNLOCK: return shade(240, 115, 105, 100);   /* coral */
+    case APP_MENU_BUBBLE_BACK:
+    default: return shade(175, 175, 175, 100);                       /* grey */
+    }
+}
+
+/* Four bubbles, each in its action's colour; greyed when they can't be used. */
 static void draw_menu(const host_state_t *state, const app_menu_snapshot_t *m)
 {
-    const uint8_t *accent = pixl_pets[state->look].accent;
+    (void)state;
     for (int i = 0; i < APP_MENU_SLOTS; i++) {
         const app_menu_slot_t *slot = &m->slots[i];
         if (slot->bubble == APP_MENU_BUBBLE_NONE || !slot->scale) {
             continue;
         }
         float r = (float)m->radius * (float)slot->scale / 1000.0f;
-        Color fill = slot->enabled ? shade(accent[0], accent[1], accent[2], 100) : shade(70, 70, 70, 100);
+        Color fill = slot->enabled ? bubble_colour(slot->bubble) : shade(70, 70, 70, 100);
         DrawCircle(slot->x, slot->y, r + 3, shade(27, 42, 26, 100));
         DrawCircle(slot->x, slot->y, r, fill);
         if (slot->scale >= 900) {
             Color ink = slot->enabled ? shade(20, 24, 20, 100) : shade(150, 150, 150, 100);
             const char *label = bubble_label(slot->bubble);
             draw_text_centred(label, slot->x, slot->y - PIXL_FONT_HEIGHT, 2, ink);
-            if (slot->bubble == APP_MENU_BUBBLE_SEND && !slot->enabled) {
+            if ((slot->bubble == APP_MENU_BUBBLE_SEND || slot->bubble == APP_MENU_BUBBLE_CALL) && !slot->enabled) {
                 draw_text_centred("no Mac", slot->x, slot->y + 14, 1, ink);
             }
         }

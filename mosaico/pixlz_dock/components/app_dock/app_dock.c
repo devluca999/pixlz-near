@@ -459,6 +459,23 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
     return n;
 }
 
+bool app_dock_call(app_dock_handle_t d)
+{
+    if (!d || d->node.record.kind != PT_REC_AWAY) {
+        return false;
+    }
+    for (int i = 0; i < MAX_CONNS; i++) {
+        conn_t *c = &d->conns[i];
+        if (c->fd >= 0 && c->hello) {
+            pt_node_call(&d->node, &c->peer, dock_platform_now_ms(), &d->outs);
+            perform(d, &d->outs);
+            dock_platform_log("pixlz: calling the Pixl from %s", c->peer.name);
+            return d->outs.count > 0;
+        }
+    }
+    return false;
+}
+
 void app_dock_send_home(app_dock_handle_t d)
 {
     if (d) {
@@ -482,6 +499,7 @@ app_dock_status_t app_dock_status(app_dock_handle_t d)
     s.battery_percent = d->battery_percent;
     s.on_battery = d->on_battery;
     s.locked = pt_node_locked(&d->node);
+    s.can_call = d->node.record.kind == PT_REC_AWAY && s.macs > 0;
     return s;
 }
 

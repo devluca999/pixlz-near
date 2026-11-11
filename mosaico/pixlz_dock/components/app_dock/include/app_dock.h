@@ -31,6 +31,7 @@ typedef struct {
     int battery_percent; /**< 0..100, or -1 when unknown. */
     bool on_battery;     /**< Unplugged (discharging). */
     bool locked;         /**< The Pixl here is locked to this device (SPEC §10.6). */
+    bool can_call;       /**< It knows a Pixl that's away, and a Mac is connected to ask. */
 } app_dock_status_t;
 
 /** What the Mac shows on the Mosaico (SPEC §12.1: results only, no AI here): its latest Ask
@@ -55,6 +56,8 @@ void app_dock_destroy(app_dock_handle_t *handle);
 int app_dock_poll(app_dock_handle_t dock, app_dock_event_t *events, int max);
 /** Send the Pixl to the connected Mac. The result arrives as LEFT or SHRUG events. */
 void app_dock_send_home(app_dock_handle_t dock);
+/** Ask the connected Mac to send the Pixl here ("Call"). Arrives as ARRIVED, or nothing. */
+bool app_dock_call(app_dock_handle_t dock);
 app_dock_status_t app_dock_status(app_dock_handle_t dock);
 /** The latest feed from a Mac; empty until one arrives. Valid until the next poll. */
 const app_dock_feed_t *app_dock_feed(app_dock_handle_t dock);

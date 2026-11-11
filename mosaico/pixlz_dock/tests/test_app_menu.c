@@ -24,7 +24,7 @@ static void swipe(app_menu_handle_t m, int x0, int x1)
     app_menu_pointer(m, x1, 240, false);
 }
 
-static const app_menu_context_t CTX = {true, false, true, 0, 6, 2, 3};
+static const app_menu_context_t CTX = {true, false, true, 0, 6, false, 2, 3};
 
 static void test_pages(void)
 {
@@ -84,6 +84,21 @@ static void test_pages(void)
     CHECK(!app_menu_read(m).slots[0].enabled);
     tap(m, 240, s.slots[0].y);
     CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_NONE && app_menu_is_open(m));
+
+    // The Pixl is away: Call takes Home's place (greyed when no Mac can hear it).
+    app_menu_context_t away = CTX;
+    away.has_pet = false;
+    away.can_send = false;
+    away.can_call = true;
+    app_menu_open(m, &away);
+    CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_CALL && app_menu_read(m).slots[0].enabled);
+    CHECK(!app_menu_read(m).slots[1].enabled);   // no trick without a Pixl
+    tap(m, 240, s.slots[0].y);
+    CHECK(app_menu_take_action(m).kind == APP_MENU_ACTION_CALL);
+    away.can_call = false;
+    app_menu_open(m, &away);
+    CHECK(!app_menu_read(m).slots[0].enabled);
+    app_menu_open(m, &no_mac);
 
     // A tap anywhere else closes it; so does 8 s without a touch.
     tap(m, 240, 240);
