@@ -88,7 +88,8 @@ final class BubbleMenu {
 
     private func openNow(trigger: String) {
         guard !app.userHidden, let head else { return }
-        let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: app.travel.sendSlotName, walletSub: wallet?.short)
+        let slots = BubbleMenuModel.slots(selection: app.pendingSelection != nil, peer: app.travel.sendSlotName, walletSub: wallet?.short,
+                                          agentsSub: app.agents.bubbleSub)
         let screen = app.screensTopLeft.first { $0.minX <= head.x && head.x <= $0.maxX } ?? app.screensTopLeft.first ?? .zero
         let placement = BubbleMenuModel.place(count: slots.count, head: head, radius: BubbleMenuModel.radius(scale: app.scale),
                                               screen: screen, avoid: avoidRects())
@@ -189,6 +190,7 @@ final class BubbleMenu {
         case "ask": close(reason: "ask"); showAsk()
         case "memory": close(reason: "memory"); showMemory()
         case "wallet": close(reason: "wallet"); showWallet()
+        case "agents": showAgents(near: "agents")
         case "more": showMore()
         case "play": showPlay(near: "play")
         case "send": close(reason: "send"); showSend()
@@ -210,6 +212,7 @@ final class BubbleMenu {
     /// More: the other bubbles fold away and the mini menu grows from the More bubble.
     func showMore() {
         var rows = [ListMenuView.Row(id: "ask", title: "Ask", icon: "ask", trailing: "⌘K"),
+                    ListMenuView.Row(id: "agents", title: "Agents", icon: "agents", trailing: app.agents.bubbleSub ?? "connect Claude Code"),
                     ListMenuView.Row(id: "memory", title: "Memory", icon: "memory"),
                     ListMenuView.Row(id: "wallet", title: "Wallet", icon: "wallet", trailing: wallet?.short),
                     ListMenuView.Row(id: "send", title: "Send to device", icon: "send",
@@ -234,6 +237,7 @@ final class BubbleMenu {
         case "ask": showAsk()
         case "memory": showMemory()
         case "wallet": showWallet()
+        case "agents": showAgents(near: nil)
         case "focus": app.focusUntil == nil ? app.startFocus(minutes: 25) : app.endFocus(completed: false)
         case "signature": app.signature()
         case "skin": showSkins()
@@ -302,6 +306,101 @@ final class BubbleMenu {
         list = l
         watchOutside()
         Debug.log("list open rows=\(rows.map(\.id))")
+    }
+
+    // MARK: Agent mode (SPEC §16)
+
+    /// Sessions (waiting ones first), then the switches. Redraws while open as hooks report in.
+    func showAgents(near slot: String?) {
+        let agents = app.agents
+        guard agents.hooksInstalled || !agents.hub.sessions.isEmpty else { showConnectAgents(near: slot); return }
+        func age(_ d: Date) -> String {
+            let s = Int(Date().timeIntervalSince(d))
+            return s < 60 ? "now" : s < 3600 ? "\(s / 60) min" : "\(s / 3600) h"
+        }
+        var rows: [ListMenuView.Row] = agents.hub.requests.map { r in
+            ListMenuView.Row(id: "req.\(r.id)", title: "\(r.project): \(r.summary)", icon: "warn", trailing: "needs you")
+        }
+        let waiting = Set(agents.hub.requests.map(\.sessionID))
+        rows += agents.hub.list.filter { !waiting.contains($0.id) }.map { s in
+            ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: nil, trailing: age(s.lastHeard), enabled: false)
+        }
+        if agents.hub.sessions.isEmpty {
+            rows.append(ListMenuView.Row(id: "none", title: "No Claude Code sessions right now", icon: "info", enabled: false))
+        }
+        rows += [ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
+                 ListMenuView.Row(id: "alerts", title: "Agent alerts", icon: nil, trailing: agents.alertsOn ? "on" : "off"),
+                 ListMenuView.Row(id: "cloud", title: "Cloud sessions: open claude.ai/code", icon: nil),
+                 ListMenuView.Row(id: "disconnect", title: "Disconnect Claude Code", icon: nil)]
+        if slot != nil { view?.close(at: app.now) }
+        showList(rows, near: slot) { [weak self] row in
+            guard let self else { return }
+            switch row.id {
+            case let id where id.hasPrefix("req."): self.showRequest(String(id.dropFirst(4)))
+            case "answer": agents.answerHere.toggle(); self.showAgents(near: nil)
+            case "alerts": agents.alertsOn.toggle(); self.showAgents(near: nil)
+            case "cloud": self.closeList(); NSWorkspace.shared.open(URL(string: "https://claude.ai/code")!)
+            case "disconnect":
+                self.closeList()
+                if let why = agents.removeHooks() { self.app.notify(.agentsError(why)) }
+                else { self.app.notify(.agents("Claude Code disconnected. Its settings are back as they were.")) }
+            default: break
+            }
+        }
+        agents.onChange = { [weak self] in
+            guard let self, self.listPanel != nil, self.list?.rows.contains(where: { $0.id == "answer" }) == true else { return }
+            self.showAgents(near: nil)
+        }
+    }
+
+    /// The user's yes before Pixlz writes to Claude Code's settings (D19).
+    func showConnectAgents(near slot: String?) {
+        let rows = [ListMenuView.Row(id: "info", title: "Agent mode watches your Claude Code sessions.", icon: "info", enabled: false),
+                    ListMenuView.Row(id: "info2", title: "It adds Pixlz hooks to ~/.claude/settings.json.", icon: nil, enabled: false),
+                    ListMenuView.Row(id: "connect", title: "Connect Claude Code", icon: "agents", trailing: "↵"),
+                    ListMenuView.Row(id: "cancel", title: "Not now", icon: nil, trailing: "esc")]
+        if slot != nil { view?.close(at: app.now) }
+        showList(rows, near: slot) { [weak self] row in
+            guard let self else { return }
+            self.closeList()
+            guard row.id == "connect" else { return }
+            if let why = self.app.agents.installHooks() {
+                self.app.notify(.agentsError(why))
+            } else {
+                self.app.notify(.agents("Connected. Sessions you start (or resume) from now on show up under Agents."))
+            }
+        }
+    }
+
+    /// One request: the exact command or file, Allow / Deny, snooze.
+    func showRequest(_ id: String) {
+        let agents = app.agents
+        guard let r = agents.hub.requests.first(where: { $0.id == id }) else { showAgents(near: nil); return }
+        let detail = r.detail.count > 160 ? String(r.detail.prefix(159)) + "…" : r.detail
+        var rows = [ListMenuView.Row(id: "what", title: "\(r.project) wants to: \(r.summary)", icon: "warn", enabled: false)]
+        if !detail.isEmpty, detail != r.summary {
+            rows += detail.split(separator: "\n", omittingEmptySubsequences: true).prefix(4).enumerated().map { i, l in
+                ListMenuView.Row(id: "detail.\(i)", title: String(l), icon: nil, enabled: false)
+            }
+        }
+        rows += [ListMenuView.Row(id: "allow", title: "Allow", icon: "check", trailing: "↵"),
+                 ListMenuView.Row(id: "deny", title: "Deny", icon: nil),
+                 ListMenuView.Row(id: "snooze", title: "Snooze alerts 10 min", icon: nil)]
+        showList(rows, near: nil) { [weak self] row in
+            guard let self else { return }
+            switch row.id {
+            case "allow": self.closeList(); agents.decide(id, .allow)
+            case "deny": self.closeList(); agents.decide(id, .deny)
+            case "snooze": agents.snooze(); self.closeList()
+            default: break
+            }
+        }
+        agents.onChange = { [weak self] in
+            // answered in the terminal, or timed out: the card goes
+            guard let self, !agents.hub.requests.contains(where: { $0.id == id }),
+                  self.list?.rows.contains(where: { $0.id == "allow" }) == true else { return }
+            self.closeList()
+        }
     }
 
     func closeList() {

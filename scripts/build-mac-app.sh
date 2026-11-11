@@ -52,6 +52,7 @@ CONF
 
 swift build -c release --package-path macos/PixlMemory --product PixlMemory
 swift build -c release --package-path macos/PixlMemory --product pixl-native-host
+swift build -c release --package-path macos/PixlMemory --product pixl-agent-hook
 BINDIR="$(swift build -c release --package-path macos/PixlMemory --show-bin-path)"
 BIN="$BINDIR/PixlMemory"
 
@@ -61,6 +62,7 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/PixlMemory"
 # Chrome starts this for the extension (native messaging); the app registers it at launch.
 cp "$BINDIR/pixl-native-host" "$APP/Contents/MacOS/pixl-native-host"
+cp "$BINDIR/pixl-agent-hook" "$APP/Contents/MacOS/pixl-agent-hook"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -95,6 +97,7 @@ iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 ensure_identity
 # nested code first, then the app (which seals it)
 codesign --force --sign "$IDENTITY" --identifier dev.pixlz.pixl-native-host --timestamp=none "$APP/Contents/MacOS/pixl-native-host"
+codesign --force --sign "$IDENTITY" --identifier dev.pixlz.pixl-agent-hook --timestamp=none "$APP/Contents/MacOS/pixl-agent-hook"
 codesign --force --sign "$IDENTITY" --identifier dev.pixlz.PixlMemory --timestamp=none "$APP"
 echo "Signed with: $IDENTITY ($(codesign -dr - "$APP" 2>/dev/null | sed -n 's/^designated => //p' | cut -c1-80))"
 

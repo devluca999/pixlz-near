@@ -10,6 +10,7 @@ import PixlzCore
 /// What prompted a sound: picks from the Pixl's sound set for that event.
 public enum SoundEvent: String, CaseIterable, Sendable {
     case greet, happy, curious, annoyed, startled, sleepy, sad, idle
+    case alert   // Agent mode: a session needs you (pixl.json ui.sounds.alert)
 }
 
 /// Picks voice lines from a Pixl's sounds (pixl.json `ui.sounds`), never the same twice in a row.
@@ -164,6 +165,9 @@ public extension Notice {
     }
     static func walletLimit(_ text: String) -> Notice { Notice(.done, text) }
     static func walletError(_ text: String) -> Notice { Notice(.error, sentence(text)) }
+    /// Agent mode (SPEC §16): connected, disconnected, or why not.
+    static func agents(_ text: String) -> Notice { Notice(.done, text) }
+    static func agentsError(_ text: String) -> Notice { Notice(.error, sentence(text)) }
     // focus
     static func focusStarted(_ minutes: Int, name: String) -> Notice { Notice(.info, "Focus for \(minutes) min. \(name) will sit still.") }
     static func focusLeft(_ minutes: Int) -> Notice { Notice(.info, "Focus: \(minutes) min left.", seconds: 2) }

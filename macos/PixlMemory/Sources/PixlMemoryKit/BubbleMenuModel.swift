@@ -28,9 +28,11 @@ public enum BubbleMenuModel {
     public static let labelHeight: CGFloat = 22
 
     /// Slot 1 is Polish while text is selected, Ask otherwise; Send to device only with a peer.
-    public static func slots(selection: Bool, peer: String?, walletSub: String?) -> [Slot] {
-        var s = [selection ? Slot(id: "polish", label: "Polish", sub: "selection") : Slot(id: "ask", label: "Ask"),
-                 Slot(id: "memory", label: "Memory"),
+    /// Agents (SPEC §16) comes second, once Claude Code is connected or a session is running.
+    public static func slots(selection: Bool, peer: String?, walletSub: String?, agentsSub: String? = nil) -> [Slot] {
+        var s = [selection ? Slot(id: "polish", label: "Polish", sub: "selection") : Slot(id: "ask", label: "Ask")]
+        if let agentsSub { s.append(Slot(id: "agents", label: "Agents", sub: agentsSub)) }
+        s += [Slot(id: "memory", label: "Memory"),
                  Slot(id: "wallet", label: "Wallet", sub: walletSub)]
         if let peer { s.append(Slot(id: "send", label: "Send to \(peer)")) }
         s.append(Slot(id: "play", label: "Play"))

@@ -8,6 +8,7 @@ let package = Package(
         .executable(name: "PixlMemory", targets: ["PixlMemory"]),
         .executable(name: "pixl-snapshots", targets: ["PixlSnapshots"]),
         .executable(name: "pixl-native-host", targets: ["PixlNativeHost"]),
+        .executable(name: "pixl-agent-hook", targets: ["PixlAgentHook"]),
     ],
     dependencies: [
         .package(path: "../../PixlzCore"),
@@ -19,13 +20,18 @@ let package = Package(
         .target(name: "PixlBridge"),
         // Chrome starts this for the extension (native messaging); it relays to the service and the app.
         .executableTarget(name: "PixlNativeHost", dependencies: ["PixlBridge"]),
+        // Agent mode: Claude Code sessions from its hooks, and the hooks' settings (no UI, fully testable).
+        .target(name: "PixlAgents"),
+        // Claude Code runs this for each hook; it relays the event to the app and prints the answer.
+        .executableTarget(name: "PixlAgentHook", dependencies: ["PixlAgents"]),
         // The overlay app: panels, Accessibility, motion, menus.
-        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge",
+        .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge", "PixlAgents",
                                                          .product(name: "PixlTravel", package: "PixlzCore")]),
         // Renders the app's views offscreen to PNGs for docs (no screen recording needed).
         .executableTarget(name: "PixlSnapshots", dependencies: ["PixlMemoryKit"]),
         .testTarget(name: "PixlMemoryKitTests", dependencies: ["PixlMemoryKit"],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "PixlBridgeTests", dependencies: ["PixlBridge"]),
+        .testTarget(name: "PixlAgentsTests", dependencies: ["PixlAgents"]),
     ]
 )
