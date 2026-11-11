@@ -24,6 +24,23 @@ class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// The Pixl's own window. One Pixl, one place: while it's away on another device, nothing may
+/// put this window on screen (D17). Whatever tries is refused and logged.
+final class PixlPanel: OverlayPanel {
+    var isAway: () -> Bool = { false }
+    private func refused(_ how: String) -> Bool {
+        guard isAway() else { return false }
+        Debug.log("pixl window: \(how) refused while away\n" + Thread.callStackSymbols.dropFirst(2).prefix(5).joined(separator: "\n"))
+        return true
+    }
+    override func orderFrontRegardless() { if !refused("orderFrontRegardless") { super.orderFrontRegardless() } }
+    override func orderFront(_ sender: Any?) { if !refused("orderFront") { super.orderFront(sender) } }
+    override func makeKeyAndOrderFront(_ sender: Any?) { if !refused("makeKeyAndOrderFront") { super.makeKeyAndOrderFront(sender) } }
+    override func order(_ place: NSWindow.OrderingMode, relativeTo other: Int) {
+        if place == .out || !refused("order(\(place.rawValue))") { super.order(place, relativeTo: other) }
+    }
+}
+
 /// The mini menu takes typing (its name field) without activating the app.
 final class KeyPanel: OverlayPanel {
     var onCancel: (() -> Void)?
@@ -46,7 +63,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let client = MemoryClient()
     let watcher = WindowWatcher()
     var frogg: FroggView!
-    var froggPanel: OverlayPanel!
+    var froggPanel: PixlPanel!
     var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     var resultPanel: OverlayPanel?
     lazy var menu = BubbleMenu(app: self)
@@ -200,7 +217,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         frogg = FroggView(scale: scale)
         frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
         frogg.onContactChange = { [weak self] in if let self, let f = self.foot { self.place(at: f) } }
-        froggPanel = OverlayPanel(size: frogg.frame.size)
+        froggPanel = PixlPanel(size: frogg.frame.size)
+        froggPanel.isAway = { [weak self] in self?.awayOn != nil }
         froggPanel.animationBehavior = .none
         froggPanel.contentView = frogg
         if let current { place(at: current) }

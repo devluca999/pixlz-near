@@ -78,7 +78,7 @@ final class TravelController {
         }
         let body = MosaicoFeed.agentsBody(rows, alerts: agents.alertsOn, from: me)
         for p in targets { r.transport.sendFrame(body, to: p) }
-        Debug.log("travel: agents to \(targets.map(\.deviceName)): \(rows.count) sessions, \(agents.hub.requests.count) waiting")
+        Debug.log("travel: agents to \(targets.map(\.deviceName)): \(rows.count) sessions \(rows.map { "\($0.project)·\($0.id.prefix(8))" }), \(agents.hub.requests.count) waiting")
     }
 
     /// A frame from a device that isn't a trip message: a Mosaico's answer to a request.
