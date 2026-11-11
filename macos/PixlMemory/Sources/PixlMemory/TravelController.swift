@@ -29,6 +29,7 @@ final class TravelController {
     /// The latest Ask answers, newest first, for a Mosaico's Answers page.
     private var recentAnswers: [(question: String, answer: String)] = []
     private var feedTimer: Timer?
+    private var pingTimer: Timer?
 
     func noteAnswer(question: String, answer: String) {
         recentAnswers.insert((question, answer), at: 0)
@@ -198,6 +199,15 @@ final class TravelController {
         feedTimer?.invalidate()
         feedTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pushFeed() }
+        }
+        // Heartbeat to the feed devices (Mosaicos): they answer "pong", so a dead link shows.
+        pingTimer?.invalidate()
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let r = self.runner else { return }
+                let wanted = MosaicoFeed.devices()
+                for p in self.peers where wanted.contains(p.deviceId) { r.transport.sendFrame(Data(#"{"ping":1}"#.utf8), to: p) }
+            }
         }
         r.transport.onFrame = { [weak self] body, peer in self?.frame(body, from: peer) }
         app.agents.onHubChange = { [weak self] in self?.scheduleAgentsPush() }

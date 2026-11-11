@@ -42,6 +42,7 @@ static struct {
     size_t in_len;
     uint8_t out[CHUNK_MAX]; /* one chunk read from the socket, not yet notified */
     size_t out_len;
+    TickType_t last_rx;     /* when the Mac last wrote (it pings every 15 s) */
 } s;
 
 static void advertise(void);
@@ -63,6 +64,7 @@ static int on_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *
             uint16_t got = 0;
             ble_hs_mbuf_to_flat(ctxt->om, s.in + s.in_len, n, &got);
             s.in_len += got;
+            s.last_rx = xTaskGetTickCount();
         }
         xSemaphoreGive(s.lock);
         return rc;
@@ -105,6 +107,7 @@ static int on_gap(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
             s.conn = event->connect.conn_handle;
+            s.last_rx = xTaskGetTickCount();
             s.subscribed = false;
             ESP_LOGI(TAG, "a Mac connected over Bluetooth");
         } else {
@@ -188,6 +191,15 @@ static void bridge_task(void *param)
                 close_sock();
             }
             vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+        /* A Mac that's said nothing for 60 s is gone (it pings every 15 s): drop the link so it
+         * can reconnect cleanly, instead of both sides holding a dead one. */
+        if (xTaskGetTickCount() - s.last_rx > pdMS_TO_TICKS(60000)) {
+            ESP_LOGW(TAG, "no word from the Mac for 60 s; dropping the Bluetooth link");
+            s.last_rx = xTaskGetTickCount();
+            (void)ble_gap_terminate(s.conn, BLE_ERR_REM_USER_CONN_TERM);
+            vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
         if (s.sock < 0) {

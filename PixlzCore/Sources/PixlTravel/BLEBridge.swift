@@ -32,6 +32,11 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private var outbox = Data()        // bytes for the Mosaico, written one chunk at a time
     /// Bytes from the Mosaico while no transport connection is attached, sent on the next one.
     private var inbox = Data()
+    /// When the Mosaico last sent anything. A link that's silent too long is dead even if macOS
+    /// still calls it connected (the Mac pings every 15 s, the Mosaico answers).
+    private var lastHeard = Date()
+    private var heartbeat: DispatchSourceTimer?
+    static let silentLimit: TimeInterval = 45
     static let inboxLimit = 64 * 1024
     private var writing = false
     private var said = false           // the hello went out on this link
@@ -43,6 +48,11 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     public func start() {
         central = CBCentralManager(delegate: self, queue: queue)
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 15, repeating: 15)
+        t.setEventHandler { [weak self] in self?.checkAlive() }
+        t.resume()
+        heartbeat = t
     }
 
     private func log(_ s: String) { DispatchQueue.main.async { self.onState?(s) } }
@@ -107,7 +117,15 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         reset(retry: true)
     }
 
+    private func checkAlive() {
+        guard listener != nil, let p = peripheral, Date().timeIntervalSince(lastHeard) > Self.silentLimit else { return }
+        log("bluetooth: nothing from the Mosaico for \(Int(Date().timeIntervalSince(lastHeard))) s; reconnecting")
+        central.cancelPeripheralConnection(p)
+        reset(retry: true)
+    }
+
     private func reset(retry: Bool) {
+        lastHeard = Date()
         watchGen += 1   // any pending watchdog is for the old link
         let gone = device?.deviceId
         client?.cancel(); client = nil
@@ -140,6 +158,7 @@ public final class BLEBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     public func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
+        lastHeard = Date()
         guard let data = ch.value else { return }
         if ch.uuid == Self.infoUUID {
             guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: String], let id = o["id"] else { return }

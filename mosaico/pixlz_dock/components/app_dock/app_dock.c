@@ -609,6 +609,18 @@ static bool handle_chat(app_dock_handle_t d, const conn_t *c, const char *body, 
 }
 
 /* `{"replyResult":{"id","state"}}`: what the Mac did with a reply (sent, queued, failed). */
+/* `{"ping":…}` from a Mac: answer, so it knows the link is alive. */
+static bool handle_ping(conn_t *c, const char *body, size_t len)
+{
+    pt_span_t v;
+    if (!pt_json_find(body, len, "ping", &v)) {
+        return false;
+    }
+    static const char pong[] = "{\"pong\":1}";
+    (void)enqueue(c, pong, sizeof pong - 1);
+    return true;
+}
+
 static bool handle_reply_result(app_dock_handle_t d, const char *body, size_t len)
 {
     pt_span_t r;
@@ -734,7 +746,8 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
         }
     }
     if (handle_pair(d, c, body, len) || handle_feed(d, c, body, len) || handle_agents(d, c, body, len) ||
-            handle_chat(d, c, body, len) || handle_transcript(d, body, len) || handle_reply_result(d, body, len)) {
+            handle_chat(d, c, body, len) || handle_transcript(d, body, len) || handle_reply_result(d, body, len) ||
+            handle_ping(c, body, len)) {
         return;
     }
     pt_node_received(&d->node, &c->peer, body, len, dock_platform_now_ms(), &d->outs);
