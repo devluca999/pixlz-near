@@ -255,6 +255,49 @@ final class AgentController {
         return Transcript.read(URL(fileURLWithPath: p), limit: limit)
     }
 
+    // MARK: live transcripts
+
+    /// Who is watching which session's transcript ("card", "mosaico.<device>"), and what to call
+    /// when it grows. Hooks only fire at the edges of a turn; the transcript gets every message
+    /// and tool call as it happens, so watchers redraw from it.
+    private var watchers: [String: (session: String, until: Date, call: @MainActor () -> Void)] = [:]
+    private var seen: [String: (size: UInt64, mtime: Date)] = [:]
+    private var watchTimer: Timer?
+
+    func watchTranscript(_ sessionID: String, as owner: String, for seconds: TimeInterval = .infinity,
+                         onChange: @escaping @MainActor () -> Void) {
+        watchers[owner] = (sessionID, Date().addingTimeInterval(seconds), onChange)
+        if let p = hub.sessions[sessionID]?.transcriptPath, seen[p] == nil { seen[p] = Self.stamp(p) }
+        guard watchTimer == nil else { return }
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            MainActor.assumeIsolated { [weak self] in self?.pollTranscripts() }
+        }
+    }
+
+    func unwatchTranscript(as owner: String) {
+        watchers[owner] = nil
+        if watchers.isEmpty { watchTimer?.invalidate(); watchTimer = nil; seen = [:] }
+    }
+
+    private static func stamp(_ path: String) -> (size: UInt64, mtime: Date)? {
+        guard let a = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
+        return ((a[.size] as? NSNumber)?.uint64Value ?? 0, a[.modificationDate] as? Date ?? .distantPast)
+    }
+
+    private func pollTranscripts() {
+        let now = Date()
+        for (owner, w) in watchers where w.until < now || hub.sessions[w.session] == nil { unwatchTranscript(as: owner) }
+        var grown: Set<String> = []
+        for path in Set(watchers.values.compactMap { hub.sessions[$0.session]?.transcriptPath }) {
+            let st = Self.stamp(path)
+            if let st, let old = seen[path], old.size == st.size, old.mtime == st.mtime { continue }
+            if seen[path] != nil || st != nil { grown.insert(path) }
+            seen[path] = st
+        }
+        guard !grown.isEmpty else { return }
+        for w in watchers.values where hub.sessions[w.session]?.transcriptPath.map(grown.contains) == true { w.call() }
+    }
+
     /// Can Allow / Deny here answer it (Pixlz holds its hook)?
     func canAnswer(_ requestID: String) -> Bool { held[requestID] != nil }
 

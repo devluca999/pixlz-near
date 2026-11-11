@@ -25,6 +25,8 @@ final class BubbleMenu {
     var cardGen = 0
     /// The session whose chat card is open (Agent mode), so it can refresh.
     var chatSession: String?
+    /// The open session chat card, while it's a session's (for live redraws).
+    weak var liveChat: ChatCard?
 
     /// The last app the user switched to that isn't the Pixl: the "page in front" for "save this",
     /// even when the Ask card stayed open while they moved to another window.
@@ -381,6 +383,8 @@ final class BubbleMenu {
     /// One session's chat, and a reply field while it's held open for one.
     func showChat(_ sessionID: String) {
         let agents = app.agents
+        // a redraw of the open chat keeps what you're typing and where you're reading
+        let keep = chatSession == sessionID ? liveChat.map { (text: $0.input.stringValue, fromEnd: $0.distanceFromEnd) } : nil
         guard let s = agents.hub.sessions[sessionID] else { return }
         let (title, lines) = agents.chat(sessionID)
         let mapped = lines.map { l -> ChatCard.Line in
@@ -390,9 +394,10 @@ final class BubbleMenu {
         let card = ChatCard(title: [s.project, title].compactMap { $0 }.joined(separator: " · "), lines: mapped,
                             replyOpen: s.replyOpen, replyNote: note, look: cardLook)
         card.fit()
-        card.onClose = { [weak self] in self?.chatSession = nil; self?.closeCard() }
+        card.onClose = { [weak self] in self?.chatSession = nil; agents.unwatchTranscript(as: "card"); self?.closeCard() }
         card.onReply = { [weak self] text in
             guard let self else { return }
+            agents.unwatchTranscript(as: "card")
             switch agents.reply(sessionID, text) {
             case .sent:
                 self.chatSession = nil
@@ -406,16 +411,21 @@ final class BubbleMenu {
                 self.app.notify(.agentsError("\(s.project) isn't running any more."))
             }
         }
+        if let keep { card.input.stringValue = keep.text }
         showCard(card, name: "chat")
         chatSession = sessionID
-        card.scrollToEnd()
-        if s.replyOpen { cardPanel?.makeFirstResponder(card.field) }
-        // New turns, or the reply window opening or closing: redraw unless you're typing.
+        liveChat = card
+        if let keep { card.scroll(toDistanceFromEnd: keep.fromEnd) } else { card.scrollToEnd() }
+        if s.replyOpen || !(keep?.text.isEmpty ?? true) { cardPanel?.makeFirstResponder(card.field) }
+        // Live: every message and tool call as it lands in the transcript, and the reply
+        // window opening or closing.
+        agents.watchTranscript(sessionID, as: "card") { [weak self] in
+            guard let self, self.chatSession == sessionID, self.cardPanel != nil else { return }
+            self.showChat(sessionID)
+        }
         agents.onChange = { [weak self] in
-            guard let self, self.chatSession == sessionID, self.cardPanel != nil, card.input.stringValue.isEmpty else { return }
-            if agents.hub.sessions[sessionID]?.replyOpen != s.replyOpen || agents.hub.sessions[sessionID]?.lastHeard != s.lastHeard {
-                self.showChat(sessionID)
-            }
+            guard let self, self.chatSession == sessionID, self.cardPanel != nil else { return }
+            if agents.hub.sessions[sessionID]?.replyOpen != s.replyOpen { self.showChat(sessionID) }
         }
     }
 
@@ -550,6 +560,7 @@ final class BubbleMenu {
     func closeCard() {
         if let m = cardOutsideMonitor { NSEvent.removeMonitor(m); cardOutsideMonitor = nil }
         app.shellOut("vault")
+        app.agents.unwatchTranscript(as: "card")   // a session chat re-watches as it redraws
         cardGen += 1
         cardPanel?.orderOut(nil)
         cardPanel = nil

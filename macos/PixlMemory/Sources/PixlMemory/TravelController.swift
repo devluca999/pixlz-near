@@ -84,17 +84,42 @@ final class TravelController {
         Debug.log("travel: agents to \(targets.map(\.deviceName)): \(rows.count) sessions \(rows.map { "\($0.project)·\($0.id.prefix(8))" }), \(agents.hub.requests.count) waiting")
     }
 
+    /// The last chat frame each device got, and when: live updates skip repeats and come at
+    /// most every 1.5 s (Bluetooth is slow), the latest one sent once the gap is over.
+    private var lastChat: [String: (body: Data, at: Date)] = [:]
+    private var chatLater: Set<String> = []
+
+    private func sendChat(_ sid: String, to peer: DeviceRef, live: Bool = false) {
+        let (title, lines) = app.agents.chat(sid, limit: 12)
+        let roles: [ChatLine.Role: String] = [.you: "y", .claude: "c", .tool: "t"]
+        let out = MosaicoFeed.chatBody(id: sid, title: title, lines: lines.map { (roles[$0.role] ?? "t", $0.text) }, from: me)
+        let last = lastChat[peer.deviceId]
+        if live, last?.body == out { return }
+        if live, let last, Date().timeIntervalSince(last.at) < 1.5 {
+            guard chatLater.insert(peer.deviceId).inserted else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.chatLater.remove(peer.deviceId)
+                self?.sendChat(sid, to: peer, live: true)
+            }
+            return
+        }
+        lastChat[peer.deviceId] = (out, Date())
+        runner?.transport.sendFrame(out, to: peer)
+        Debug.log("travel: chat for \(peer.deviceName)\(live ? " (live)" : ""): \(lines.count) lines, \(out.count) bytes")
+    }
+
     /// A frame from a device that isn't a trip message: a Mosaico's answer to a request.
     /// Deny only: Allow from the Mosaico waits for pairing (D19), since the link isn't secured.
     func frame(_ body: Data, from peer: DeviceRef) {
         if pairingController.frame(body, from: peer) { return }
         if let sid = MosaicoFeed.chatRequest(body) {
             guard MosaicoFeed.devices().contains(peer.deviceId) else { return }
-            let (title, lines) = app.agents.chat(sid, limit: 12)
-            let roles: [ChatLine.Role: String] = [.you: "y", .claude: "c", .tool: "t"]
-            let out = MosaicoFeed.chatBody(id: sid, title: title, lines: lines.map { (roles[$0.role] ?? "t", $0.text) }, from: me)
-            runner?.transport.sendFrame(out, to: peer)
-            Debug.log("travel: chat for \(peer.deviceName): \(lines.count) lines, \(out.count) bytes")
+            lastChat[peer.deviceId] = nil
+            sendChat(sid, to: peer)
+            // Live: new turns follow while it's likely still open (it asks again on each open).
+            app.agents.watchTranscript(sid, as: "mosaico.\(peer.deviceId)", for: 600) { [weak self] in
+                self?.sendChat(sid, to: peer, live: true)
+            }
             return
         }
         if MosaicoDictation.isDictation(body) {
