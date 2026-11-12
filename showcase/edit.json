@@ -1,0 +1,41 @@
+{
+  "tall": {"size": [1080, 1920], "out": "pixlz-9x16-rough.mp4", "titles": [{"lines": ["A desktop pet with", "its own NEAR wallet"], "keywords": ["NEAR wallet"], "from": 0.1, "to": 2.9, "y": 440, "size": 66}, {"lines": ["github.com/devluca999/pixlz-near"], "from": -2.6, "to": -0.05, "y": 1250, "size": 30, "font": "pixel", "colour": [124, 217, 58]}], "segments": [
+    {"src": "intro.mp4", "in": 0, "out": 14.0, "speed": 4.67},
+    {"src": "intro.mp4", "in": 16.4, "out": 17.9, "audio": 0.35, "vo": {"line": "L0", "at": 0.05}},
+    {"src": "H1/take-1.mov", "in": 2.0, "out": 4.3, "dissolve": 0.2, "sfx": [[0.2, "whoosh"], [1.9, "thud"]]},
+    {"src": "F1/take-1.mov", "in": 0.4, "out": 4.6, "vo": {"line": "L1", "at": 0.1}, "sfx": [[2.35, "snap"], [3.1, "gulp"]]},
+    {"src": "F2/take-1.mov", "in": 0.1, "out": 1.5, "chip": "NEAR wallet", "vo": {"line": "L2", "at": 0.05}, "sfx": [[0.15, "coin"]]},
+    {"src": "F2/take-1.mov", "in": 8.3, "out": 10.6, "zoom": [0.5, 0.55, 1.4], "sfx": [[0.05, "pop"]]},
+    {"src": "F2/take-1.mov", "in": 12.4, "out": 14.3, "chip": "Real testnet payment", "sfx": [[0.05, "pop"]]},
+    {"src": "F3/take-1.mov", "in": 0.4, "out": 3.7, "chip": "Private AI · TEE", "vo": {"line": "L3", "at": 0.6}, "sfx": [[0.05, "sparkle"], [0.8, "pop"], [2.7, "chime"]]},
+    {"src": "F3/take-1.mov", "in": 3.7, "out": 6.7, "zoom": [0.5, 0.51, 1.25], "chip": "Private AI · TEE"},
+    {"src": "E1/take-1.mov", "in": 0.0, "out": 4.9, "vo": {"line": "L4", "at": 0.2}, "sfx": [[1.0, "whoosh"], [2.2, "ding"]]},
+    {"src": "F4/take-1.mov", "in": 0.0, "out": 5.0, "chip": "Pays per thought", "note": "Pays for its own thinking", "vo": {"line": "L5", "at": 0.3}},
+    {"src": "M1/take-1.mov", "in": 3.5, "out": 6.3, "chip": "Memory · Writing", "vo": {"line": "L6", "at": 1.35}, "sfx": [[1.7, "snap"], [2.4, "chime"]]},
+    {"src": "W1/take-1.mov", "in": 0.0, "out": 3.6, "chip": "Memory · Writing", "note": "Write in place"},
+    {"src": "C2/take-1.mov", "in": 0.4, "out": 2.4, "chip": "Agent watch", "vo": {"line": "L7", "at": 0.2}},
+    {"src": "C2/take-1.mov", "in": 8.9, "out": 13.6, "chip": "Agent watch", "sfx": [[0.2, "alert"], [0.45, "ribbit"], [2.2, "thud"], [3.0, "pop"], [3.6, "thud"]]},
+    {"src": "D1/take-1.mov", "in": 0.3, "out": 4.8, "chip": "Mac · Mosaico · iPhone soon", "vo": {"line": "L8", "at": 0.2}, "sfx": [[0.6, "whoosh"], [1.4, "pop"], [2.0, "whoosh"], [3.0, "pop"]]},
+    {"src": "E2/take-1.mov", "in": 0.9, "out": 6.4, "vo": {"line": "L9", "at": 1.2, "captions": false}, "sfx": [[0.2, "whoosh"], [1.4, "ding"]]}
+  ]},
+  "wide": {"size": [1920, 1080], "out": "pixlz-16x9-judges.mp4", "brand": "PIXLZ · NEAR HACKATHON 2026", "segments": [
+    {"src": "intro.mp4", "in": 11.5, "out": 17.9, "audio": 0.35, "vo": {"line": "L0", "at": 4.9}, "panel": {"kicker": "NEAR Hackathon 2026 · Privacy & Private AI", "title": ["Pixlz"], "body": ["Desktop pets that think with private AI on NEAR", "and pay for it from their own NEAR wallet."], "proof": ["macOS app · NEAR testnet · Mosaico display"]}},
+    {"src": "H1/take-1.mov", "in": 2.0, "out": 5.2, "dissolve": 0.2, "sfx": [[0.2, "whoosh"], [1.9, "thud"]], "panel": {"kicker": "Meet Frogg", "title": ["This is Frogg"], "body": ["A pixel pet that lives on your Mac's desktop,", "on top of whatever you're working on."]}},
+    {"src": "F1/take-1.mov", "in": 0.4, "out": 6.4, "vo": {"line": "L1", "at": 0.1}, "sfx": [[2.35, "snap"], [3.1, "gulp"]], "panel": {"kicker": "Meet Frogg", "title": ["Frogg is simple"], "body": ["He sits on your desktop. He likes flies."]}},
+    {"src": "F2/take-1.mov", "in": 0.1, "out": 2.0, "vo": {"line": "L2", "at": 0.05}, "sfx": [[0.15, "coin"]], "panel": {"kicker": "NEAR wallet", "title": ["He has his own wallet"], "body": ["Every Pixl gets its own NEAR account:", "its own key and its own spending caps."], "proof": ["account  frogg.pixlz-petz-faucet.testnet", "network  NEAR testnet", "receipt  each payment opens on the explorer"]}},
+    {"src": "F2/take-1.mov", "in": 8.2, "out": 15.0, "sfx": [[0.15, "pop"], [4.25, "pop"]], "panel": {"kicker": "NEAR wallet", "title": ["He has his own wallet"], "body": ["Every Pixl gets its own NEAR account:", "its own key and its own spending caps."], "proof": ["account  frogg.pixlz-petz-faucet.testnet", "network  NEAR testnet", "receipt  each payment opens on the explorer"]}},
+    {"src": "F3/take-1.mov", "in": 0.2, "out": 6.3, "hold": 1.0, "vo": {"line": "L3", "at": 0.15}, "sfx": [[0.2, "sparkle"], [1.0, "pop"], [2.9, "chime"]], "panel": {"kicker": "Private AI · TEE", "title": ["A private brain"], "body": ["His thinking runs on NEAR AI, inside a TEE.", "Click the brain for the attestation:", "proof of where the model ran."], "proof": ["attestation  verified · TEE · NEAR AI"]}},
+    {"src": "E1/take-1.mov", "in": 0.0, "out": 5.4, "vo": {"line": "L4", "at": 0.2}, "sfx": [[1.0, "whoosh"], [2.2, "ding"]], "panel": {"kicker": "The Pixlz", "title": ["He brought friends"], "body": ["Frogg, Cat, Ghost, Shiba, Slugg and Widow.", "Each one works the same way."]}},
+    {"src": "F4/take-1.mov", "in": 0.0, "out": 6.0, "note": "Pays for its own thinking", "vo": {"line": "L5", "at": 0.3}, "panel": {"kicker": "Agent economy", "title": ["They pay for", "their own thinking"], "body": ["Each answer is a private inference,", "paid in NEAR from the pet's own wallet,", "never from yours."], "proof": ["payer  frogg.pixlz-petz-faucet.testnet"]}},
+    {"src": "M1/take-1.mov", "in": 1.2, "out": 8.2, "vo": {"line": "L6", "at": 1.0}, "sfx": [[4.0, "snap"], [4.7, "chime"]], "panel": {"kicker": "Memory", "title": ["Highlight to remember"], "body": ["Highlight any passage: the tongue grabs it", "and it is saved to memory, on your Mac."]}},
+    {"src": "M2/take-1.mov", "in": 0.0, "out": 5.0, "note": "Ask, from memory", "panel": {"kicker": "Memory", "title": ["Ask, from memory"], "body": ["Ask what the article said: the answer", "comes from memory, with its source."]}},
+    {"src": "M3/take-1.mov", "in": 0.8, "out": 9.2, "panel": {"kicker": "Memory", "title": ["Back to the passage"], "body": ["Click a memory: the page opens", "at the passage, glowing."]}},
+    {"src": "W1/take-1.mov", "in": 0.0, "out": 5.0, "note": "Write in place", "panel": {"kicker": "Writing", "title": ["Write in place"], "body": ["Select text and ask for a polish.", "Drag the result back into your draft."]}},
+    {"src": "C1/take-1.mov", "in": 0.3, "out": 12.5, "vo": {"line": "L7", "at": 0.3}, "panel": {"kicker": "Agent watch", "title": ["They watch your", "coding agents"], "body": ["Slugg climbs the Terminal while", "swift test runs in the demo repo."]}},
+    {"src": "C2/take-1.mov", "in": 0.2, "out": 3.0, "panel": {"kicker": "Agent watch · guard", "title": ["A guard on", "risky commands"], "body": ["A Claude Code session asks to run", "rm -rf build && npm run deploy.", "The Pixl leaps onto the Terminal: Deny."]}},
+    {"src": "C2/take-1.mov", "in": 8.7, "out": 14.0, "sfx": [[0.4, "alert"], [0.65, "ribbit"], [2.4, "thud"], [3.2, "pop"], [3.8, "thud"]], "panel": {"kicker": "Agent watch · guard", "title": ["A guard on", "risky commands"], "body": ["A Claude Code session asks to run", "rm -rf build && npm run deploy.", "The Pixl leaps onto the Terminal: Deny."]}},
+    {"src": "C3/take-1.mov", "in": 0.0, "out": 8.4, "panel": {"kicker": "Agent watch · reply", "title": ["Answer from the pet"], "body": ["When a session finishes, reply from", "the Pixl's bubble. Claude carries on."]}},
+    {"src": "D1/wide-1.mov", "in": 0.0, "out": 5.0, "full": true, "vo": {"line": "L8", "at": 0.4}, "sfx": [[0.9, "whoosh"], [1.7, "pop"], [2.3, "whoosh"], [3.3, "pop"]]},
+    {"src": "E2/take-1.mov", "in": 0.9, "out": 6.9, "hold": 0.6, "vo": {"line": "L9", "at": 1.2}, "sfx": [[0.2, "whoosh"], [1.4, "ding"]], "panel": {"kicker": "NEAR Hackathon 2026", "title": ["Pixlz", "Powered by NEAR"], "body": ["Private AI, their own wallets, memory,", "writing and agent watch. Next: iPhone."], "proof": ["github.com/devluca999/pixlz-near"]}}
+  ]}
+}

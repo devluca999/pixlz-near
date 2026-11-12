@@ -149,6 +149,10 @@ class Store:
 
     def add_highlight(self, text: str, url: str | None = None, title: str | None = None,
                       fragment_url: str | None = None, folder: str | None = None) -> Highlight:
+        """Saving the same passage from the same page into the same folder again keeps the one you have."""
+        for old in self.list_highlights(limit=500):
+            if old.text == text and old.url == url and old.folder == normalize_folder(folder):
+                return old
         h = Highlight(str(uuid.uuid4()), time.time(), text, url, title, fragment_url, normalize_folder(folder))
         s = lambda col, v: self._seal("highlights", h.id, col, v)  # noqa: E731
         self._db.execute(

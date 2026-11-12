@@ -1,0 +1,6 @@
+{
+  "name": "ponds-demo",
+  "private": true,
+  "description": "Throwaway demo repo for the Pixlz video. Nothing here matters.",
+  "scripts": { "deploy": "echo 'demo: nothing is deployed anywhere'" }
+}

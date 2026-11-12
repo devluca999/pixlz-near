@@ -95,6 +95,12 @@ public struct MemoryClient: Sendable {
         throw Self.error(data: d, status: s)
     }
 
+    /// A fresh attestation of the private model's enclave (TDX + GPU), checked by the service.
+    public func attestation() async -> Verification? {
+        guard let r = try? request("/attestation"), let (d, s) = try? await send(r), s == 200 else { return nil }
+        return try? JSONDecoder().decode(Verification.self, from: d)
+    }
+
     public func highlights(limit: Int = 30) async -> [HighlightItem] {
         struct List: Decodable { let highlights: [HighlightItem] }
         guard let r = try? request("/highlights?limit=\(limit)"), let (d, s) = try? await send(r), s == 200 else { return [] }

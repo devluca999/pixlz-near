@@ -43,3 +43,10 @@ Package.resolved
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# Showcase: the narration tool's environment and model cache (never committed)
+showcase/tts/.venv/
+showcase/takes/
+showcase/out/*.mov
+showcase/out/*.mp4
+showcase/out/tmp/

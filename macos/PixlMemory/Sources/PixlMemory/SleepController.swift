@@ -23,6 +23,16 @@ final class SleepController {
     /// Debug builds only (e2e "awake"): treat you as present until then, to watch outings while away.
     var debugAwakeUntil: TimeInterval = 0
 
+    /// Showcase takes: he wakes at once, leaves his pond, and can't doze until it's released.
+    var held = false {
+        didSet {
+            guard held else { return }
+            if dozing { _ = handle(.hotkey) }
+            app.roam.hidePond()
+            app.pond.cancel()
+        }
+    }
+
     var stage: SleepCycle.Stage { cycle.stage }
     var dozing: Bool { cycle.stage.dozing }
 
@@ -47,7 +57,7 @@ final class SleepController {
     // MARK: the clock
 
     func tick() {
-        guard !app.userHidden, app.awayOn == nil, app.foot != nil else { return }
+        guard !held, !app.userHidden, app.awayOn == nil, app.foot != nil else { return }
         let t = app.now
         let anyInput = CGEventType(rawValue: UInt32.max)!   // kCGAnyInputEventType
         let realAway = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)

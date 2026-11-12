@@ -258,6 +258,49 @@ enum AX {
         return CGRect(origin: p, size: sz)
     }
 
+    /// Where a phrase is on screen (top-left global): the rects of its first and last
+    /// characters, from the text element that holds it (a web page's text, a document's text
+    /// area). Showcase mode drags across it the way a person selects text.
+    static func phraseBounds(pid: pid_t, phrase: String, maxNodes: Int = 6000) -> (first: CGRect, last: CGRect)? {
+        guard let win = focusedWindow(pid: pid) else { return nil }
+        var stack: [AXUIElement] = [win], seen = 0
+        while let el = stack.popLast(), seen < maxNodes {
+            seen += 1
+            let role: String = attr(el, kAXRoleAttribute) ?? ""
+            if ["AXStaticText", "AXTextArea", "AXTextField"].contains(role),
+               let value: String = attr(el, kAXValueAttribute), let r = value.range(of: phrase) {
+                let ns = NSRange(r, in: value)
+                func bounds(_ loc: Int) -> CGRect? {
+                    var range = CFRange(location: loc, length: 1)
+                    guard let v = AXValueCreate(.cfRange, &range) else { return nil }
+                    var out: CFTypeRef?
+                    guard AXUIElementCopyParameterizedAttributeValue(el, kAXBoundsForRangeParameterizedAttribute as CFString, v, &out) == .success,
+                          let rv = out, CFGetTypeID(rv) == AXValueGetTypeID() else { return nil }
+                    var rect = CGRect.zero
+                    AXValueGetValue(rv as! AXValue, .cgRect, &rect)
+                    return rect.width > 0 || rect.height > 0 ? rect : nil
+                }
+                if let a = bounds(ns.location), let b = bounds(ns.location + ns.length - 1) { return (a, b) }
+            }
+            if let kids: [AXUIElement] = attr(el, kAXChildrenAttribute) { stack.append(contentsOf: kids.reversed()) }
+        }
+        return nil
+    }
+
+    /// Moves and sizes an app's front window (top-left global), for staging a take.
+    static func setFrame(pid: pid_t, _ r: CGRect) {
+        guard let win = focusedWindow(pid: pid) ?? (attr(app(pid), kAXWindowsAttribute) as [AXUIElement]?)?.first else { return }
+        var p = r.origin, sz = r.size
+        if let pv = AXValueCreate(.cgPoint, &p) { AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, pv) }
+        if let sv = AXValueCreate(.cgSize, &sz) { AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, sv) }
+    }
+
+    /// An app's front window frame (top-left global).
+    static func windowFrame(pid: pid_t) -> CGRect? {
+        guard let win = focusedWindow(pid: pid) ?? (attr(app(pid), kAXWindowsAttribute) as [AXUIElement]?)?.first else { return nil }
+        return frame(win)
+    }
+
     /// The selected text in the frontmost app, if it exposes one.
     static func selectedText(pid: pid_t) -> String? {
         guard let focused: AXUIElement = attr(app(pid), kAXFocusedUIElementAttribute) else { return nil }

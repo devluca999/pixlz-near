@@ -1,0 +1,16 @@
+{
+  "title": "Pixlz · powered by NEAR",
+  "intro_gap_seconds": 4.5,
+  "lines": [
+    {"id": "L0", "vo": "This is Frogg.", "captions": [["This is Frogg."]], "scenes": ["H1"], "keywords": ["Frogg"], "slot": "low", "note": "after the owner's intro clip"},
+    {"id": "L1", "vo": "Frogg is simple. He likes flies.", "captions": [["Frogg is simple."], ["He likes flies."]], "scenes": ["F1"], "keywords": ["flies"], "slot": "high"},
+    {"id": "L2", "vo": "He also has a wallet…", "captions": [["He also has a wallet…"]], "scenes": ["F2"], "keywords": ["wallet"], "slot": "high", "label": "NEAR wallet"},
+    {"id": "L3", "vo": "…and a brain powered by private AI on NEAR, so nobody else can see what he's thinking.", "captions": [["…and a brain powered by", "private AI on NEAR,"], ["so nobody else can see", "what he's thinking."]], "scenes": ["F3"], "keywords": ["private AI on NEAR"], "slot": "high", "label": "Private AI · TEE"},
+    {"id": "L4", "vo": "And he brought friends, just like him. The Pixlz.", "captions": [["And he brought friends,", "just like him."], ["The Pixlz."]], "scenes": ["E1"], "keywords": ["The Pixlz"], "slot": "high", "sfx_end": "ding"},
+    {"id": "L5", "vo": "They pay for their own thinking, from their own wallet, never from mine.", "captions": [["They pay for their", "own thinking,"], ["from their own wallet,"], ["never from mine."]], "scenes": ["F4"], "keywords": ["their own wallet"], "slot": "high", "label": "Pays per thought"},
+    {"id": "L6", "vo": "They remember what you highlight, and help you write right where you are.", "captions": [["They remember what", "you highlight,"], ["and help you write", "right where you are."]], "scenes": ["M1", "M2", "M3", "W1"], "keywords": ["remember", "write"], "slot": "low", "label": "Memory · Writing"},
+    {"id": "L7", "vo": "They keep an eye on your coding agents.", "captions": [["They keep an eye on", "your coding agents."]], "scenes": ["C1", "C2", "C3"], "keywords": ["coding agents"], "slot": "low", "label": "Agent watch"},
+    {"id": "L8", "vo": "And they can be on any device, anywhere, anytime.", "captions": [["And they can be", "on any device,"], ["anywhere, anytime."]], "scenes": ["D1"], "keywords": ["any device"], "slot": "high", "label": "Any device (phone: coming soon)"},
+    {"id": "L9", "vo": "Pixlz. Powered by NEAR.", "captions": [["Pixlz. Powered by NEAR."]], "scenes": ["E2"], "keywords": ["Powered by NEAR"], "slot": "low", "sfx_end": "ding"}
+  ]
+}

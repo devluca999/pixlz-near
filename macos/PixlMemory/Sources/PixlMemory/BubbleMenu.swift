@@ -289,7 +289,9 @@ final class BubbleMenu {
         p.contentView = l
         p.onCancel = l.onCancel
         // grow from the chosen bubble (or beside the Pixl), fully on screen and off the selection
+        // the Pixl's whole canvas, not this frame's: a taller pose next (arms up, a hop) stays clear
         var anchor = app.froggBox
+        anchor.size.height = max(anchor.height, FroggArt.shared.canvas.height * app.scale)
         if let id = slotID, let v = view, let i = v.slots.firstIndex(where: { $0.id == id }), let vp = panel {
             let c = v.centers[i]
             anchor = Placement.screenRect(of: NSRect(x: c.x - 22, y: c.y - 22, width: 44, height: 44),

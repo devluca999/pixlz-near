@@ -253,7 +253,21 @@ The wallet code will list its libraries here when it lands.
 **AI-generated content:**
 - The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
 - The pixel art was designed in Claude Design and exported by a script; the design source stays in the private repository.
+- The demo video's narration is a synthetic voice ([Chatterbox](https://github.com/resemble-ai/chatterbox), run locally by `showcase/narrate.py`). The cut, captions and the device render in its last scene were made by scripts in `showcase/`.
 - The test fixture `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response, captured 2026-11-08.
+
+## Showcase mode and the demo video
+
+The demo video is recorded from the app itself. **Showcase mode** is a recording aid, only on with `--showcase` (or `PIXL_SHOWCASE=1`) and never in a normal run. It plays named scenes made of beats, each one a real feature triggered on cue: the fly, the wallet card, the attestation card, a paid private answer, a highlight saved to memory, the guard on a risky command.
+
+- **Hotkeys:** ⌃⌥K next beat · ⌃⌥⇧K previous · ⌃⌥R restart the scene · Esc reset. Or hands-free: `PixlMemory showcase run <scene>`.
+- **Takes match.** Random choices use one fixed seed. A beat that waits on something live (inference, attestation, testnet) shows a spinner and moves on when it lands.
+- **Nothing private in a take.** A plain dark desk covers the desktop; scenes that need a page, a draft or a repo use the throwaway ones in `showcase/demo/`.
+- **Recording and cutting:** `showcase/record.sh <scene> <take> <seconds>` records a take; `showcase/cut.py` assembles the 9:16 cut and the 16:9 judges' cut from `showcase/edit.json`, with burned-in captions and the narration.
+
+The scenes, the narration and the steps are in [`showcase/SHOTLIST.md`](showcase/SHOTLIST.md); the caption rules in [`showcase/CAPTIONS.md`](showcase/CAPTIONS.md).
+
+The video's last scene shows a Mosaico display, a Mac and an iPhone side by side. That scene is a render, and the iPhone in it is labelled "coming soon": the iPhone companion is under **Next** in [Scope of this submission](#scope-of-this-submission), not in this submission.
 
 ## Repository layout
 
@@ -262,6 +276,7 @@ memory/      Hackathon: local service, NEAR AI private inference + verification
 macos/       macOS app; PixlMemory/ overlay is hackathon work
 extension/   Hackathon: Chrome extension (highlight → save → backlink)
 PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)
+showcase/    Hackathon: demo video (shot list, recorder, cut, narration, demo pages)
 docs/        SPEC.md, DECISIONS.md (baseline); PLAN-pixl-memory.md, screenshots (hackathon)
 assets/      The Pixls' manifests and exported frames
 ```

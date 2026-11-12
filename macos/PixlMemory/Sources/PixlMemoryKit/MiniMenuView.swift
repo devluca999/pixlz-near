@@ -204,6 +204,8 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(toggle("Perch on the window I'm using", settings.perchOnWindows) { [weak self] on in self?.settings.perchOnWindows = on })
         stack.addArrangedSubview(toggle("Hide when an app goes fullscreen", settings.hideInFullscreen) { [weak self] on in self?.settings.hideInFullscreen = on })
         stack.addArrangedSubview(toggle("Let me wake them by hovering", settings.hoverWakes ?? false) { [weak self] on in self?.settings.hoverWakes = on })
+        // Sounds: soft effects on payoffs (a tongue snap, a ding). Off by default; read by Sfx.
+        stack.addArrangedSubview(toggle("Sounds", UserDefaults.standard.bool(forKey: "PixlMemory.sounds")) { on in UserDefaults.standard.set(on, forKey: "PixlMemory.sounds") })
         let sleepiness = settings.sleepiness ?? "normal"
         var sleepyButtons: [PixelButton] = []
         sleepyButtons = [("Night owl", "nightOwl"), ("Normal", "normal"), ("Sleepy", "sleepy")].map { title, id in

@@ -29,6 +29,37 @@ final class GameOverlay {
     var crownBox: (box: CGRect, born: TimeInterval)?
     var flyAwayFrom: (at: CGPoint, born: TimeInterval)?
     var streakPopAt: TimeInterval = -10
+    // payoffs (the real app's, and Showcase mode's stage)
+    /// Coins flying out (a payment): each from a point, with a launch velocity (pt/s).
+    var coins: [(at: CGPoint, v: CGVector, born: TimeInterval)] = []
+    /// A title that pops in with a little overshoot ("The Pixlz"), centred at a point.
+    var title: (text: String, at: CGPoint, size: CGFloat, born: TimeInterval)?
+    /// Above a Pixl's head: a brain with a padlock, glowing (private inference).
+    var brain: (at: CGPoint, born: TimeInterval)?
+    /// The whole screen behind the Pixls in one colour (Showcase's black stage), 0…1.
+    var backdrop: (color: NSColor, alpha: CGFloat)?
+    /// Waiting on something live (inference, attestation, testnet): a small spinner here.
+    var spinner: CGPoint?
+    private var wasStaged = false
+    /// The fly's size (1 in the games; bigger on the Showcase stage so it reads in a 9:16 crop).
+    var flyScale: CGFloat = 1
+
+    /// A burst of coins out of `p` (a payment).
+    func coinBurst(at p: CGPoint, count: Int = 7, now: TimeInterval) {
+        for i in 0..<count {
+            let a = -Double.pi / 2 + (Double(i) - Double(count - 1) / 2) * 0.32
+            let speed = 260.0 + Double(i % 3) * 40
+            coins.append((p, CGVector(dx: cos(a) * speed, dy: sin(a) * speed), now))
+        }
+    }
+
+    /// Sparkles scattered round `p` (a memory saved).
+    func sparkles(at p: CGPoint, count: Int = 6, radius: CGFloat = 34, now: TimeInterval) {
+        for i in 0..<count {
+            let a = Double(i) / Double(count) * 2 * .pi + 0.4
+            star(at: CGPoint(x: p.x + CGFloat(cos(a)) * radius, y: p.y + CGFloat(sin(a)) * radius * 0.8), now: now - Double(i) * 0.03)
+        }
+    }
 
     init(screenTopLeft s: CGRect, app: AppController) {
         self.screen = s
@@ -66,11 +97,15 @@ final class GameOverlay {
         pops.removeAll { now - $0.born > 0.7 }
         whiffs.removeAll { now - $0.born > 0.3 }
         if let f = flyAwayFrom, now - f.born > 1.2 { flyAwayFrom = nil }
+        coins.removeAll { now - $0.born > 1.1 }
         let oldHUD = hudRect
         placeHUD()
         if hudRect != oldHUD { view.setNeedsDisplay(oldHUD.insetBy(dx: -12, dy: -12)) }
         let dirty = rects()
-        if !debug.isEmpty || danger > 0 || !strand.isEmpty || lastDirty.count > 40 {
+        let staged = !coins.isEmpty || title != nil || brain != nil || backdrop != nil || spinner != nil
+        // one full redraw after staged effects end too, or their last frame stays on screen
+        defer { wasStaged = staged }
+        if !debug.isEmpty || danger > 0 || !strand.isEmpty || staged || wasStaged || lastDirty.count > 40 {
             view.needsDisplay = true
         } else {
             for r in lastDirty + dirty { view.setNeedsDisplay(r.insetBy(dx: -2 * px, dy: -2 * px)) }
@@ -139,6 +174,10 @@ final class GameOverlayView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let o = overlay else { return }
         let k = o.px
+        if let b = o.backdrop, b.alpha > 0 {
+            b.color.withAlphaComponent(b.alpha).setFill()
+            bounds.fill()
+        }
         func block(_ p: CGPoint, _ c: NSColor, _ size: CGFloat = 1) {
             c.setFill()
             NSRect(x: (p.x / k).rounded(.down) * k, y: (p.y / k).rounded(.down) * k, width: k * size, height: k * size).fill()
@@ -224,8 +263,17 @@ final class GameOverlayView: NSView {
             if t.flash { for (dx, dy) in [(0, -3), (0, 3), (-3, 0), (3, 0), (-2, -2), (2, 2), (2, -2), (-2, 2)] { block(CGPoint(x: b.x + CGFloat(dx) * k, y: b.y + CGFloat(dy) * k), .white) } }
         }
 
-        // the fly, wings flapping, up and right of the cursor tip
-        if let f = o.fly { grid(Self.flyFrames[Int(o.now * 24) % 2], Self.flyColors, at: CGPoint(x: o.v(f).x - 2 * k, y: o.v(f).y - 5 * k)) }
+        // the fly, wings flapping, up and right of the cursor tip (drawn bigger on the Showcase stage)
+        if let f = o.fly {
+            let fk = k * o.flyScale
+            let g = Self.flyFrames[Int(o.now * 24) % 2]
+            for (j, row) in g.enumerated() {
+                for (i, ch) in row.enumerated() { if let c = Self.flyColors[ch] {
+                    c.setFill()
+                    NSRect(x: (o.v(f).x + CGFloat(i - 4) * fk).rounded(), y: (o.v(f).y + CGFloat(j - 4) * fk).rounded(), width: fk, height: fk).fill()
+                } }
+            }
+        }
         if let f = o.flyAwayFrom { let p = o.v(o.flyAwayPoint(f)); grid(Self.flyFrames[Int(o.now * 30) % 2], Self.flyColors, at: CGPoint(x: p.x - 2 * k, y: p.y - 5 * k)) }
 
         // "whiff": a puff at the empty spot, 3 frames
@@ -285,6 +333,72 @@ final class GameOverlayView: NSView {
             s.append(NSAttributedString(string: "  ·  Esc", attributes: dim))
             let size = s.size()
             s.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2))
+        }
+
+        // coins: little gold pixel discs, thrown up and falling, spinning (narrow ↔ wide)
+        for c in o.coins {
+            let t = o.now - c.born
+            let p = o.v(CGPoint(x: c.at.x + c.v.dx * t, y: c.at.y + c.v.dy * t + 900 * t * t / 2))
+            let spin = abs(cos(t * 14))
+            let w = max(1, Int((5 * spin).rounded())), alpha = CGFloat(max(0, 1 - max(0, t - 0.7) / 0.4))
+            for dy in -2...2 {
+                let half = dy == -2 || dy == 2 ? max(0, w / 2 - 1) : w / 2
+                for dx in -half...half {
+                    let edge = abs(dx) == half || abs(dy) == 2
+                    block(CGPoint(x: p.x + CGFloat(dx) * k, y: p.y + CGFloat(dy) * k),
+                          (edge ? NSColor.hex("#A86A10") : (dx < 0 && dy < 0 ? NSColor.hex("#FFF2A0") : NSColor.hex("#F5C431"))).withAlphaComponent(alpha))
+                }
+            }
+        }
+
+        // the brain with a padlock, glowing (private inference)
+        if let b = o.brain {
+            let t = o.now - b.born
+            let c = o.v(b.at)
+            let pop = t < 0.18 ? 0.6 + 0.6 * t / 0.18 : (t < 0.3 ? 1.08 - 0.08 * (t - 0.18) / 0.12 : 1)
+            let glow = 0.35 + 0.25 * sin(t * 3.2)
+            let r = 15 * k * pop
+            NSColor.hex("#7CD93A").withAlphaComponent(glow * 0.45).setFill()
+            NSBezierPath(ovalIn: CGRect(x: c.x - r * 1.9, y: c.y - r * 1.6, width: r * 3.8, height: r * 3.2)).fill()
+            let brainRows = ["..pppp.pppp..", ".pPPPpppPPPp.", "pPPpPPpPPpPPp", "pPpPPPpPPPpPp", "pPPpPPpPPpPPp",
+                             ".pPPPpppPPPp.", "..pppp.pppp..", ".....ppp....."]
+            let lockRows = ["..kkk..", ".k...k.", ".k...k.", "kkkkkkk", "kyyyyyk", "kyykyyk", "kyyyyyk", "kkkkkkk"]
+            let s = k * CGFloat(pop)
+            func draw(_ rows: [String], _ colors: [Character: NSColor], at o: CGPoint) {
+                for (j, row) in rows.enumerated() {
+                    for (i, ch) in row.enumerated() { if let col = colors[ch] {
+                        col.setFill()
+                        NSRect(x: o.x + CGFloat(i) * s, y: o.y + CGFloat(j) * s, width: s, height: s).fill()
+                    } }
+                }
+            }
+            draw(brainRows, ["p": .hex("#B0457A"), "P": .hex("#F29AC2")], at: CGPoint(x: c.x - 6.5 * s, y: c.y - 6 * s))
+            draw(lockRows, ["k": .hex("#1B2A1A"), "y": .hex("#F5C431")], at: CGPoint(x: c.x + 2 * s, y: c.y - 1 * s))
+        }
+
+        // a title that pops in (overshoot, then settles)
+        if let ti = o.title {
+            let t = o.now - ti.born
+            let scale = t < 0.16 ? 0.5 + 0.7 * t / 0.16 : (t < 0.3 ? 1.2 - 0.2 * (t - 0.16) / 0.14 : 1)
+            // in the Pixls' own 5×7 pixel letters
+            let px = max(1, (ti.size / 7 * scale).rounded())
+            let lines = ti.text.components(separatedBy: "\n"), c = o.v(ti.at)
+            let lineH = 7 * px * 1.6, total = lineH * CGFloat(lines.count - 1) + 7 * px
+            for (i, line) in lines.enumerated() {
+                let sz = PixelFont.size(line, px: px)
+                PixelFont.draw(line, at: CGPoint(x: (c.x - sz.width / 2).rounded(), y: (c.y - total / 2 + CGFloat(i) * lineH).rounded()), px: px)
+            }
+        }
+
+        // waiting on something live: three dots going round
+        if let sp = o.spinner {
+            let c = o.v(sp)
+            for i in 0..<3 {
+                let a = o.now * 6 + Double(i) * 2.1
+                let p = CGPoint(x: c.x + CGFloat(cos(a)) * 9, y: c.y + CGFloat(sin(a)) * 9)
+                NSColor.white.withAlphaComponent(0.9 - CGFloat(i) * 0.25).setFill()
+                NSBezierPath(ovalIn: CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)).fill()
+            }
         }
 
         // PIXL_DEBUG=1: hitboxes and timers

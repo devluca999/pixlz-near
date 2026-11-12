@@ -16,6 +16,23 @@ final class HotKeys {
         case h = 4        // kVK_ANSI_H
         case space = 49   // kVK_Space
         case s = 1, f = 3, d = 2, a = 0, n = 45   // debug sleep keys (with ⇧)
+        case k = 40, r = 15                        // Showcase mode: next beat, restart scene
+        case escape = 53                           // Showcase mode only: reset (no modifiers)
+    }
+
+    /// A hotkey with exactly these modifiers (Showcase mode's bare Esc). Returns its ref so it
+    /// can be taken away again.
+    @discardableResult
+    func register(_ key: Key, modifiers: Int, _ handler: @escaping () -> Void) -> EventHotKeyRef? {
+        installIfNeeded()
+        let id = UInt32(handlers.count + 1)
+        handlers[id] = handler
+        var ref: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5058_4C5A), id: id)
+        let status = RegisterEventHotKey(key.rawValue, UInt32(modifiers), hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        Debug.log("hotkey \(key) (mods \(modifiers)) " + (status == noErr ? "registered" : "FAILED (status \(status))"))
+        if status == noErr, let ref { refs.append(ref); return ref }
+        return nil
     }
 
     func register(_ key: Key, shift: Bool = false, _ handler: @escaping () -> Void) {
