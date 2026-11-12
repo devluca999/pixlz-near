@@ -38,7 +38,7 @@ def read_secret(name: str, env_file: Path | None = None) -> str | None:
     return (dotenv_values(path).get(name) or "").strip() or None
 
 
-WALLET_SETTINGS = ("NEAR_NETWORK", "FROGG_PARENT_ACCOUNT", "FROGG_ACCOUNT", "FROGG_PAYEE",
+WALLET_SETTINGS = ("NEAR_NETWORK", "PIXL_PARENT_ACCOUNT", "FROGG_PARENT_ACCOUNT", "FROGG_ACCOUNT", "FROGG_PAYEE",
                    "FROGG_MAX_PER_REQUEST_NEAR", "FROGG_MAX_PER_DAY_NEAR", "FROGG_MAX_PER_WEEK_NEAR", "FROGG_RESERVE_NEAR",
                    "FROGG_FLAT_PRICE_NEAR", "PIXL_NEAR_PER_USD", "NEAR_RPC_URL")
 WALLET_DEFAULTS = {"FROGG_MAX_PER_REQUEST_NEAR": "0.01", "FROGG_MAX_PER_DAY_NEAR": "0.1", "FROGG_MAX_PER_WEEK_NEAR": "0.5",
@@ -54,13 +54,16 @@ class WalletConfigError(ValueError):
 
 @dataclass(frozen=True)
 class WalletConfig:
-    """Frogg's NEAR account. Public names only: no keys here (Frogg's key lives in the
-    data directory; the parent's keys never touch this machine)."""
+    """One Pixl's NEAR account: `<pet>.<owner>`, a sub-account the owner creates and funds.
+    Public names only: no keys here (each pet's key lives in the data directory; the owner's
+    keys never touch this machine). `frogg` is the account's name (kept for compatibility:
+    Frogg was the first); `pet` says whose it is."""
 
     network: str
     parent: str
     frogg: str
     payee: str = ""
+    pet: str = "frogg"
     max_per_request_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_REQUEST_NEAR"]
     max_per_day_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_DAY_NEAR"]
     max_per_week_near: str = WALLET_DEFAULTS["FROGG_MAX_PER_WEEK_NEAR"]
@@ -76,10 +79,11 @@ class WalletConfig:
         path = env_file or find_env_file()
         values = dotenv_values(path) if path else {}
         got = {k: (values.get(k) or "").strip() for k in WALLET_SETTINGS}
-        if not (got["FROGG_PARENT_ACCOUNT"] or got["FROGG_ACCOUNT"]):
+        parent = got["PIXL_PARENT_ACCOUNT"] or got["FROGG_PARENT_ACCOUNT"]
+        if not (parent or got["FROGG_ACCOUNT"]):
             return None
-        base = cls.validated(got["NEAR_NETWORK"] or "testnet", got["FROGG_PARENT_ACCOUNT"], got["FROGG_ACCOUNT"],
-                             got["FROGG_PAYEE"] or got["FROGG_PARENT_ACCOUNT"])
+        base = cls.validated(got["NEAR_NETWORK"] or "testnet", parent, got["FROGG_ACCOUNT"] or f"frogg.{parent}",
+                             got["FROGG_PAYEE"] or parent)
         extra = {}
         for env, field in [("FROGG_MAX_PER_REQUEST_NEAR", "max_per_request_near"), ("FROGG_MAX_PER_DAY_NEAR", "max_per_day_near"), ("FROGG_MAX_PER_WEEK_NEAR", "max_per_week_near"),
                            ("FROGG_RESERVE_NEAR", "reserve_near"), ("FROGG_FLAT_PRICE_NEAR", "flat_price_near"),
@@ -121,8 +125,36 @@ class WalletConfig:
         return cls(network, parent, frogg, payee)
 
     @property
+    def account(self) -> str:
+        return self.frogg
+
+    @property
+    def name(self) -> str:
+        """The pet's name for messages ("Kiti has no key yet")."""
+        return PET_NAMES.get(self.pet, self.pet.capitalize())
+
+    def for_pet(self, pet: str) -> "WalletConfig":
+        """The same owner, payee and caps, for another Pixl: its own `<pet>.<owner>` account."""
+        from dataclasses import replace
+
+        pet = pet.strip().lower()
+        if not _PET_RE.match(pet):
+            raise WalletConfigError(f"not a Pixl name: {pet!r} (lower-case letters, digits, - or _)")
+        account = f"{pet}.{self.parent}"
+        if len(account) > 64:
+            raise WalletConfigError(f"{account} is too long for a NEAR account id")
+        if account == self.payee:
+            raise WalletConfigError(f"{account} is the payee: a Pixl can't pay itself")
+        return replace(self, pet=pet, frogg=account)
+
+    @property
     def explorer(self) -> str:
         return f"https://testnet.nearblocks.io/address/{self.frogg}"
+
+
+# Pixls and the names their wallets are known by (the app's skin ids map onto these).
+PET_NAMES = {"frogg": "Frogg", "kiti": "Kiti", "mochi": "Mochi", "boo": "Boo", "silky": "Silky", "slugg": "Slugg"}
+_PET_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
 def default_data_dir() -> Path:

@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 from . import polish
 from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, Offline, UpstreamError
 from .store import Store
-from .wallet import Wallet
+from .config import WalletConfigError
+from .wallet import Wallet, Wallets
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 
@@ -31,12 +32,14 @@ class MoveIn(BaseModel):
 
 
 class PolishIn(BaseModel):
+    pet: str | None = Field(default=None, max_length=32)   # which Pixl asks (and pays); Frogg when absent
     text: str = Field(min_length=1, max_length=polish.MAX_CHARS)
     instruction: str | None = Field(default=None, max_length=1000)
     model: str | None = None
 
 
 class AskIn(BaseModel):
+    pet: str | None = Field(default=None, max_length=32)   # which Pixl asks (and pays); Frogg when absent
     question: str = Field(min_length=1, max_length=4000)
     name: str = Field(default="Frogg", max_length=40)
     personality: str = Field(default="a friendly pixel frog", max_length=300)
@@ -46,6 +49,7 @@ class AskIn(BaseModel):
 
 
 class LimitsIn(BaseModel):
+    pet: str | None = Field(default=None, max_length=32)   # which Pixl asks (and pays); Frogg when absent
     per_day_near: str | None = Field(default=None, pattern=r"^\d+(\.\d{1,24})?$", max_length=40)
     per_week_near: str | None = Field(default=None, pattern=r"^\d+(\.\d{1,24})?$", max_length=40)
     paused: bool | None = None
@@ -56,7 +60,18 @@ class StatusIn(BaseModel):
 
 
 def create_app(store: Store, client: NearAIClient, token: str, default_model: str,
-               wallet: Wallet | None = None) -> FastAPI:
+               wallet: Wallet | Wallets | None = None) -> FastAPI:
+    # every Pixl pays from its own account (<pet>.<owner>); a lone Wallet is Frogg's, as before
+    wallets: Wallets | None = Wallets.of(wallet) if isinstance(wallet, Wallet) else wallet
+
+    def pet_wallet(pet: str | None) -> Wallet | None:
+        if wallets is None:
+            return None
+        try:
+            return wallets.for_pet(pet)
+        except WalletConfigError as e:
+            raise HTTPException(400, str(e)) from None
+
     app = FastAPI(title="Pixl Memory", version="0.1.0", docs_url=None, redoc_url=None)
     app.add_middleware(
         CORSMiddleware,
@@ -136,6 +151,7 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
     @app.post("/polish", dependencies=guarded)
     def do_polish(p: PolishIn) -> JSONResponse:
         model = p.model or default_model
+        wallet = pet_wallet(p.pet)
         if wallet and (why := wallet.blocked()):
             return JSONResponse({"error": "frogg_out_of_allowance", "message": why}, status_code=402)
         try:
@@ -163,7 +179,7 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
                                 suggestion=suggestion, verification=verification)
         receipt = None
         if wallet:
-            # Frogg pays for its own inference, after the result is safely stored.
+            # The Pixl pays for its own inference, from its own account, after the result is stored.
             cost = client.request_cost_nano_usd(comp.inference_id) if comp.inference_id else None
             receipt = wallet.pay(cost, {"draft_id": draft.id, "model": comp.model, "verdict": verification["verdict"],
                                         "inference_id": comp.inference_id})
@@ -184,6 +200,7 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         """Ask the Pixl anything: same attest-before-send flow as polish; the user's recent
         highlights (decrypted locally) go along as context, only to the attested enclave."""
         model = a.model or default_model
+        wallet = pet_wallet(a.pet)
         if wallet and (why := wallet.blocked()):
             return JSONResponse({"error": "frogg_out_of_allowance", "message": why}, status_code=402)
         picked, matched = polish.rank_highlights(a.question, store.list_highlights(limit=500)) if a.use_highlights else ([], False)
@@ -232,14 +249,16 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
     # -- Frogg's wallet --
 
     @app.get("/wallet", dependencies=guarded)
-    def wallet_status() -> dict[str, Any]:
+    def wallet_status(pet: str | None = None) -> dict[str, Any]:
+        wallet = pet_wallet(pet)
         return wallet.status() if wallet else {"configured": False,
-                                               "setup": "set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env"}
+                                               "setup": "set PIXL_PARENT_ACCOUNT (the owner's testnet account) in .env"}
 
     @app.post("/wallet/limits", dependencies=guarded)
     def wallet_limits(body: LimitsIn) -> JSONResponse:
         """The user tightens (or relaxes, up to the owner's ceilings) Frogg's daily and weekly
         limits, or pauses spending. Enforced before anything is signed."""
+        wallet = pet_wallet(body.pet)
         if not wallet:
             return JSONResponse({"error": "no_wallet", "message": "the wallet isn't configured"}, status_code=409)
         try:
@@ -249,15 +268,18 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         return JSONResponse(wallet.status())
 
     @app.get("/wallet/payments", dependencies=guarded)
-    def wallet_payments(limit: int = 20) -> dict[str, Any]:
-        return {"payments": store.list_payments(min(max(limit, 1), 200))}
+    def wallet_payments(limit: int = 20, pet: str | None = None) -> dict[str, Any]:
+        wallet = pet_wallet(pet)
+        n = min(max(limit, 1), 200)
+        return {"payments": wallet.payments(n) if wallet else store.list_payments(n)}
 
     @app.get("/wallet/setup", response_class=HTMLResponse)
-    def wallet_setup() -> HTMLResponse:
+    def wallet_setup(pet: str | None = None) -> HTMLResponse:
         # No token: the page shows only public names and Frogg's public key, and is
         # served to localhost only (host guard). The owner signs in Meteor, not here.
+        wallet = pet_wallet(pet)
         if not wallet:
-            return HTMLResponse("<p>Set FROGG_PARENT_ACCOUNT and FROGG_ACCOUNT in .env, then restart.</p>", 503)
+            return HTMLResponse("<p>Set PIXL_PARENT_ACCOUNT in .env, then restart.</p>", 503)
         from .setup_page import render
 
         key = wallet.key()

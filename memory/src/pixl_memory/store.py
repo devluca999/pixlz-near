@@ -245,17 +245,36 @@ class Store:
 
     # -- payments (Frogg's wallet) --
 
-    def add_payment(self, day: str, amount_yocto: int, status: str, tx_hash: str | None, receipt: dict[str, Any]) -> str:
+    def _payments_account_column(self) -> None:
+        """Each payment says which Pixl's account paid (older rows: Frogg's, the only one then)."""
+        cols = [r[1] for r in self._db.execute("PRAGMA table_info(payments)").fetchall()]
+        if "account" not in cols:
+            self._db.execute("ALTER TABLE payments ADD COLUMN account TEXT")
+
+    def add_payment(self, day: str, amount_yocto: int, status: str, tx_hash: str | None, receipt: dict[str, Any],
+                    account: str | None = None) -> str:
+        self._payments_account_column()
         pid = str(uuid.uuid4())
-        self._db.execute("INSERT INTO payments VALUES (?,?,?,?,?,?,?)",
+        self._db.execute("INSERT INTO payments (id, created_at, day, amount_yocto, status, tx_hash, receipt, account) "
+                         "VALUES (?,?,?,?,?,?,?,?)",
                          (pid, time.time(), day, str(amount_yocto), status, tx_hash,
-                          self._seal("payments", pid, "receipt", json.dumps(receipt))))
+                          self._seal("payments", pid, "receipt", json.dumps(receipt)), account or receipt.get("from")))
         return pid
 
-    def spent_between(self, first_day: str, last_day: str) -> int:
-        """Paid yoctoNEAR on days first_day…last_day inclusive (ISO dates sort as text)."""
-        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day>=? AND day<=? AND status='paid'",
-                                (first_day, last_day)).fetchall()
+    def _account_clause(self, account: str | None, frogg_legacy: bool) -> tuple[str, tuple]:
+        if account is None:
+            return "", ()
+        self._payments_account_column()
+        if frogg_legacy:   # rows from before per-pet wallets were all Frogg's
+            return " AND (account=? OR account IS NULL)", (account,)
+        return " AND account=?", (account,)
+
+    def spent_between(self, first_day: str, last_day: str, account: str | None = None, frogg_legacy: bool = False) -> int:
+        """Paid yoctoNEAR on days first_day…last_day inclusive (ISO dates sort as text), by one
+        Pixl's account when given."""
+        clause, args = self._account_clause(account, frogg_legacy)
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day>=? AND day<=? AND status='paid'" + clause,
+                                (first_day, last_day, *args)).fetchall()
         return sum(int(r[0]) for r in rows)
 
     # -- small settings the user changes from the app (not secrets) --
@@ -271,13 +290,16 @@ class Store:
             self._db.execute("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                              (key, value))
 
-    def spent_on(self, day: str) -> int:
-        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status='paid'", (day,)).fetchall()
+    def spent_on(self, day: str, account: str | None = None, frogg_legacy: bool = False) -> int:
+        clause, args = self._account_clause(account, frogg_legacy)
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status='paid'" + clause,
+                                (day, *args)).fetchall()
         return sum(int(r[0]) for r in rows)
 
-    def list_payments(self, limit: int = 20) -> list[dict[str, Any]]:
-        rows = self._db.execute("SELECT id, created_at, receipt FROM payments ORDER BY created_at DESC LIMIT ?",
-                                (limit,)).fetchall()
+    def list_payments(self, limit: int = 20, account: str | None = None, frogg_legacy: bool = False) -> list[dict[str, Any]]:
+        clause, args = self._account_clause(account, frogg_legacy)
+        rows = self._db.execute("SELECT id, created_at, receipt FROM payments WHERE 1=1" + clause +
+                                " ORDER BY created_at DESC LIMIT ?", (*args, limit)).fetchall()
         return [{"id": i, "created_at": c, **json.loads(self._open("payments", i, "receipt", r))} for i, c, r in rows]
 
     def close(self) -> None:

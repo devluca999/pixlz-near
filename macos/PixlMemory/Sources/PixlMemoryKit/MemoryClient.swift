@@ -3,6 +3,17 @@ import Foundation
 /// Talks to pixl-memory on 127.0.0.1. The token is read from the service's data
 /// directory (mode 0600); it is never logged or shown.
 public struct MemoryClient: Sendable {
+    /// Which Pixl is asking (and paying, from its own `<pet>.<owner>` account). The app keeps it
+    /// current with the Pixl on screen; nil means Frogg.
+    public nonisolated(unsafe) static var pet: String?
+
+    /// A Pixl's wallet name from its skin id (the app's ids predate the names).
+    public static func walletName(skinID: String) -> String {
+        ["cat": "kiti", "shiba": "mochi", "ghost": "boo", "widow": "silky"][skinID] ?? skinID
+    }
+
+    var petQuery: String { Self.pet.map { "pet=\($0)" } ?? "" }
+
     public var port: Int
     public var tokenURL: URL
     public var session: URLSession
@@ -37,6 +48,7 @@ public struct MemoryClient: Sendable {
     public func polish(_ text: String, instruction: String?) async throws(MemoryError) -> PolishResult {
         var body = ["text": text]
         if let instruction { body["instruction"] = instruction }
+        if let pet = Self.pet { body["pet"] = pet }
         let (data, status) = try await send(try request("/polish", method: "POST", body: body))
         return try Self.decodePolish(data: data, status: status)
     }
@@ -50,7 +62,7 @@ public struct MemoryClient: Sendable {
             return ServiceStatus(service: "not running (make -C memory serve)")
         }
         var st = ServiceStatus(service: h.has_api_key ? "running" : "running, no NEAR AI key", model: h.model)
-        if let r = try? request("/wallet"), let (wd, ws) = try? await send(r), ws == 200,
+        if let r = try? request("/wallet?\(petQuery)"), let (wd, ws) = try? await send(r), ws == 200,
            let w = try? JSONDecoder().decode(Wallet.self, from: wd) {
             st.walletReady = w.ready == true
             st.wallet = w.ready == true ? "\(w.account ?? "your Pixl") · \(w.balance_near ?? "?") Ⓝ" : (w.setup ?? "not set up")
@@ -63,7 +75,8 @@ public struct MemoryClient: Sendable {
 
     public func ask(_ question: String, name: String, personality: String, web: Bool = true) async throws(MemoryError) -> AskResult {
         let (data, status) = try await send(try request("/ask", method: "POST",
-                                                        body: ["question": question, "name": name, "personality": personality, "web": web]))
+                                                        body: ["question": question, "name": name, "personality": personality, "web": web,
+                                                               "pet": Self.pet ?? "frogg"]))
         if status == 200 {
             do { return try JSONDecoder().decode(AskResult.self, from: data) } catch { throw .upstream("Unreadable reply from the service") }
         }
@@ -92,6 +105,7 @@ public struct MemoryClient: Sendable {
     public func setLimits(perWeekNear: String? = nil, perDayNear: String? = nil, paused: Bool? = nil) async throws(MemoryError) -> WalletInfo {
         var r = try request("/wallet/limits", method: "POST")
         var body: [String: Any] = [:]
+        if let pet = Self.pet { body["pet"] = pet }
         if let perWeekNear { body["per_week_near"] = perWeekNear }
         if let perDayNear { body["per_day_near"] = perDayNear }
         if let paused { body["paused"] = paused }
@@ -103,13 +117,13 @@ public struct MemoryClient: Sendable {
     }
 
     public func wallet() async -> WalletInfo? {
-        guard let r = try? request("/wallet"), let (d, s) = try? await send(r), s == 200 else { return nil }
+        guard let r = try? request("/wallet?\(petQuery)"), let (d, s) = try? await send(r), s == 200 else { return nil }
         return try? JSONDecoder().decode(WalletInfo.self, from: d)
     }
 
     public func payments(limit: Int = 5) async -> [Receipt] {
         struct List: Decodable { let payments: [Receipt] }
-        guard let r = try? request("/wallet/payments?limit=\(limit)"), let (d, s) = try? await send(r), s == 200 else { return [] }
+        guard let r = try? request("/wallet/payments?limit=\(limit)&\(petQuery)"), let (d, s) = try? await send(r), s == 200 else { return [] }
         return (try? JSONDecoder().decode(List.self, from: d))?.payments ?? []
     }
 

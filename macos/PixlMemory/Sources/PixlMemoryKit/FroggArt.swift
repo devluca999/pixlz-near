@@ -212,7 +212,10 @@ public enum PixlSkins {
     }
 
     /// Which one is on screen. Set by the app from the saved setting.
-    public static var currentID = "frogg"
+    public static var currentID = "frogg" {
+        // the Pixl on screen asks, and pays from its own wallet
+        didSet { MemoryClient.pet = MemoryClient.walletName(skinID: currentID) }
+    }
     public static var current: Skin { skin(currentID) ?? all[0] }
     /// Default names that were renamed (Nox and Katt → Kiti, Silk → Silky): a saved one isn't a custom name.
     nonisolated public static let formerNames: Set<String> = ["Nox", "Katt", "Silk"]

@@ -1,7 +1,8 @@
-"""Frogg's wallet: pays for each private inference from Frogg's own testnet account.
+"""A Pixl's wallet: each Pixl pays for its own private inference from its own testnet account,
+`<pet>.<owner>` (Frogg's was the first: frogg.<owner>).
 
 Caps, in order of strength:
-  1. Frogg's balance: the owner chose it; NEAR enforces it. The owner's account is
+  1. The Pixl's balance: the owner chose it; NEAR enforces it. The owner's account is
      unreachable: no key for it ever exists on this machine.
   2. Per-request and per-day maximums, and a reserve that keeps the account alive:
      enforced here, before anything is signed.
@@ -66,11 +67,12 @@ class Limits:
     enforced before anything is signed. None means "use the ceiling"."""
     KEYS = ("limit_per_day_yocto", "limit_per_week_yocto", "paused")
 
-    def __init__(self, store: Store, policy: Policy):
+    def __init__(self, store: Store, policy: Policy, pet: str = "frogg"):
         self.store, self.policy = store, policy
+        self.prefix = "" if pet == "frogg" else f"{pet}."   # Frogg's settings keep their old keys
 
     def _get(self, key: str) -> int | None:
-        v = self.store.get_setting(key)
+        v = self.store.get_setting(self.prefix + key)
         return int(v) if v is not None else None
 
     @property
@@ -83,7 +85,7 @@ class Limits:
 
     @property
     def paused(self) -> bool:
-        return self.store.get_setting("paused") == "1"
+        return self.store.get_setting(self.prefix + "paused") == "1"
 
     def update(self, per_day_near: str | None = None, per_week_near: str | None = None, paused: bool | None = None) -> None:
         """Validates everything first, then writes: a bad value changes nothing."""
@@ -99,21 +101,33 @@ class Limits:
         if day > week:
             raise ValueError("the daily limit can't be above the weekly limit")
         if per_day_near is not None:
-            self.store.set_setting("limit_per_day_yocto", str(day))
+            self.store.set_setting(self.prefix + "limit_per_day_yocto", str(day))
         if per_week_near is not None:
-            self.store.set_setting("limit_per_week_yocto", str(week))
+            self.store.set_setting(self.prefix + "limit_per_week_yocto", str(week))
         if paused is not None:
-            self.store.set_setting("paused", "1" if paused else None)
+            self.store.set_setting(self.prefix + "paused", "1" if paused else None)
 
 
 class Wallet:
     def __init__(self, cfg: WalletConfig, data_dir: Path, store: Store, rpc: Rpc | None = None):
         self.cfg = cfg
         self.policy = Policy.from_config(cfg)
-        self.key_path = data_dir / "frogg_key.json"
+        # Frogg's key keeps its first home; every other Pixl's is keys/<pet>.json
+        self.key_path = data_dir / "frogg_key.json" if cfg.pet == "frogg" else data_dir / "keys" / f"{cfg.pet}.json"
         self.store = store
-        self.limits = Limits(store, self.policy)
+        self.limits = Limits(store, self.policy, cfg.pet)
         self.rpc = rpc or Rpc(cfg.rpc_url)
+
+    # -- what this Pixl spent (its own account's payments only) --
+
+    def spent_on(self, day: str) -> int:
+        return self.store.spent_on(day, self.cfg.frogg, frogg_legacy=self.cfg.pet == "frogg")
+
+    def spent_between(self, first: str, last: str) -> int:
+        return self.store.spent_between(first, last, self.cfg.frogg, frogg_legacy=self.cfg.pet == "frogg")
+
+    def payments(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self.store.list_payments(limit, self.cfg.frogg, frogg_legacy=self.cfg.pet == "frogg")
 
     # -- key --
 
@@ -127,11 +141,12 @@ class Wallet:
         return key
 
     def init_key(self) -> KeyPair:
-        """Create Frogg's key once. Its private half never leaves the data directory."""
+        """Create this Pixl's key once. Its private half never leaves the data directory."""
         existing = self.key()
         if existing:
             return existing
         key = KeyPair.generate()
+        self.key_path.parent.mkdir(parents=True, exist_ok=True)
         save_key(self.key_path, self.cfg.frogg, key)
         return key
 
@@ -151,12 +166,14 @@ class Wallet:
             "ceilings": {"per_day_near": yocto_to_near(self.policy.max_per_day),
                          "per_week_near": yocto_to_near(self.policy.max_per_week)},
             "paused": self.limits.paused,
-            "spent_today_near": yocto_to_near(self.store.spent_on(today())),
-            "spent_week_near": yocto_to_near(self.store.spent_between(*week_of(today()))),
+            "pet": self.cfg.pet, "name": self.cfg.name,
+            "spent_today_near": yocto_to_near(self.spent_on(today())),
+            "spent_week_near": yocto_to_near(self.spent_between(*week_of(today()))),
             "week_resets": week_of(today())[1],
         }
         if key is None:
-            return s | {"ready": False, "setup": "run `pixl-memory wallet init` to create Frogg's key"}
+            init = "pixl-memory wallet init" + ("" if self.cfg.pet == "frogg" else f" --pet {self.cfg.pet}")
+            return s | {"ready": False, "setup": f"run `{init}` to create {self.cfg.name}'s key"}
         try:
             balance = self.rpc.balance(self.cfg.frogg)
         except UnknownAccount:
@@ -166,7 +183,7 @@ class Wallet:
         s["balance_near"] = yocto_to_near(balance)
         s["spendable_near"] = yocto_to_near(max(0, balance - self.policy.reserve))
         if self.rpc.access_key(self.cfg.frogg, key.public_key) is None:
-            return s | {"ready": False, "setup": f"Frogg's key isn't on {self.cfg.frogg} yet"}
+            return s | {"ready": False, "setup": f"{self.cfg.name}'s key isn't on {self.cfg.frogg} yet"}
         return s | {"ready": True, "setup": None}
 
     def can_pay(self, amount: int) -> str | None:
@@ -177,10 +194,10 @@ class Wallet:
             return "spending is paused (you can resume it in the Wallet card)"
         if amount > self.policy.max_per_request:
             return f"{yocto_to_near(amount)} Ⓝ is over the {yocto_to_near(self.policy.max_per_request)} Ⓝ per-request cap"
-        spent = self.store.spent_on(today())
+        spent = self.spent_on(today())
         if spent + amount > self.limits.per_day:
             return f"today's limit of {yocto_to_near(self.limits.per_day)} Ⓝ is reached"
-        week = self.store.spent_between(*week_of(today()))
+        week = self.spent_between(*week_of(today()))
         if week + amount > self.limits.per_week:
             return f"this week's limit of {yocto_to_near(self.limits.per_week)} Ⓝ is reached (resets Monday)"
         return None
@@ -198,37 +215,62 @@ class Wallet:
         why = self.can_pay(amount)
         key = self.key()
         if why is None and key is None:
-            why = "Frogg has no key yet"
+            why = f"{self.cfg.name} has no key yet"
         if why is None:
             try:
                 balance = self.rpc.balance(self.cfg.frogg)
             except RpcError as e:
-                why = f"can't read Frogg's balance: {e}"
+                why = f"can't read {self.cfg.name}'s balance: {e}"
             else:
                 if balance - amount < self.policy.reserve:
-                    why = f"Frogg is out of allowance ({yocto_to_near(balance)} Ⓝ left, {yocto_to_near(self.policy.reserve)} Ⓝ reserved)"
+                    why = f"{self.cfg.name} is out of allowance ({yocto_to_near(balance)} Ⓝ left, {yocto_to_near(self.policy.reserve)} Ⓝ reserved)"
         if why:
             receipt |= {"status": "refused", "reason": why}
-            self.store.add_payment(today(), 0, "refused", None, receipt)
+            self.store.add_payment(today(), 0, "refused", None, receipt, account=self.cfg.frogg)
             return receipt
         assert key is not None
         try:
             sent = self.rpc.transfer(key, self.cfg.frogg, self.policy.payee, amount)
         except RpcError as e:
             receipt |= {"status": "failed", "reason": str(e)}
-            self.store.add_payment(today(), 0, "failed", None, receipt)
+            self.store.add_payment(today(), 0, "failed", None, receipt, account=self.cfg.frogg)
             return receipt
         receipt |= {"status": "paid", **sent}
         try:
             receipt["balance_after_near"] = yocto_to_near(self.rpc.balance(self.cfg.frogg))
         except RpcError:
             pass
-        self.store.add_payment(today(), amount, "paid", sent["tx_hash"], receipt)
-        receipt["spent_today_near"] = yocto_to_near(self.store.spent_on(today()))
+        self.store.add_payment(today(), amount, "paid", sent["tx_hash"], receipt, account=self.cfg.frogg)
+        receipt["spent_today_near"] = yocto_to_near(self.spent_on(today()))
         return receipt
 
     def blocked(self) -> str | None:
-        """If Frogg can't afford even a flat-priced request, polishing is refused up front."""
+        """If this Pixl can't afford even a flat-priced request, the request is refused up front."""
         if self.key() is None:
             return None  # wallet not set up: polishing stays free until it is
         return self.can_pay(self.policy.flat_price)
+
+
+class Wallets:
+    """Every Pixl's wallet: the same owner, payee and caps, one account each (`<pet>.<owner>`).
+    A Pixl without an account yet just isn't set up; nothing falls back to another Pixl's."""
+
+    def __init__(self, cfg: WalletConfig, data_dir: Path, store: Store, rpc: Rpc | None = None):
+        self.cfg, self.data_dir, self.store, self.rpc = cfg, data_dir, store, rpc
+        self._wallets: dict[str, Wallet] = {}
+
+    @classmethod
+    def of(cls, wallet: Wallet) -> "Wallets":
+        """A registry around one existing wallet (its owner, payee and caps for every other Pixl)."""
+        data_dir = wallet.key_path.parent if wallet.cfg.pet == "frogg" else wallet.key_path.parent.parent
+        w = cls(wallet.cfg, data_dir, wallet.store, wallet.rpc)
+        w._wallets[wallet.cfg.pet] = wallet
+        return w
+
+    def for_pet(self, pet: str | None) -> Wallet:
+        """The Pixl's own wallet (Frogg's when none is named). Raises WalletConfigError for a bad name."""
+        name = (pet or "frogg").strip().lower()
+        if name not in self._wallets:
+            cfg = self.cfg if name == self.cfg.pet else self.cfg.for_pet(name)
+            self._wallets[name] = Wallet(cfg, self.data_dir, self.store, self.rpc)
+        return self._wallets[name]

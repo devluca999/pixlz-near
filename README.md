@@ -151,6 +151,8 @@ Each step reuses the one before it: the iPhone app gives travel a second endpoin
 
 ## Frogg's wallet: why your funds stay untouchable
 
+Every Pixl can have its own NEAR wallet: a sub-account the owner creates and funds, which is its spending cap. The demo video shows Frogg's (`frogg.pixlz-petz-faucet.testnet`); other pets use the same flow (`pixl-memory wallet init --pet kiti`, then the owner creates `kiti.<owner>.testnet` with that key). Each Pixl pays for its own thinking from its own account, with its own daily and weekly limits.
+
 **Choice: a plain NEAR sub-account that the owner funds: `frogg.pixlz-petz.testnet`, under the owner's testnet account `pixlz-petz.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
 
 **How it works:**
