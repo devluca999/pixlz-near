@@ -103,6 +103,20 @@ import Testing
         #expect(HookSettings.removing(from: HookSettings.adding(to: [:], hookPath: hook))["hooks"] == nil)
     }
 
+    @Test func removeKeepsYourOwnHooksThatShareAnEntry() {
+        let shared: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "say done"],
+                                                                   ["type": "command", "command": "'\(hook)'"]]]]]]
+        let back = HookSettings.removing(from: shared)
+        let stop = ((back["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?.first?["hooks"] as? [[String: Any]]
+        #expect(stop?.count == 1 && stop?.first?["command"] as? String == "say done")
+    }
+
+    @Test func aMovedAppCountsAsNotInstalled() {
+        let s = HookSettings.adding(to: [:], hookPath: hook)
+        #expect(HookSettings.installed(in: s, hookPath: hook))
+        #expect(!HookSettings.installed(in: s, hookPath: "/Applications/Pixl Memory.app/Contents/MacOS/pixl-agent-hook"))
+    }
+
     @Test func fileRoundTripKeepsABackup() throws {
         let dir = FileManager.default.temporaryDirectory.appending(path: "pixlz-hooks-\(UUID().uuidString)")
         let url = HookSettings.url(home: dir)
@@ -115,5 +129,51 @@ import Testing
         try Data("not json".utf8).write(to: url)
         #expect(throws: HookSettings.Failure.unreadable) { try HookSettings.read(url) }
         try? FileManager.default.removeItem(at: dir)
+    }
+}
+
+@Suite struct TranscriptTests {
+    @Test func readsPromptsRepliesAndToolsOnly() {
+        let jsonl = [
+            #"{"type":"user","message":{"role":"user","content":"fix the tests\nplease"}}"#,
+            #"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Running them now."}]}}"#,
+            #"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"swift test","description":""}}]}}"#,
+            #"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#,
+            #"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"subagent noise"}]}}"#,
+            #"{"type":"user","message":{"content":"<command-name>/clear</command-name>"}}"#,
+            #"{"type":"ai-title","aiTitle":"Fix the tests"}"#,
+            "not json",
+            #"{"type":"assistant","message":{"content":[{"type":"text","text":"All 40 pass."}]}}"#,
+        ].joined(separator: "\n")
+        let (title, lines) = Transcript.parse(jsonl)
+        #expect(title == "Fix the tests")
+        #expect(lines == [ChatLine(role: .you, text: "fix the tests\nplease"), ChatLine(role: .claude, text: "Running them now."),
+                          ChatLine(role: .tool, text: "Run swift test"), ChatLine(role: .claude, text: "All 40 pass.")])
+        #expect(Transcript.parse(jsonl, limit: 2).lines.count == 2)
+    }
+
+    @Test func repliesSentThroughPixlzShowAsYours() {
+        let jsonl = [
+            #"{"type":"user","isMeta":true,"message":{"content":"Stop hook feedback:\nMessage from you via Pixlz (dictated on the Mosaico): run the tests please"}}"#,
+            #"{"type":"user","isMeta":true,"message":{"content":"Stop hook feedback:\nlint failed"}}"#,
+        ].joined(separator: "\n")
+        #expect(Transcript.parse(jsonl).lines == [ChatLine(role: .you, text: "(dictated on the Mosaico) run the tests please")])
+        #expect(Transcript.label(via: "typed on the Mac") == "Message from you via Pixlz (typed on the Mac): ")
+    }
+
+    @Test func aStopReplyContinuesTheSession() throws {
+        let o = try JSONSerialization.jsonObject(with: AgentHub.stopReply("now run the linter")) as? [String: String]
+        #expect(o == ["decision": "block", "reason": "now run the linter"])
+        var hub = AgentHub()
+        let t0 = Date()
+        hub.receive(HookEvent(name: "Stop", sessionID: "a", cwd: "/p/x", transcriptPath: "/tmp/a.jsonl"), at: t0)
+        #expect(hub.sessions["a"]?.transcriptPath == "/tmp/a.jsonl")
+        hub.setReplyOpen("a", true)
+        #expect(hub.sessions["a"]?.replyOpen == true)
+        // Claude Code's "waiting for your input" notification ~60 s later doesn't close it.
+        hub.receive(HookEvent(name: "Notification", sessionID: "a", message: "Claude is waiting for your input"), at: t0)
+        #expect(hub.sessions["a"]?.replyOpen == true)
+        hub.receive(HookEvent(name: "UserPromptSubmit", sessionID: "a", prompt: "typed in the terminal"), at: t0)
+        #expect(hub.sessions["a"]?.replyOpen == false)   // it moved on
     }
 }

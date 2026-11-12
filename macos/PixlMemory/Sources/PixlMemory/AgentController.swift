@@ -21,6 +21,15 @@ final class AgentController {
     private(set) var resumeLog: [String: [String]] = [:]
     /// The chat panels and anything else showing a session's messages: told when they change.
     var onChat: (@MainActor (String) -> Void)?
+    /// Replies waiting for their session (compatibility with screens that read it: the outbox is the source).
+    var queued: [String: String] {
+        hub.outbox.compactMapValues { list in
+            let q = list.filter { $0.status == .queued }.map(\.text)
+            return q.isEmpty ? nil : q.joined(separator: "\n\n")
+        }
+    }
+    /// A message just reached its session (session id): tell whoever sent it.
+    var onDelivered: (@MainActor (String) -> Void)?
     private var timer: Timer?
     private var lastAlert = Date.distantPast
     private var snoozedUntil: Date?
@@ -32,11 +41,30 @@ final class AgentController {
         get { let v = UserDefaults.standard.double(forKey: windowKey); return v == 0 ? 60 : min(max(v, 15), Double(HookSettings.maxReplyWindow)) }
         set { UserDefaults.standard.set(min(max(newValue, 15), Double(HookSettings.maxReplyWindow)), forKey: windowKey) }
     }
+    private let replyKey = "PixlMemory.agentReply"
+    /// Keep a finished session open (for the reply window) so a reply from Pixlz continues it.
+    /// On unless you turn it off; while held, the terminal shows it as busy (Esc there takes it back).
+    var replyHere: Bool {
+        get { UserDefaults.standard.object(forKey: replyKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: replyKey)
+            Debug.log("agents: reply here \(newValue)")
+            if !newValue { for sid in Array(heldStop.keys) { letStopGo(sid) } }
+        }
+    }
     /// Hold permission requests for an answer here (up to 55 s). Off: Pixlz only watches, and
     /// the terminal asks as usual, without waiting on Pixlz.
     var answerHere: Bool {
         get { UserDefaults.standard.bool(forKey: answerKey) }
-        set { UserDefaults.standard.set(newValue, forKey: answerKey); Debug.log("agents: answer here \(newValue)") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: answerKey)
+            Debug.log("agents: answer here \(newValue)")
+            if !newValue {   // let every waiting hook go now: the terminal asks
+                for (id, fd) in held { finish(fd, reply: nil); hub.unmarkHeld(id) }
+                held.removeAll()
+                changed()
+            }
+        }
     }
     /// While a session waits on you, the Pixl keeps calling (every 20 s) in its own voice.
     var alertsOn: Bool {
@@ -50,9 +78,7 @@ final class AgentController {
         Bundle.main.executableURL!.deletingLastPathComponent().appending(path: "pixl-agent-hook").path
     }
     var settingsURL: URL { HookSettings.url(home: FileManager.default.homeDirectoryForCurrentUser) }
-    var hooksInstalled: Bool { (try? HookSettings.read(settingsURL)).map(HookSettings.installed) ?? false }
-    /// Connected by an older Pixlz: Stop can't wait for your reply until the hooks are updated.
-    var hooksOutdated: Bool { (try? HookSettings.read(settingsURL)).map(HookSettings.outdated) ?? false }
+    var hooksInstalled: Bool { (try? HookSettings.read(settingsURL)).map { HookSettings.installed(in: $0, hookPath: hookPath) } ?? false }
 
     /// The bubble's sub-label: nil hides the Agents bubble (nothing connected, nothing running).
     var bubbleSub: String? {
@@ -66,6 +92,10 @@ final class AgentController {
     func start() {
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        if Self.someoneListens(at: path) {
+            Debug.log("agents: another Pixl Memory already listens at \(path); not taking it over")
+            return
+        }
         unlink(path)
         let s = socket(AF_UNIX, SOCK_STREAM, 0)
         guard s >= 0 else { Debug.log("agents: socket failed"); return }
@@ -83,6 +113,17 @@ final class AgentController {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
         timer?.tolerance = 0.3
         Debug.log("agents: listening at \(path) (hooks \(hooksInstalled ? "installed" : "not installed"))")
+    }
+
+    /// Is another live process listening on that socket?
+    static func someoneListens(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        _ = withUnsafeMutableBytes(of: &addr.sun_path) { buf in path.utf8CString.withUnsafeBytes { buf.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(buf.count - 1))) } }
+        return withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } } == 0
     }
 
     private func accept() {
@@ -117,7 +158,14 @@ final class AgentController {
         guard n > 0, var c = clients[fd] else {
             // The hook went away (answered in the terminal, or Claude Code gave up on it).
             if let id = held.first(where: { $0.value == fd })?.key { held[id] = nil; hub.resolve(id); changed() }
-            if let sid = heldStop.first(where: { $0.value == fd })?.key { heldStop[sid] = nil; hub.releaseStop(sid); doneAsked = nil; onChat?(sid) }
+            if let sid = heldStop.first(where: { $0.value == fd })?.key {
+                heldStop[sid] = nil   // Esc in the terminal, or Claude Code gave up on the hook
+                hub.releaseStop(sid)
+                hub.setReplyOpen(sid, false)
+                if doneAsked == sid { doneAsked = nil; onDoneAsk?(nil) }
+                onChat?(sid)
+                changed()
+            }
             finish(fd, reply: nil)
             return
         }
@@ -132,6 +180,9 @@ final class AgentController {
         guard let event = HookEvent(json: Data(line)) else { finish(fd, reply: nil); return }
         let had = hub.requests.count
         let sid = event.sessionID
+        // It moved on without us (a prompt typed in the terminal, a tool call): let go. A
+        // Notification ("waiting for your input", ~60 s after it finished) isn't moving on.
+        if heldStop[sid] != nil, event.name != "Notification", event.name != "Stop" { letStopGo(sid) }
         let request = hub.receive(event, at: Date())
         if let request {
             // a resumed run has no terminal to ask in: Pixlz always holds its requests
@@ -147,6 +198,7 @@ final class AgentController {
             let reply = hub.answerPostToolUse(sid)
             if reply != nil { Debug.log("agents: message delivered to \(hub.sessions[sid]?.project ?? "?") at its next step") }
             finish(fd, reply: reply)
+            if reply != nil { delivered(sid) }
             if reply != nil { onChat?(sid) }
         } else if event.name == "Stop" {
             answerStop(event, fd: fd)
@@ -183,6 +235,13 @@ final class AgentController {
         changed()
     }
 
+    /// The session's title and its last turns, from its transcript.
+    func chat(_ sessionID: String, limit: Int = 30) -> (title: String?, lines: [ChatLine]) {
+        // only a transcript inside ~/.claude/projects (read here, never sent anywhere)
+        guard let p = hub.sessions[sessionID]?.transcriptPath, let url = TranscriptReader.validated(p) else { return (nil, []) }
+        return Transcript.read(url, limit: limit)
+    }
+
     /// Can Allow / Deny here answer it (Pixlz holds its hook)?
     func canAnswer(_ requestID: String) -> Bool { held[requestID] != nil }
 
@@ -199,7 +258,10 @@ final class AgentController {
     private func tick() {
         let gone = hub.expire(at: Date())
         for id in gone {
-            if let fd = held.removeValue(forKey: id) { finish(fd, reply: nil) }
+            if let fd = held.removeValue(forKey: id) {
+                finish(fd, reply: nil)
+                app.notify(.agentsError("A request waited too long here. Answer it in the terminal."))
+            }
             Debug.log("agents: \(id) timed out; the terminal asks")
         }
         if !gone.isEmpty { changed() }
@@ -228,24 +290,38 @@ final class AgentController {
             else { finish(fd, reply: nil) }
             return
         }
-        switch hub.answerStop(e, at: Date()) {
+        switch hub.answerStop(e, at: Date(), hold: replyHere) {
         case .block(let reply):
             Debug.log("agents: \(hub.sessions[sid]?.project ?? "?") finished a turn; your message sent")
+            hub.setReplyOpen(sid, false)
             finish(fd, reply: reply)
+            delivered(sid)
         case .release:
+            hub.setReplyOpen(sid, false)
             finish(fd, reply: nil)
         case .hold:
             if let old = heldStop[sid] { finish(old, reply: nil) }
             heldStop[sid] = fd
+            hub.setReplyOpen(sid, true)
             doneAsked = sid
             Debug.log("agents: \(hub.sessions[sid]?.project ?? "?") finished a turn; holding \(Int(replyWindow)) s for a reply")
             onDoneAsk?(sid)
         }
     }
 
+    /// Your message reached the session: say so (the Pixl, and any other screen that sent it).
+    private func delivered(_ sid: String) {
+        let project = hub.sessions[sid]?.project ?? "Claude"
+        if let last = hub.outbox[sid]?.last(where: { $0.status == .delivered }) {
+            app.notify(.agents("Delivered to \(project): \(last.text.prefix(40))"))
+        }
+        onDelivered?(sid)
+    }
+
     /// Dismissed (or it moved on): let its held stop go now.
     func letStopGo(_ sid: String) {
         hub.releaseStop(sid)
+        hub.setReplyOpen(sid, false)
         if let fd = heldStop.removeValue(forKey: sid) { finish(fd, reply: nil) }
         if doneAsked == sid { doneAsked = nil; onDoneAsk?(nil) }
         onChat?(sid)
@@ -264,7 +340,9 @@ final class AgentController {
         case .now:
             if let reply = hub.replyToHeldStop(sid), let fd = heldStop.removeValue(forKey: sid) {
                 Debug.log("agents: reply sent to \(hub.sessions[sid]?.project ?? "?") (its stop was held)")
+                hub.setReplyOpen(sid, false)
                 finish(fd, reply: reply)
+                delivered(sid)
                 if doneAsked == sid { doneAsked = nil; onDoneAsk?(nil) }
             }
         case .nextStep:
@@ -400,7 +478,7 @@ final class AgentController {
         lastAlert = Date()
         Debug.log("agents: alert for \(oldest.project)")
         // Its own call ("wan! wan!") leads a plain-English notice naming the session.
-        app.notify(.agents("\(oldest.project) needs you: \(oldest.summary)"), voice: .alert)
+        app.notify(.agents("\(oldest.project) needs you: \(oldest.summary)"), voice: .alert, urgent: true)
     }
 
     func snooze(minutes: Double = 10) {
@@ -441,6 +519,7 @@ final class AgentController {
             try HookSettings.write(HookSettings.removing(from: s), to: settingsURL)
             for (id, fd) in held { finish(fd, reply: nil); hub.resolve(id) }
             held.removeAll()
+            for sid in Array(heldStop.keys) { letStopGo(sid) }
             Debug.log("agents: hooks removed")
             return nil
         } catch {
@@ -450,6 +529,8 @@ final class AgentController {
 
     func stop() {
         for (_, fd) in held { finish(fd, reply: nil) }
+        for (_, fd) in heldStop { finish(fd, reply: nil) }
+        resuming.values.forEach { $0.terminate() }
         unlink(path)
     }
 }

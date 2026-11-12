@@ -57,6 +57,8 @@ public struct AgentSession: Sendable, Equatable, Identifiable {
     public var ended = false
     /// Its last reply (Stop's `last_assistant_message`): the transcript file can lag behind.
     public var lastReply: String? = nil
+    /// Finished, and Pixlz holds it open for your reply (Reply from Pixlz).
+    public var replyOpen = false
 }
 
 public struct AgentRequest: Sendable, Equatable, Identifiable {
@@ -106,9 +108,10 @@ public struct AgentHub: Sendable {
     public mutating func receive(_ e: HookEvent, at now: Date) -> String? {
         var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd, prompt: nil, doing: "Starting", state: .idle, lastHeard: now)
         if !e.cwd.isEmpty { s.cwd = e.cwd }
-        if let t = e.transcriptPath { s.transcriptPath = t }
+        if let t = e.transcriptPath, !t.isEmpty { s.transcriptPath = t }
         s.lastHeard = now
         if e.name != "SessionEnd" { s.ended = false }
+        if e.name != "Stop", e.name != "Notification" { s.replyOpen = false }   // it moved on: no longer waiting for a reply
         var newRequest: String?
         switch e.name {
         case "SessionStart":
@@ -159,9 +162,24 @@ public struct AgentHub: Sendable {
         return newRequest
     }
 
+    /// A finished session held open for a reply (or not any more).
+    public mutating func setReplyOpen(_ sessionID: String, _ open: Bool) {
+        sessions[sessionID]?.replyOpen = open
+    }
+
+    /// What the Stop hook prints to carry on with `text` as the next instruction.
+    public static func stopReply(_ text: String) -> Data {
+        (try? JSONSerialization.data(withJSONObject: ["decision": "block", "reason": text], options: [.sortedKeys])) ?? Data()
+    }
+
     /// Pixlz keeps the hook waiting for an answer here.
     public mutating func markHeld(_ requestID: String) {
         if let i = requests.firstIndex(where: { $0.id == requestID }) { requests[i].held = true }
+    }
+
+    /// Pixlz let go of it: it stays listed, for the terminal to answer.
+    public mutating func unmarkHeld(_ requestID: String) {
+        if let i = requests.firstIndex(where: { $0.id == requestID }) { requests[i].held = false }
     }
 
     /// The request was answered (or its hook went away): it leaves the list.

@@ -50,6 +50,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var travel = TravelController(app: self)
     lazy var agents = AgentController(app: self)
     lazy var chats = AgentChats(app: self)
+    /// Agent mode's "Chat with Claude" through the Anthropic API (the key in .env.local).
+    let apiChat = APIChatController()
     lazy var presence = PresenceController(app: self)
     lazy var roam = RoamController(app: self)
     lazy var resizer = ResizeController(app: self)
@@ -1485,9 +1487,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Notices: anything functional, in plain English with an icon, optionally led by one sound.
-    func notify(_ n: Notice, voice: SoundEvent? = nil) {
+    func notify(_ n: Notice, voice: SoundEvent? = nil, urgent: Bool = false) {
         let line = voice.map { voicePicker.pick($0, ui: ui) }
         Debug.log("notice \(n.kind.rawValue): \"\(n.text.prefix(60))\"")
+        // The Pixl can't show it (hidden, or an app is fullscreen): errors and urgent ones still
+        // reach you, as a macOS notification.
+        if (userHidden || fullscreenHidden), urgent || n.kind == .error {
+            SystemNotice.post(n.text)
+            return
+        }
         present(NoticeView(n, voice: line, look: menu.cardLook), seconds: n.seconds)
     }
 

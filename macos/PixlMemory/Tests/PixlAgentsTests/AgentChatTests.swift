@@ -87,7 +87,7 @@ import Testing
         let reply = try #require(r1)
         let out = try #require(object(reply)?["hookSpecificOutput"] as? [String: Any])
         #expect(out["hookEventName"] as? String == "PostToolUse")
-        #expect(out["additionalContext"] as? String == "Message from the user via Pixlz: also update the README")
+        #expect(out["additionalContext"] as? String == "Message from you via Pixlz (typed on the Mac): also update the README")
         #expect(h.outbox["s"]?.first?.status == .delivered)
         #expect(h.answerPostToolUse("s") == nil)          // nothing queued: no output at all
     }
@@ -99,7 +99,7 @@ import Testing
         h.receive(stop, at: t0)
         guard case .block(let d) = h.answerStop(stop, at: t0) else { Issue.record("not blocked"); return }
         #expect(object(d)?["decision"] as? String == "block")
-        #expect(object(d)?["reason"] as? String == "now run the linter")
+        #expect(object(d)?["reason"] as? String == Transcript.label(via: "typed on the Mac") + "now run the linter")
         #expect(h.heldStops["s"] == nil)
     }
 
@@ -111,7 +111,7 @@ import Testing
         h.queue(typed("yes, ship it"), for: "s", at: t0.addingTimeInterval(10))
         let r2 = h.replyToHeldStop("s")
         let reply = try #require(r2)
-        #expect(object(reply)?["reason"] as? String == "yes, ship it")
+        #expect(object(reply)?["reason"] as? String == Transcript.label(via: "typed on the Mac") + "yes, ship it")
         #expect(h.heldStops["s"] == nil && h.outbox["s"]?.first?.status == .delivered)
     }
 
@@ -220,7 +220,14 @@ import Testing
     }
 
     @Test func transcriptsAndChatsNeverTouchTheNetwork() throws {
-        let files = try sources(["PixlAgents"]) + (try sources(["PixlMemory"]).filter { ["AgentChatPanel.swift", "AgentController.swift"].contains($0.name) })
+        // "Chat with Claude (API key)" is its own conversation with the Anthropic API: it may use
+        // the network, but it never reads a transcript or a session's outbox
+        let apiChat = try sources(["PixlAgents", "PixlMemory"]).filter { $0.name.hasPrefix("APIChat") }
+        for f in apiChat {
+            for t in ["Transcript", "transcriptPath", "outbox", ".chat(", "hub."] { #expect(!f.text.contains(t), "\(f.name) touches \(t)") }
+        }
+        let files = try sources(["PixlAgents"]).filter { !$0.name.hasPrefix("APIChat") }
+            + (try sources(["PixlMemory"]).filter { ["AgentChatPanel.swift", "AgentController.swift"].contains($0.name) })
         for f in files {
             for api in ["URLSession", "URLRequest", "NWConnection", "CFNetwork", "MemoryClient", "http://", "https://claude.ai/api"] {
                 #expect(!f.text.contains(api), "\(f.name) uses \(api)")

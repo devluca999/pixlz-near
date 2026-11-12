@@ -73,7 +73,8 @@ extension AgentHub {
         guard var list = outbox[sessionID] else { return nil }
         let waiting = list.indices.filter { list[$0].status == .queued }
         guard !waiting.isEmpty else { return nil }
-        let text = waiting.map { list[$0].text }.joined(separator: "\n\n")
+        // labelled so Claude (and the terminal) see it's from you (Transcript.label)
+        let text = Transcript.label(via: "typed on the Mac") + waiting.map { list[$0].text }.joined(separator: "\n\n")
         for i in waiting { list[i].status = .delivered; list[i].note = note }
         outbox[sessionID] = list
         return text
@@ -105,18 +106,18 @@ extension AgentHub {
     public mutating func answerPostToolUse(_ sessionID: String) -> Data? {
         guard let text = take(for: sessionID, note: "at its next step") else { return nil }
         return Self.json(["hookSpecificOutput": ["hookEventName": "PostToolUse",
-                                                 "additionalContext": "Message from the user via Pixlz: " + text]])
+                                                 "additionalContext": text]])
     }
 
     /// Stop: block with your message if one is waiting; otherwise hold it for a reply, unless
     /// this stop comes from a chain Pixlz already continued (`stop_hook_active`) and you typed
     /// nothing new: then it stops, so Pixlz can never loop it.
-    public mutating func answerStop(_ e: HookEvent, at now: Date) -> StopAction {
+    public mutating func answerStop(_ e: HookEvent, at now: Date, hold: Bool = true) -> StopAction {
         if let text = take(for: e.sessionID, note: "when it finished its turn") {
             heldStops[e.sessionID] = nil
             return .block(Self.stopReply(text))
         }
-        if e.stopHookActive { heldStops[e.sessionID] = nil; return .release }
+        if e.stopHookActive || !hold { heldStops[e.sessionID] = nil; return .release }
         heldStops[e.sessionID] = now
         return .hold
     }
@@ -137,8 +138,6 @@ extension AgentHub {
         old.forEach { heldStops[$0] = nil }
         return old
     }
-
-    public static func stopReply(_ text: String) -> Data { json(["decision": "block", "reason": text]) }
 
     static func json(_ o: [String: Any]) -> Data {
         (try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()

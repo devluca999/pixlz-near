@@ -25,12 +25,26 @@ public enum HookSettings {
 
     public static func isPixlz(_ entry: Any) -> Bool {
         guard let e = entry as? [String: Any], let hooks = e["hooks"] as? [[String: Any]] else { return false }
-        return hooks.contains { ($0["command"] as? String)?.contains(marker) == true }
+        return hooks.contains(where: isPixlzHook)
     }
 
-    public static func installed(in settings: [String: Any]) -> Bool {
+    static func isPixlzHook(_ hook: [String: Any]) -> Bool { (hook["command"] as? String)?.contains(marker) == true }
+
+    /// Every event has Pixlz's hook, with the timeout this version needs (an older install
+    /// shows "Update" so Connect adds what's new).
+    /// Every event has Pixlz's hook, pointing at this app's helper (`hookPath`, when given) with
+    /// the timeout this version needs. An older or moved install shows "Update".
+    public static func installed(in settings: [String: Any], hookPath: String? = nil) -> Bool {
         guard let hooks = settings["hooks"] as? [String: Any] else { return false }
-        return events.allSatisfy { ev in (hooks[ev.name] as? [Any])?.contains(where: isPixlz) == true }
+        return events.allSatisfy { ev in
+            (hooks[ev.name] as? [Any])?.contains { e in
+                guard let list = (e as? [String: Any])?["hooks"] as? [[String: Any]] else { return false }
+                return list.contains { h in
+                    isPixlzHook(h) && (h["timeout"] as? Int) == ev.timeout &&
+                        (hookPath.map { (h["command"] as? String) == command(hookPath: $0) } ?? true)
+                }
+            } == true
+        }
     }
 
     /// Installed, but from an older Pixlz (a Stop timeout too short to hold for a reply).
@@ -47,7 +61,15 @@ public enum HookSettings {
         guard var hooks = s["hooks"] as? [String: Any] else { return s }
         for (name, value) in hooks {
             guard let list = value as? [Any] else { continue }
-            let kept = list.filter { !isPixlz($0) }
+            // Take out only Pixlz's commands; an entry that also holds your own hooks keeps them.
+            let kept: [Any] = list.compactMap { entry in
+                guard var e = entry as? [String: Any], let inner = e["hooks"] as? [[String: Any]] else { return entry }
+                let rest = inner.filter { !isPixlzHook($0) }
+                if rest.count == inner.count { return entry }
+                if rest.isEmpty { return nil }
+                e["hooks"] = rest
+                return e
+            }
             hooks[name] = kept.isEmpty ? nil : kept
         }
         s["hooks"] = hooks.isEmpty ? nil : hooks
@@ -80,12 +102,14 @@ public enum HookSettings {
         return o
     }
 
-    /// Writes atomically, after keeping the previous file once as settings.json.pixlz-backup.
+    /// Writes atomically, after copying the current file to settings.json.pixlz-backup.
     public static func write(_ settings: [String: Any], to url: URL) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // The file as it was just before this change (replaced each time Pixlz writes).
         let backup = url.appendingPathExtension("pixlz-backup")
-        if fm.fileExists(atPath: url.path), !fm.fileExists(atPath: backup.path) {
+        if fm.fileExists(atPath: url.path) {
+            try? fm.removeItem(at: backup)
             try fm.copyItem(at: url, to: backup)
         }
         let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
