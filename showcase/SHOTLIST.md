@@ -1,10 +1,11 @@
 # Shot list (Pixlz demo video)
 
-Two cuts come out of the same takes:
+Two cuts come out of the same takes, the 9:16 one with either of two tracks:
 
 | Cut | File | Length | For |
 |---|---|---|---|
 | 9:16 cut | `showcase/out/pixlz-9x16-draft.mp4` | 59 s | X, Reels, Shorts. Part 1 is the phone clip, whole and at real speed (17 s); Part 2 is the demo, cut on the beat of the track. |
+| 9:16 cut, other track | `showcase/out/pixlz-9x16-kooma.mp4` | 60 s | The same cut on Kooma's "Arch" (licensed through Artlist), which is slower: 140 beats a minute against 148, so five beats are taken out (the two wallet beats, the paid answer, two from the end card) to stay under a minute. |
 | 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 127 s | The submission. The demo only: every scene, at real speed, with what to look for written beside it. |
 
 Takes, rendered cuts and the music (`showcase/takes/`, `showcase/out/*.mp4`, `showcase/music.*`)
@@ -122,11 +123,15 @@ Narration (`showcase/plan.json`), one voice, ten lines:
 ## Cutting
 
 ```sh
-showcase/tts/.venv/bin/python showcase/cut.py tall|wide|all [--dry]
+showcase/tts/.venv/bin/python showcase/cut.py tall|tall-kooma|wide|all [--dry]
 ```
 
 `showcase/edit.json` is the edit: one segment per line, in order. `--dry` prints the timeline
 (where each segment and caption lands, and where the track's drop falls) without rendering.
+
+A cut can be written as another one with changes: `"like"` names that cut, `"patch"` changes
+its segments (by their `"id"`), and any other key takes the place of the same key. `tall-kooma`
+is `tall` with another track and five beats fewer (`all` renders `tall` and `wide` only).
 
 A moment in a segment is written as seconds from its start, as `"@x"` (where second x of the take
 falls) or as `"bX"` (X beats after the segment's first beat).
@@ -162,9 +167,12 @@ What the cut adds on top of the takes:
   shot is labelled as a real testnet payment; F3 carries "TEE · NEAR AI private inference"; the
   judges' cut prints the account and network.
 - **Sound**: narration levelled line to line, the app's sounds, the track, the mix at −14 LUFS
-  with peaks under −1 dB. The track is `showcase/music.mp3` (not committed; without it the cut
+  with peaks under −1 dB (measured on the encoded file and corrected). The track is `showcase/music.mp3` (not committed; without it the cut
   renders with no music). 9:16: 21 dB under the clip's voices before the drop, a 1.2 s swell
-  into it, then full, dropping 18 dB while a line is spoken. 16:9: the track starts on its drop
+  into it, then full, dropping 18 dB while a line is spoken. The Kooma cut uses
+  `showcase/music.kooma.mp3`: before its drop the track is quiet and then silent, so under the
+  clip it stays below the room's own noise and the drop comes out of near silence, on the same
+  frame. 16:9: the track starts on its drop
   and stays under the voice throughout.
 - **Speed**: Part 1 is never sped up, cut or zoomed (the push at its end aside). In the 9:16
   demo, waits are cut or sped up (the Ask wait ×24, typing ×3.4). The judges' cut plays every
@@ -189,6 +197,6 @@ themselves to the new recordings.
 
 - [ ] Optional: one more take of W1 for a clean polish with the bubble whole (one small testnet payment).
 - [ ] Check the hackathon's video rules: length, AI voice, sped-up footage, music.
-- [ ] The track is a commercial release: a platform may mute or block the post, and a submission may need licensed music.
+- [ ] The track of `pixlz-9x16-draft.mp4` and of the judges' cut is a commercial release: a platform may mute or block the post, and a submission may need licensed music. `pixlz-9x16-kooma.mp4` uses a track licensed through Artlist.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.

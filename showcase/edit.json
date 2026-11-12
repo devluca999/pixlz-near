@@ -9,14 +9,14 @@
       {"src": "H1/take-1.mov", "in": 2.2, "hit": [3.63, 3], "beats": 4, "drop": 0.0833, "dissolve": 0.1667, "sfx": [["@3.63", "thud", 0.5]]},
       {"src": "F1/take-1.mov", "hit": [3.4, 3], "beats": 6, "zoom": [0.5, 0.68, 1.7], "vo": {"line": "L1", "at": "b0", "slot": "high"}, "sfx": [["@3.40", "snap", 0.6], ["@3.67", "gulp", 0.5]]},
       {"src": "F2/take-1.mov", "hit": [0.17, 0], "beats": 2, "zoom": [0.5, 0.7, 1.7], "vo": {"line": "L2", "at": "b-0.4", "slot": "high"}, "sfx": [["b0", "coin", 0.6]]},
-      {"src": "F2/take-1.mov", "hit": [8.333, 0], "beats": 3, "zoom": [0.5, 0.52, 1.45], "sfx": [["b0", "pop"]]},
-      {"src": "F2/take-1.mov", "hit": [12.467, 0], "beats": 3, "chip": "Real testnet payment", "sfx": [["b0", "pop"]]},
+      {"id": "F2b", "src": "F2/take-1.mov", "hit": [8.333, 0], "beats": 3, "zoom": [0.5, 0.52, 1.45], "sfx": [["b0", "pop"]]},
+      {"id": "F2c", "src": "F2/take-1.mov", "hit": [12.467, 0], "beats": 3, "chip": "Real testnet payment", "sfx": [["b0", "pop"]]},
       {"src": "F3/take-1.mov", "hit": [0.433, 0], "beats": 7, "zoom": [0.5, 0.7, 1.7], "vo": {"line": "L3", "at": "b0.25", "slot": "high"}, "sfx": [["b0", "sparkle"]], "texts": [{"style": "small", "lines": ["TEE · NEAR AI private inference"], "y": 265, "size": 36, "from": "b1", "to": "b12"}]},
       {"src": "F3/take-1.mov", "hit": [3.733, 0], "beats": 5, "zoom": [0.5, 0.5, 1.3], "sfx": [["b0", "chime"]]},
       {"src": "E1/take-1.mov", "hit": [2.3, 5], "beats": 8, "vo": {"line": "L4", "at": "b0.15", "slot": "high"}, "sfx": [["@1.17", "whoosh"], ["b5", "pop"], ["b7", "ding", 0.6]]},
       {"src": "F4/take-2.mov", "in": 7.4, "beats": 3, "zoom": [0.5, 0.56, 1.45], "vo": {"line": "L5", "at": "b0.2", "slot": "low"}},
       {"src": "F4/take-2.mov", "in": 8.8, "out": 28.3, "beats": 2, "zoom": [0.5, 0.56, 1.45], "sfx": [["b0", "whoosh", 0.3]]},
-      {"src": "F4/take-2.mov", "hit": [28.333, 0], "beats": 5, "zoom": [0.5, 0.56, 1.45], "sfx": [["@28.467", "coin", 0.6]]},
+      {"id": "F4c", "src": "F4/take-2.mov", "hit": [28.333, 0], "beats": 5, "zoom": [0.5, 0.56, 1.45], "sfx": [["@28.467", "coin", 0.6]]},
       {"src": "M1/take-1.mov", "in": 3.915, "beats": 2, "zoom": [0.45, 0.8, 1.8], "vo": {"line": "L6", "part": [0, 1.38], "at": "b0.5", "slot": "low", "plate": true}},
       {"src": "M1/take-1.mov", "hit": [5.533, 2], "beats": 4, "sfx": [["@5.27", "snap", 0.6], ["@5.533", "chime"]]},
       {"src": "M2/take-3.mov", "in": 4.0, "beats": 2, "zoom": [0.5, 0.5, 1.2], "chip": "Ask your memory"},
@@ -33,8 +33,19 @@
       {"src": "C3/take-1.mov", "in": 0.87, "out": 3.6, "beats": 2, "zoom": [0.46, 0.47, 1.2], "chip": "Reply from the pet"},
       {"src": "C3/take-1.mov", "hit": [4.12, 0], "beats": 2, "zoom": [0.66, 0.3, 1.45], "sfx": [["b0", "chime"]]},
       {"src": "D1/take-1.mov", "hit": [1.7, 3], "beats": 8, "vo": {"line": "L8", "at": "b0.1", "slot": "high"}, "sfx": [["@0.9", "whoosh"], ["@1.7", "pop"], ["@2.3", "whoosh"], ["@3.3", "pop"]], "texts": [{"style": "small", "lines": ["iPhone: coming soon"], "y": 1140, "size": 34, "from": "b1"}]},
-      {"src": "E2/take-1.mov", "hit": [2.3, 3], "beats": 10, "vo": {"line": "L9", "at": "b1.7", "captions": false}, "sfx": [[0.0, "whoosh"], ["b3", "sparkle"], ["b7", "ding", 0.6]], "texts": [{"lines": ["Which Pixl should", "I make next? 👇"], "keywords": ["Pixl"], "y": 1150, "size": 62, "from": "b4.5"}]}
+      {"id": "E2", "src": "E2/take-1.mov", "hit": [2.3, 3], "beats": 10, "vo": {"line": "L9", "at": "b1.7", "captions": false}, "sfx": [[0.0, "whoosh"], ["b3", "sparkle"], ["b7", "ding", 0.6]], "texts": [{"lines": ["Which Pixl should", "I make next? 👇"], "keywords": ["Pixl"], "y": 1150, "size": 62, "from": "b4.5"}]}
     ]
+  },
+  "tall-kooma": {
+    "like": "tall",
+    "out": "pixlz-9x16-kooma.mp4",
+    "music": {"src": "music.kooma.mp3", "drop": 13.752, "beat": 0.428571, "bar": 1.714286, "bars": 31, "bed": -26, "swell": 1.2, "full": 3, "under": -15},
+    "patch": {
+      "F2b": {"beats": 2},
+      "F2c": {"beats": 2},
+      "F4c": {"beats": 4},
+      "E2": {"beats": 8, "sfx": [[0.0, "whoosh"], ["b3", "sparkle"], ["b6", "ding", 0.6]], "texts": [{"lines": ["Which Pixl should", "I make next? 👇"], "keywords": ["Pixl"], "y": 1150, "size": 62, "from": "b3.5"}]}
+    }
   },
   "wide": {
     "size": [1920, 1080],

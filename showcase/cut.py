@@ -629,6 +629,19 @@ def mix(total, sounds, music=None, drop_at=0.0):
     return (out + voice[:, None]) * 0.5                         # headroom: the level is set when it is encoded
 
 
+def variant(edit, name):
+    """A cut written as another one with changes: "like" names that cut, "patch" changes its
+    segments (found by their "id"), and every other key replaces the same key."""
+    cut = edit[name]
+    if "like" not in cut:
+        return cut
+    base = json.loads(json.dumps(variant(edit, cut["like"])))
+    for sid, change in cut.get("patch", {}).items():
+        next(s for s in base["segments"] if s.get("id") == sid).update(change)
+    base.update({k: v for k, v in cut.items() if k not in ("like", "patch")})
+    return base
+
+
 def render(name, cut, plan, dry=False):
     W, H = cut["size"]
     wide = W > H
@@ -686,18 +699,20 @@ def render(name, cut, plan, dry=False):
     seen = subprocess.run([FFMPEG, "-hide_banner", "-nostats"] + raw + ["-af", "ebur128=peak=true", "-f", "null", "-"],
                           capture_output=True, text=True).stderr
     loud = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", seen)[-1])
-    gain = -14 - loud
-    for _ in range(3):                                     # the limiter and the encoder take a little off: measure, correct
-        target = f"volume={gain:.2f}dB,alimiter=limit=0.89:level=disabled"   # -14 LUFS, peaks under -1 dB
+    gain, limit = -14 - loud, -1.0
+    for _ in range(4):                                     # the limiter and the encoder change both a little: measure, correct
+        target = f"volume={gain:.2f}dB,alimiter=limit={10 ** (limit / 20):.3f}:level=disabled"   # -14 LUFS, peaks under -1 dB
         subprocess.run([FFMPEG, "-v", "error", "-y", "-i", silent] + raw + ["-af", target, "-ar", str(SR), "-ac", "2", "-c:v", "copy",
                         "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.3f}", "-movflags", "+faststart", final], check=True)
-        seen = subprocess.run([FFMPEG, "-hide_banner", "-nostats", "-i", final, "-vn", "-af", "ebur128", "-f", "null", "-"],
+        seen = subprocess.run([FFMPEG, "-hide_banner", "-nostats", "-i", final, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
                               capture_output=True, text=True).stderr
         got = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", seen)[-1])
-        if abs(got + 14) < 0.15:
+        peak = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", seen)[-1])
+        if abs(got + 14) < 0.15 and peak <= -1.0:
             break
         gain += -14 - got
-    print(f"  {got:.1f} LUFS")
+        limit -= max(0.0, peak + 1.05)
+    print(f"  {got:.1f} LUFS, peaks at {peak:.1f} dB")
     os.remove(wav)
     os.remove(silent)
     print(f"  wrote {final}")
@@ -709,4 +724,4 @@ if __name__ == "__main__":
     edit = json.load(open(os.path.join(HERE, "edit.json")))
     plan = json.load(open(os.path.join(HERE, "plan.json")))
     for name in (["tall", "wide"] if which == "all" else [which]):
-        render(name, edit[name], plan, dry="--dry" in sys.argv)
+        render(name, variant(edit, name), plan, dry="--dry" in sys.argv)
