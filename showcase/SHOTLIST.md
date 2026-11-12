@@ -192,9 +192,9 @@ The intro is `showcase/takes/intro-frogg.mp4`: the phone clip turned upright, 10
 with its first sound track only (`ffmpeg -i clip.mov -map 0:v:0 -map 0:a:0 -c:v libx264 -crf 15
 -c:a aac`). `push` reads the picture's stored size, so a rotated clip has to be made upright first.
 
-Fonts: captions use Inter and the labels Silkscreen when `showcase/fonts/Inter-SemiBold.ttf`,
-`Inter-Regular.ttf` and `Silkscreen-Regular.ttf` are present (both are OFL). Without them the cut
-falls back to Helvetica Neue and Menlo.
+Fonts: captions use Inter and the labels Silkscreen, from `showcase/fonts/` (`Inter-SemiBold.ttf`,
+`Inter-Regular.ttf`, `Silkscreen-Regular.ttf`; both families are OFL, and their licence texts are
+beside them). Without those files the cut falls back to Helvetica Neue and Menlo.
 
 Narration: `showcase/narrate.py` (Chatterbox, an open text-to-speech model, run locally; nothing
 is sent anywhere). The voice is synthetic. `voice` in `plan.json` sets the read: the reference
@@ -207,8 +207,8 @@ themselves to the new recordings.
 
 ## Before publishing
 
-- [ ] Optional: one more take of W1 for a clean polish with the bubble whole (one small testnet payment).
-- [ ] Check the hackathon's video rules: length, AI voice, sped-up footage, music.
-- [ ] The track of `pixlz-9x16-draft.mp4` and of the judges' cut is a commercial release: a platform may mute or block the post, and a submission may need licensed music. `pixlz-9x16-kooma.mp4` uses a track licensed through Artlist, but it is the earlier, faster cut.
+- [x] W1 stays as it is: no further take. In the take used, the pet's "Verified in TEE" bubble touches the frame's edge; that is cosmetic.
+- [x] The hackathon's rules allow an AI voice and a commercial track (confirmed on Nov 12, 2026).
+- [ ] The track of `pixlz-9x16-draft.mp4` and of the judges' cut is a commercial release. The hackathon allows it, but a platform may still mute or block the post. `pixlz-9x16-kooma.mp4` uses a track licensed through Artlist, but it is the earlier, faster cut.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.
