@@ -246,11 +246,12 @@ def panel(canvas, p, brand):
 
 # ---------------------------------------------------------------- sound
 
-def read_audio(path, start=None, seconds=None, channels=1):
+def read_audio(path, start=None, seconds=None, channels=1, clean=None):
+    """A file's sound as float samples; "clean" is an ffmpeg filter chain to put it through first."""
     cmd = [FFMPEG, "-v", "error"]
     if start is not None:
         cmd += ["-ss", str(start), "-t", str(seconds)]
-    cmd += ["-i", path, "-vn", "-ac", str(channels), "-ar", str(SR), "-f", "f32le", "-"]
+    cmd += ["-i", path, "-vn"] + (["-af", clean] if clean else []) + ["-ac", str(channels), "-ar", str(SR), "-f", "f32le", "-"]
     sig = np.frombuffer(subprocess.run(cmd, capture_output=True).stdout, dtype=np.float32).copy()
     return sig if channels == 1 else sig.reshape(-1, channels)
 
@@ -573,7 +574,7 @@ def soundtrack(m, n, drop_at, voice, total):
     Before the drop it is a bed, "bed" dB under the voice's level, that swells over the last
     "swell" seconds. From the drop it is at "full" (dB against the voice's level) and goes down to
     "under" while a narration line is spoken. Past the track's full section ("bars" bars from the
-    drop) it goes round to the drop again."""
+    drop) it goes round to the drop again, unless "loop" is false: then it plays on to its own end."""
     path = os.path.join(HERE, m["src"])
     if not os.path.exists(path):
         print(f"  no showcase/{m['src']}: this cut goes without music")
@@ -584,9 +585,9 @@ def soundtrack(m, n, drop_at, voice, total):
     trk /= rms(trk[d0:d0 + lap])                            # the full section at level 1
     pos = np.arange(n) + d0 - round(drop_at * SR)           # where in the track each sample is
     into = np.where(pos >= d0, (pos - d0) % lap, 0)
-    idx = np.where(pos >= d0 + lap, d0 + into, pos)
+    idx = np.where(pos >= d0 + lap, d0 + into, pos) if m.get("loop", True) else pos     # "loop": false plays the track on to its own end
     sig = trk[np.clip(idx, 0, len(trk) - 1)] * ((idx >= 0) & (idx < len(trk)))[:, None]
-    seam, xf = (pos >= d0 + lap) & (into < 0.012 * SR), 0.012 * SR
+    seam, xf = (pos >= d0 + lap) & (into < 0.012 * SR) & m.get("loop", True), 0.012 * SR
     if seam.any():                                          # each time round, a short crossfade out of what came next
         a = (into[seam] / xf)[:, None]
         sig[seam] = sig[seam] * a + trk[np.clip(idx[seam] + lap, 0, len(trk) - 1)] * (1 - a)
@@ -619,10 +620,13 @@ def mix(total, sounds, music=None, drop_at=0.0):
             add(voice, what, at, gain)
         elif kind == "sfx":
             add(out, synth(what), at, gain)
-        else:                                                   # the take's own sound: a number, or {gain, out: seconds of fade-out}
-            g = gain if isinstance(gain, dict) else {"gain": gain}
-            sig = read_audio(os.path.join(TAKES, what["src"]), what["in"], what["out"] - what["in"])
+        else:                                                   # the take's own sound: a number, or {gain, out: seconds of fade-out,
+            g = gain if isinstance(gain, dict) else {"gain": gain}  #   clean: ffmpeg filters, lift: [[from, to, dB], …] in the take's seconds}
+            sig = read_audio(os.path.join(TAKES, what["src"]), what["in"], what["out"] - what["in"], clean=g.get("clean"))
             k = np.arange(len(sig))
+            for a, b, db in g.get("lift", []):                  # a quiet speaker brought up: 0.12 s in and out, nothing cut or moved
+                t = k / SR + what["in"]
+                sig = sig * 10 ** (db * np.clip(np.minimum(t - a, b - t) / 0.12 + 1, 0, 1) / 20)
             add(out, sig * np.minimum(1, np.minimum(k / (0.08 * SR), (len(sig) - k) / (g.get("out", 0.08) * SR))), at, g["gain"])
     if music:
         out += soundtrack(music, n, drop_at, voice, total)

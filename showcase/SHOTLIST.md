@@ -4,8 +4,8 @@ Two cuts come out of the same takes, the 9:16 one with either of two tracks:
 
 | Cut | File | Length | For |
 |---|---|---|---|
-| 9:16 cut | `showcase/out/pixlz-9x16-draft.mp4` | 59 s | X, Reels, Shorts. Part 1 is the phone clip, whole and at real speed (17 s); Part 2 is the demo, cut on the beat of the track. |
-| 9:16 cut, other track | `showcase/out/pixlz-9x16-kooma.mp4` | 60 s | The same cut on Kooma's "Arch" (licensed through Artlist), which is slower: 140 beats a minute against 148, so five beats are taken out (the two wallet beats, the paid answer, two from the end card) to stay under a minute. |
+| 9:16 cut | `showcase/out/pixlz-9x16-draft.mp4` | 85 s | X, Reels, Shorts. Part 1 is the phone clip, whole and at real speed (17 s); Part 2 is the demo, cut on the beat of the track, with the narration at a speaking pace and no take sped up. |
+| 9:16 cut, other track | `showcase/out/pixlz-9x16-kooma.mp4` | 60 s | An earlier, faster version of the cut on Kooma's "Arch" (licensed through Artlist; 140 beats a minute against 148). Not rendered again since the narration was slowed and the scenes were given more room: `tall-kooma` follows the new layout, but nobody has checked how it falls on that track. |
 | 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 127 s | The submission. The demo only: every scene, at real speed, with what to look for written beside it. |
 
 Takes, rendered cuts and the music (`showcase/takes/`, `showcase/out/*.mp4`, `showcase/music.*`)
@@ -25,8 +25,10 @@ It opens like an ordinary reel and turns into the demo on the track's beat drop.
   size, tilt and place of the app's Frogg in H1's first frame. The display's glare is taken down
   during the push only. A 5-frame dissolve ends on the drop.
 - **Part 2** is the demo on a grid of beats counted from the drop: every cut is on a beat, and
-  each payoff (tongue snap, coin, card, title, Deny) is placed on one with `hit`. Waits are sped
-  up or cut. Speed changes are only ever made in Part 2.
+  each payoff (tongue snap, coin, card, title, Deny) is placed on one with `hit`. Waits are cut,
+  never sped up: every take plays at real speed (H1 alone runs 10 % fast, so that the landing
+  falls on its beat). The narration starts about three seconds after the drop, once Frogg has
+  landed, and every line ends before the scene it belongs to does.
 
 ## Scenes
 
@@ -131,7 +133,7 @@ showcase/tts/.venv/bin/python showcase/cut.py tall|tall-kooma|wide|all [--dry]
 
 A cut can be written as another one with changes: `"like"` names that cut, `"patch"` changes
 its segments (by their `"id"`), and any other key takes the place of the same key. `tall-kooma`
-is `tall` with another track and five beats fewer (`all` renders `tall` and `wide` only).
+is `tall` with another track (`all` renders `tall` and `wide` only).
 
 A moment in a segment is written as seconds from its start, as `"@x"` (where second x of the take
 falls) or as `"bX"` (X beats after the segment's first beat).
@@ -151,10 +153,10 @@ falls) or as `"bX"` (X beats after the segment's first beat).
 | `texts` | `[{lines, style, y, from, to}]`: words on the picture. `ig`: white on black boxes, as typed in the Instagram app; `shadow`: like the captions; `small`: a note |
 | `chip` | 9:16 only: the feature label, top left |
 | `panel` | 16:9 only: kicker, title, body and proof lines beside the take |
-| `audio` | keep the source's own sound: a gain, or `{gain, out}` to fade it out over the last seconds |
+| `audio` | keep the source's own sound: a gain, or `{gain, out, clean, lift}`. `out` fades it out over the last seconds; `clean` is a chain of ffmpeg filters run on it first (rumble and room noise off); `lift: [[from, to, dB], …]` brings up a quiet speaker between those seconds of the take |
 
 For the whole cut: `music` (`src`, the `drop`'s second in the track, `beat` and `bar` lengths,
-`bars` in the section that loops, and levels in dB against the voice: `bed` before the drop,
+`bars` in the section that loops (`"loop": false` plays the track on to its own end instead), and levels in dB against the voice: `bed` before the drop,
 `full` after it, `under` while a line is spoken), `snap` (move every cut to the nearest beat),
 `sfx_gain`.
 
@@ -163,21 +165,27 @@ What the cut adds on top of the takes:
 - **Captions**, burned in, 3 to 5 words at a time with the key words in green, timed to the
   voice (`plan.json` has the second each phrase starts; rules in `CAPTIONS.md`). 9:16: bold white
   with a dark edge and shadow, above the bottom 20 %. 16:9: pills at the bottom.
+- **Framing**: a scene with a window in it (the memory panel, the draft, the Terminal) is shown
+  at the full width of the recording, so nothing the narration talks about is cut off. Only
+  scenes where Frogg or a single card is the whole subject are punched in.
 - **Proof on screen**: the wallet card and the attestation card are punched in; the explorer
   shot is labelled as a real testnet payment; F3 carries "TEE · NEAR AI private inference"; the
   judges' cut prints the account and network.
 - **Sound**: narration levelled line to line, the app's sounds, the track, the mix at −14 LUFS
   with peaks under −1 dB (measured on the encoded file and corrected). The track is `showcase/music.mp3` (not committed; without it the cut
   renders with no music). 9:16: 21 dB under the clip's voices before the drop, a 1.2 s swell
-  into it, then full, dropping 18 dB while a line is spoken. The Kooma cut uses
+  into it, then full, dropping 18 dB while a line is spoken. The track's full section is 32
+  bars and the demo is longer, so it goes round once; the seam is put on a scene change (the
+  cut into C3). The clip's voices: rumble and room noise are filtered off, the whole clip is
+  raised, and the quieter of the two speakers is lifted another 7 to 10 dB while speaking, so
+  both sit at about the narration's level. Nothing in the clip is cut or moved. The Kooma cut uses
   `showcase/music.kooma.mp3`: before its drop the track is quiet and then silent, so under the
   clip it stays below the room's own noise and the drop comes out of near silence, on the same
   frame. 16:9: the track starts on its drop
   and stays under the voice throughout.
-- **Speed**: Part 1 is never sped up, cut or zoomed (the push at its end aside). In the 9:16
-  demo, waits are cut or sped up (the Ask wait ×24, typing ×3.4). The judges' cut plays every
-  take at real speed and cuts the waits.
-- **The end card** (E2): the title holds for 2.8 s over "Which Pixl should I make next?". No
+- **Speed**: Part 1 is never sped up, cut or zoomed (the push at its end aside). Both
+  demos play every take at real speed and cut the waits (in the 9:16 one, H1 runs 10 % fast).
+- **The end card** (E2): the title holds for 4.9 s, the last 2.2 s of it over "Which Pixl should I make next?". No
   repository link: it goes in the post.
 
 The intro is `showcase/takes/intro-frogg.mp4`: the phone clip turned upright, 1080 × 1920, 30 fps,
@@ -189,7 +197,11 @@ Fonts: captions use Inter and the labels Silkscreen when `showcase/fonts/Inter-S
 falls back to Helvetica Neue and Menlo.
 
 Narration: `showcase/narrate.py` (Chatterbox, an open text-to-speech model, run locally; nothing
-is sent anywhere). The voice is synthetic. If the hackathon's rules ask for a human voice, record
+is sent anywhere). The voice is synthetic. `voice` in `plan.json` sets the read: the reference
+recording it copies (`voice-slow.wav`, a slowed one, which is what brings the pace down to
+150 to 180 words a minute), how lively it is, and a last small slow-down. A line can carry `say`
+(what is spoken when it differs from the caption: "Near" for NEAR, so that it is said as a word,
+and "Pixels" for Pixlz) and `seed` (another reading of the same line). If the hackathon's rules ask for a human voice, record
 the ten lines as `showcase/out/vo/L0.wav … L9.wav` and render again: the captions re-time
 themselves to the new recordings.
 
@@ -197,6 +209,6 @@ themselves to the new recordings.
 
 - [ ] Optional: one more take of W1 for a clean polish with the bubble whole (one small testnet payment).
 - [ ] Check the hackathon's video rules: length, AI voice, sped-up footage, music.
-- [ ] The track of `pixlz-9x16-draft.mp4` and of the judges' cut is a commercial release: a platform may mute or block the post, and a submission may need licensed music. `pixlz-9x16-kooma.mp4` uses a track licensed through Artlist.
+- [ ] The track of `pixlz-9x16-draft.mp4` and of the judges' cut is a commercial release: a platform may mute or block the post, and a submission may need licensed music. `pixlz-9x16-kooma.mp4` uses a track licensed through Artlist, but it is the earlier, faster cut.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.
