@@ -322,14 +322,19 @@ final class BubbleMenu {
             ListMenuView.Row(id: "req.\(r.id)", title: "\(r.project): \(r.summary)", icon: "warn", trailing: "needs you")
         }
         let waiting = Set(agents.hub.requests.map(\.sessionID))
-        rows += agents.hub.list.filter { !waiting.contains($0.id) }.map { s in
-            ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: nil, trailing: age(s.lastHeard), enabled: false)
+        // every session (waiting ones too): Chat opens its panel
+        rows += agents.hub.list.map { s in
+            ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: nil, trailing: "Chat · " + age(s.lastHeard))
         }
         if agents.hub.sessions.isEmpty {
             rows.append(ListMenuView.Row(id: "none", title: "No Claude Code sessions right now", icon: "info", enabled: false))
         }
         rows += agents.extraRows?() ?? []
-        rows += [ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
+        if agents.hooksOutdated {
+            rows.append(ListMenuView.Row(id: "update", title: "Update the hooks (so it can wait for your reply)", icon: "warn", trailing: "↵"))
+        }
+        rows += [ListMenuView.Row(id: "window", title: "Reply window when a turn ends", icon: nil, trailing: "\(Int(agents.replyWindow)) s"),
+                 ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
                  ListMenuView.Row(id: "alerts", title: "Agent alerts", icon: nil, trailing: agents.alertsOn ? "on" : "off"),
                  ListMenuView.Row(id: "cloud", title: "Cloud sessions: open claude.ai/code", icon: nil),
                  ListMenuView.Row(id: "disconnect", title: "Disconnect Claude Code", icon: nil)]
@@ -338,7 +343,17 @@ final class BubbleMenu {
             guard let self else { return }
             switch row.id {
             case let id where id.hasPrefix("req."): self.showRequest(String(id.dropFirst(4)))
+            case let id where id.hasPrefix("ses."): self.closeList(); self.app.chats.open(String(id.dropFirst(4)))
             case "answer": agents.answerHere.toggle(); self.showAgents(near: nil)
+            case "window":
+                // 30 → 60 → 120 → 300 → 30 s
+                let steps: [Double] = [30, 60, 120, 300]
+                agents.nextReplyWindow(steps)
+                self.showAgents(near: nil)
+            case "update":
+                if let why = agents.installHooks() { self.app.notify(.agentsError(why)) }
+                else { self.app.notify(.agents("Hooks updated. New and resumed sessions can now wait for your reply.")) }
+                self.showAgents(near: nil)
             case "alerts": agents.alertsOn.toggle(); self.showAgents(near: nil)
             case "cloud": self.closeList(); NSWorkspace.shared.open(URL(string: "https://claude.ai/code")!)
             case "disconnect":

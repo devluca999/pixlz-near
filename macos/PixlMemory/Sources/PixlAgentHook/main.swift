@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import PixlAgents
 
 // Claude Code runs this for each hook (SPEC §16.1): it hands the event to Pixl Memory over
 // a Unix socket and prints the app's answer, if any. When the app isn't running it prints
@@ -15,7 +14,8 @@ let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 guard fd >= 0 else { exit(0) }
 var addr = sockaddr_un()
 addr.sun_family = sa_family_t(AF_UNIX)
-let path = AgentSocket.path()
+// the app's socket (AgentSocket.path in PixlAgents; spelled out so this helper links nothing but Foundation)
+let path = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/PixlMemory/agents.sock").path
 _ = withUnsafeMutableBytes(of: &addr.sun_path) { buf in
     path.utf8CString.withUnsafeBytes { buf.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(buf.count - 1))) }
 }
@@ -24,8 +24,11 @@ let connected = withUnsafePointer(to: &addr) {
 }
 guard connected == 0 else { exit(0) }
 
-// A permission request may wait for you (up to 55 s in the app); everything else is answered at once.
-var wait = timeval(tv_sec: 58, tv_usec: 0)
+// A permission request may wait for you (up to 55 s in the app), and a finished turn (Stop) for
+// your reply (the reply window, at most 300 s); everything else is answered at once.
+let event = (object as? [String: Any])?["hook_event_name"] as? String
+// Every other event (PostToolUse carrying your message too) never slows Claude down: 1 s at most.
+var wait = timeval(tv_sec: event == "Stop" ? 325 : event == "PermissionRequest" ? 58 : 1, tv_usec: 0)
 setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
 setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
 var sent = 0

@@ -12,11 +12,16 @@ public struct HookEvent: Sendable, Equatable {
     public var toolName: String?       // PreToolUse, PostToolUse, PermissionRequest
     public var toolInput: [String: String]
     public var message: String?        // Notification
+    public var transcriptPath: String? // transcript_path (every event)
+    public var stopHookActive: Bool    // stop_hook_active (Stop): already continuing because a Stop hook blocked
+    public var lastAssistantMessage: String?  // last_assistant_message (Stop): its final reply this turn
 
     public init(name: String, sessionID: String, cwd: String = "", prompt: String? = nil, toolName: String? = nil,
-                toolInput: [String: String] = [:], message: String? = nil) {
+                toolInput: [String: String] = [:], message: String? = nil, transcriptPath: String? = nil, stopHookActive: Bool = false) {
         self.name = name; self.sessionID = sessionID; self.cwd = cwd; self.prompt = prompt
         self.toolName = toolName; self.toolInput = toolInput; self.message = message
+        self.transcriptPath = transcriptPath; self.stopHookActive = stopHookActive
+        self.lastAssistantMessage = nil
     }
 
     /// From the raw stdin JSON. Nil when it isn't a hook event Pixlz understands.
@@ -30,7 +35,10 @@ public struct HookEvent: Sendable, Equatable {
             }
         }
         self.init(name: name, sessionID: id, cwd: o["cwd"] as? String ?? "", prompt: o["prompt"] as? String,
-                  toolName: o["tool_name"] as? String, toolInput: input, message: o["message"] as? String)
+                  toolName: o["tool_name"] as? String, toolInput: input, message: o["message"] as? String,
+                  transcriptPath: (o["transcript_path"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                  stopHookActive: o["stop_hook_active"] as? Bool ?? false)
+        lastAssistantMessage = (o["last_assistant_message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -43,6 +51,12 @@ public struct AgentSession: Sendable, Equatable, Identifiable {
     public var doing: String            // "Running swift test", "Editing App.swift", "Done"
     public var state: State
     public var lastHeard: Date
+    /// Its transcript (`~/.claude/projects/…/<id>.jsonl`), from the latest event.
+    public var transcriptPath: String? = nil
+    /// SessionEnd came: nothing is listening; a message has to resume it.
+    public var ended = false
+    /// Its last reply (Stop's `last_assistant_message`): the transcript file can lag behind.
+    public var lastReply: String? = nil
 }
 
 public struct AgentRequest: Sendable, Equatable, Identifiable {
@@ -70,6 +84,11 @@ public struct AgentHub: Sendable {
     public private(set) var sessions: [String: AgentSession] = [:]
     public private(set) var requests: [AgentRequest] = []   // oldest first
     private var counter = 0
+    /// Messages you typed to each session, oldest first, with how far they got (AgentChat.swift).
+    public internal(set) var outbox: [String: [OutboxEntry]] = [:]
+    /// Sessions whose Stop hook Pixlz is holding open (it finished a turn and waits for a reply).
+    public internal(set) var heldStops: [String: Date] = [:]
+    var outboxCounter = 0
 
     public init() {}
 
@@ -87,16 +106,20 @@ public struct AgentHub: Sendable {
     public mutating func receive(_ e: HookEvent, at now: Date) -> String? {
         var s = sessions[e.sessionID] ?? AgentSession(id: e.sessionID, cwd: e.cwd, prompt: nil, doing: "Starting", state: .idle, lastHeard: now)
         if !e.cwd.isEmpty { s.cwd = e.cwd }
+        if let t = e.transcriptPath { s.transcriptPath = t }
         s.lastHeard = now
+        if e.name != "SessionEnd" { s.ended = false }
         var newRequest: String?
         switch e.name {
         case "SessionStart":
             s.doing = "Ready"
             s.state = .idle
         case "SessionEnd":
-            sessions[e.sessionID] = nil
+            // kept (until it times out) so you can still chat to it: a message resumes it
             requests.removeAll { $0.sessionID == e.sessionID }
-            return nil
+            s.ended = true
+            s.state = .idle
+            s.doing = "Closed · a message resumes it"
         case "UserPromptSubmit":
             s.prompt = e.prompt.map(Self.firstLine)
             s.doing = "Thinking"
@@ -113,6 +136,7 @@ public struct AgentHub: Sendable {
             s.state = .working
         case "Stop":
             answeredElsewhere(e.sessionID)
+            if let r = e.lastAssistantMessage { s.lastReply = r }
             s.doing = "Done · waiting for your next prompt"
             s.state = .idle
         case "PermissionRequest":
