@@ -334,7 +334,7 @@ final class AgentController {
     /// Your message (only ever from the chat panel's field): into the outbox, then out the first
     /// way that's open. Returns its id.
     @discardableResult
-    func send(_ message: TypedMessage, to sid: String) -> String {
+    func send(_ message: TypedMessage, to sid: String, mayResume: Bool = true) -> String {
         let id = hub.queue(message, for: sid, at: Date())
         switch hub.route(for: sid, at: Date()) {
         case .now:
@@ -348,7 +348,7 @@ final class AgentController {
         case .nextStep:
             Debug.log("agents: message queued for \(hub.sessions[sid]?.project ?? "?") (next step)")
         case .resume:
-            resume(sid)
+            if mayResume { resume(sid) } else { Debug.log("agents: message waits for \(hub.sessions[sid]?.project ?? "?") (not resumed from here)") }
         }
         onChat?(sid)
         changed()
