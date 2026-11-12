@@ -18,7 +18,7 @@ import Testing
         hub.receive(HookEvent(name: "Stop", sessionID: "a"), at: t0)
         #expect(hub.sessions["a"]?.state == .idle)
         hub.receive(HookEvent(name: "SessionEnd", sessionID: "a"), at: t0)
-        #expect(hub.sessions.isEmpty)
+        #expect(hub.sessions["a"]?.ended == true && hub.sessions["a"]?.state == .idle)   // kept: a message resumes it
     }
 
     @Test func aRequestWaitsUntilAnsweredHereOrInTheTerminal() {

@@ -6,9 +6,14 @@ import Foundation
 public enum HookSettings {
     public static let marker = "pixl-agent-hook"
     /// Tool events take a matcher ("*" = every tool); the others don't.
+    /// The longest reply window Pixlz offers when a session finishes a turn (Settings).
+    public static let maxReplyWindow = 300
+    /// Stop is held while you reply, so its timeout outlasts the longest reply window (Claude Code
+    /// cancels a hook at its timeout and carries on). PostToolUse is answered at once.
     public static let events: [(name: String, toolMatcher: Bool, timeout: Int)] = [
         ("SessionStart", false, 10), ("SessionEnd", false, 10), ("UserPromptSubmit", false, 10),
-        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("PostToolUseFailure", true, 10), ("Stop", false, 330), ("Notification", false, 10),
+        ("PreToolUse", true, 10), ("PostToolUse", true, 10), ("PostToolUseFailure", true, 10),
+        ("Stop", false, maxReplyWindow + 30), ("Notification", false, 10),
         ("PermissionRequest", true, 60),
     ]
 
@@ -39,6 +44,15 @@ public enum HookSettings {
                         (hookPath.map { (h["command"] as? String) == command(hookPath: $0) } ?? true)
                 }
             } == true
+        }
+    }
+
+    /// Installed, but from an older Pixlz (a Stop timeout too short to hold for a reply).
+    public static func outdated(in settings: [String: Any]) -> Bool {
+        guard let hooks = settings["hooks"] as? [String: Any], let stop = hooks["Stop"] as? [Any] else { return false }
+        return stop.contains { e in
+            guard isPixlz(e), let hs = (e as? [String: Any])?["hooks"] as? [[String: Any]] else { return false }
+            return hs.contains { ($0["timeout"] as? Int ?? 0) < maxReplyWindow + 30 }
         }
     }
 

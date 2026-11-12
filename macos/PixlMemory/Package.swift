@@ -20,10 +20,11 @@ let package = Package(
         .target(name: "PixlBridge"),
         // Chrome starts this for the extension (native messaging); it relays to the service and the app.
         .executableTarget(name: "PixlNativeHost", dependencies: ["PixlBridge"]),
-        // Agent mode: Claude Code sessions from its hooks, and the hooks' settings (no UI, fully testable).
+        // Agent mode: Claude Code sessions from its hooks, the hooks' settings, the outbox and the
+        // transcript reader (testable), and the chat panel's text field (the only source of messages).
         .target(name: "PixlAgents"),
         // Claude Code runs this for each hook; it relays the event to the app and prints the answer.
-        .executableTarget(name: "PixlAgentHook", dependencies: ["PixlAgents"]),
+        .executableTarget(name: "PixlAgentHook"),
         // The overlay app: panels, Accessibility, motion, menus.
         .executableTarget(name: "PixlMemory", dependencies: ["PixlMemoryKit", "PixlzCore", "PixlBridge", "PixlAgents",
                                                          .product(name: "PixlTravel", package: "PixlzCore")]),

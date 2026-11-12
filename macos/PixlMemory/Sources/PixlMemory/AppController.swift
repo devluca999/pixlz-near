@@ -49,6 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let service = ServiceLauncher()
     lazy var travel = TravelController(app: self)
     lazy var agents = AgentController(app: self)
+    lazy var chats = AgentChats(app: self)
     /// Agent mode's "Chat with Claude" through the Anthropic API (the key in .env.local).
     let apiChat = APIChatController()
     lazy var presence = PresenceController(app: self)
@@ -158,7 +159,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // bridge and the service with the first: it doesn't start its own
         let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil
         if !secondCopy { bridge.start() }
-        if !secondCopy && !CommandLine.arguments.contains("--selftest") { agents.start() }
+        if !secondCopy && !CommandLine.arguments.contains("--selftest") { agents.start(); _ = chats }   // chats: messages and finished turns
         if !secondCopy { Task { @MainActor in
             if let why = await service.ensureRunning() {
                 Debug.log("service: \(why)")
