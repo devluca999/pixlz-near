@@ -56,6 +56,7 @@ enum E2EState {
                 case "game":
                     if let k = info["kind"].flatMap(GameController.Kind.init(rawValue:)) { app.game.start(k, invite: info["invite"] == "1") } else { app.game.start() }
                 case "bonk": _ = app.game.clickedPet()
+                case "chat": app.chats.open(info["id"] ?? "")
                 case "skins": app.menu.showSkins()
                 case "pickskin":
                     if let c = app.menu.skinCard, let i = c.picker.index(of: info["id"] ?? "") { c.picker.pick(i) } else { Debug.log("e2e: no skin card") }

@@ -1,5 +1,5 @@
 import AppKit
-import PixlAgents
+@_spi(DeviceInput) import PixlAgents
 import PixlMemoryKit
 import PixlTravel
 import PixlzCore
@@ -153,9 +153,18 @@ final class TravelController {
         }
         if let r = pairingController.verifiedReply(body, from: peer) {
             let via = MosaicoFeed.quickReplies.contains(r.text) ? "quick reply on the Mosaico" : "dictated on the Mosaico"
-            let result = app.agents.reply(r.id, r.text, via: via)
-            if result == .queued { queuedFrom[r.id] = peer }   // tell it when it's delivered
-            let state = result == .sent ? "sent" : result == .queued ? "queued" : "failed"
+            // your words, signed by the paired device: in through the device door (DeviceInput).
+            // The Mosaico can't show "may still be open in a terminal", so from here a session
+            // that might be open is never resumed: the message waits for its next step instead.
+            let state: String
+            if let m = TypedMessage.fromPairedDevice(r.text, via: via), app.agents.hub.sessions[r.id] != nil {
+                let id = app.agents.send(m, to: r.id, mayResume: !app.agents.mayBeOpenElsewhere(r.id))
+                let status = app.agents.hub.outbox[r.id]?.first { $0.id == id }?.status
+                state = status == .delivered ? "sent" : status == .failed ? "failed" : "queued"
+                if state == "queued" { queuedFrom[r.id] = peer }   // tell it when it's delivered
+            } else {
+                state = "failed"
+            }
             Debug.log("travel: \(peer.deviceName) replied \"\(r.text.prefix(40))\" (\(state))")
             // Tell the Mosaico what became of it, so its banner is true.
             if let out = try? JSONSerialization.data(withJSONObject: ["replyResult": ["id": r.id, "state": state]]) {

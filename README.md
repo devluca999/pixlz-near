@@ -95,6 +95,20 @@ Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Pytho
 
 Full details: [`memory/README.md`](memory/README.md).
 
+## Agents: watch and message your Claude Code sessions
+
+Agent mode (SPEC §16) lists the Claude Code sessions on this Mac, answers their permission requests, and now talks back: open **Chat** on a session to read its transcript and send it a message. Connect once: double-click the Pixl → **Agents** → **Connect Claude Code** (it adds Pixlz hooks to `~/.claude/settings.json`, with your yes; connected before this version? the list shows **Update the hooks**).
+
+| Do | See |
+|---|---|
+| Double-click the Pixl → **Agents**, pick a session (**Chat**) | a panel beside the Pixl: the session's transcript (auto-refreshing), what it's doing, and a field. Under the field: how your message will go |
+| While it works, type a message and press Return (**"Sends at its next step"**) | at its next tool call, Claude gets it as context ("Message from the user via Pixlz: …"); the message shows *delivered (at its next step)* |
+| When it finishes a turn, the Pixl asks **"<project>: done. Anything else?"** → **Reply** (or type in an open panel: **"Sends now"**) | your reply goes straight in and it carries on. No reply within the window (60 s by default; **Reply window** in the list), or **Dismiss**: it stops as usual |
+| Message a session that's closed or has been quiet for 2 min (**"Resumes the session"**) | Pixlz runs `claude -p --resume <id>` in its folder and streams the reply into the panel; its permission requests come to the Agents list for Allow / Deny. If it was heard from in the last 2 minutes, you confirm first ("may still be open in a terminal") |
+| Drag the panel's title bar away from the Pixl / back onto it; drag any edge or corner; double-click the title | tear it off into its own window / dock it again; resize (min 320 × 240); snap between compact and tall. Size and place are remembered per session |
+
+Only what you type in a chat panel can reach a session (nothing the Pixl's AI, memory or NEAR inference produces can). Pixlz never blocks a stop twice in a row without a new message from you, so it can't loop a session. **Transcripts never leave your Mac:** they're read from `~/.claude/projects/` (that folder only) for the panel, never sent anywhere, and never to NEAR AI. Hooks answer instantly; if Pixlz isn't running they exit at once and Claude Code carries on.
+
 ## How it works
 
 ```

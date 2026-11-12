@@ -339,9 +339,10 @@ final class BubbleMenu {
             ListMenuView.Row(id: "req.\(r.id)", title: "\(r.project): \(r.summary)", icon: "warn", trailing: "needs you")
         }
         let waiting = Set(agents.hub.requests.map(\.sessionID))
-        rows += agents.hub.list.filter { !waiting.contains($0.id) }.map { s in
+        // every session (waiting ones too): Chat opens its panel
+        rows += agents.hub.list.map { s in
             ListMenuView.Row(id: "ses.\(s.id)", title: "\(s.project) · \(s.doing)", icon: s.replyOpen ? "agents" : nil,
-                             trailing: s.replyOpen ? "reply" : age(s.lastHeard))
+                             trailing: s.replyOpen ? "reply · Chat" : "Chat · " + age(s.lastHeard))
         }
         if agents.hub.sessions.isEmpty {
             rows.append(ListMenuView.Row(id: "none", title: "No Claude Code sessions right now", icon: "info", enabled: false))
@@ -352,6 +353,7 @@ final class BubbleMenu {
         rows += agents.extraRows?() ?? []
         rows += [ListMenuView.Row(id: "answer", title: "Answer from Pixlz", icon: nil, trailing: agents.answerHere ? "on" : "off"),
                  ListMenuView.Row(id: "reply", title: "Reply from Pixlz", icon: nil, trailing: agents.replyHere ? "on" : "off"),
+                 ListMenuView.Row(id: "window", title: "Reply window when a turn ends", icon: nil, trailing: "\(Int(agents.replyWindow)) s"),
                  ListMenuView.Row(id: "alerts", title: "Agent alerts", icon: nil, trailing: agents.alertsOn ? "on" : "off"),
                  ListMenuView.Row(id: "cloud", title: "Cloud sessions: open claude.ai/code", icon: nil),
                  ListMenuView.Row(id: "disconnect", title: "Disconnect Claude Code", icon: nil)]
@@ -360,11 +362,16 @@ final class BubbleMenu {
             guard let self else { return }
             switch row.id {
             case let id where id.hasPrefix("req."): self.showRequest(String(id.dropFirst(4)))
-            case let id where id.hasPrefix("ses."): self.closeList(); self.showChat(String(id.dropFirst(4)))
+            case let id where id.hasPrefix("ses."): self.closeList(); self.app.chats.open(String(id.dropFirst(4)))
             case "apichat": self.closeList(); self.showAPIChat()
             case "reply": agents.replyHere.toggle(); self.showAgents(near: nil)
             case "update": self.closeList(); self.showConnectAgents(near: nil)
             case "answer": agents.answerHere.toggle(); self.showAgents(near: nil)
+            case "window":
+                // 30 → 60 → 120 → 300 → 30 s
+                let steps: [Double] = [30, 60, 120, 300]
+                agents.nextReplyWindow(steps)
+                self.showAgents(near: nil)
             case "alerts": agents.alertsOn.toggle(); self.showAgents(near: nil)
             case "cloud": self.closeList(); NSWorkspace.shared.open(URL(string: "https://claude.ai/code")!)
             case "disconnect":
@@ -381,53 +388,8 @@ final class BubbleMenu {
     }
 
     /// One session's chat, and a reply field while it's held open for one.
-    func showChat(_ sessionID: String) {
-        let agents = app.agents
-        // a redraw of the open chat keeps what you're typing and where you're reading
-        let keep = chatSession == sessionID ? liveChat.map { (text: $0.input.stringValue, fromEnd: $0.distanceFromEnd) } : nil
-        guard let s = agents.hub.sessions[sessionID] else { return }
-        let (title, lines) = agents.chat(sessionID)
-        let mapped = lines.map { l -> ChatCard.Line in
-            switch l.role { case .you: .init(.you, l.text); case .claude: .init(.claude, l.text); case .tool: .init(.tool, l.text) }
-        }
-        let note = agents.queued[sessionID] != nil ? "a reply is waiting: it goes when Claude finishes" : "Claude is working: it gets this when it finishes"
-        let card = ChatCard(title: [s.project, title].compactMap { $0 }.joined(separator: " · "), lines: mapped,
-                            replyOpen: s.replyOpen, replyNote: note, look: cardLook)
-        card.fit()
-        card.onClose = { [weak self] in self?.chatSession = nil; agents.unwatchTranscript(as: "card"); self?.closeCard() }
-        card.onReply = { [weak self] text in
-            guard let self else { return }
-            agents.unwatchTranscript(as: "card")
-            switch agents.reply(sessionID, text) {
-            case .sent:
-                self.chatSession = nil
-                self.closeCard()
-                self.app.notify(.agents("Sent to \(s.project). Claude carries on."))
-            case .queued:
-                self.chatSession = nil
-                self.closeCard()
-                self.app.notify(.agents("Queued for \(s.project): Claude gets it when it finishes."))
-            case .failed:
-                self.app.notify(.agentsError("\(s.project) isn't running any more."))
-            }
-        }
-        if let keep { card.input.stringValue = keep.text }
-        showCard(card, name: "chat")
-        chatSession = sessionID
-        liveChat = card
-        if let keep { card.scroll(toDistanceFromEnd: keep.fromEnd) } else { card.scrollToEnd() }
-        if s.replyOpen || !(keep?.text.isEmpty ?? true) { cardPanel?.makeFirstResponder(card.field) }
-        // Live: every message and tool call as it lands in the transcript, and the reply
-        // window opening or closing.
-        agents.watchTranscript(sessionID, as: "card") { [weak self] in
-            guard let self, self.chatSession == sessionID, self.cardPanel != nil else { return }
-            self.showChat(sessionID)
-        }
-        agents.onChange = { [weak self] in
-            guard let self, self.chatSession == sessionID, self.cardPanel != nil else { return }
-            if agents.hub.sessions[sessionID]?.replyOpen != s.replyOpen { self.showChat(sessionID) }
-        }
-    }
+    /// A session's chat: the panel (AgentChatPanel), docked beside the Pixl.
+    func showChat(_ sessionID: String) { app.chats.open(sessionID) }
 
     static func apiChatRow(_ chat: APIChatController) -> ListMenuView.Row {
         ListMenuView.Row(id: "apichat", title: chat.lines.isEmpty ? "Chat with Claude (API key)" : "Your chat with Claude (API key)",
