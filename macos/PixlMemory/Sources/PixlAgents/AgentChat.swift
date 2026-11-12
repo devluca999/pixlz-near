@@ -12,10 +12,19 @@ import Foundation
 /// initializer; `AgentChatInput` (the panel's text field) makes one when you press Send.
 public struct TypedMessage: Sendable, Equatable {
     public let text: String
-    init?(_ text: String) {
+    /// Where you said it ("typed on the Mac", "dictated on the Mosaico"): Claude sees it.
+    public let via: String
+    init?(_ text: String, via: String = "typed on the Mac") {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return nil }
         self.text = String(t.prefix(8000))
+        self.via = via
+    }
+
+    /// A reply you made on a paired device (dictated, or a quick reply you tapped there). Only
+    /// the device link may use it: it has to opt in with `@_spi(DeviceInput) import PixlAgents`.
+    @_spi(DeviceInput) public static func fromPairedDevice(_ text: String, via: String) -> TypedMessage? {
+        TypedMessage(text, via: via)
     }
 }
 
@@ -26,6 +35,8 @@ public struct OutboxEntry: Sendable, Equatable, Identifiable {
     public var text: String
     public var time: Date
     public var status: Delivery
+    /// Where you said it (`TypedMessage.via`).
+    public var via = "typed on the Mac"
     /// How it went (or why not): "at its next step", "resumed", "claude isn't installed".
     public var note: String?
 }
@@ -61,7 +72,9 @@ extension AgentHub {
     public mutating func queue(_ message: TypedMessage, for sessionID: String, at now: Date) -> String {
         outboxCounter += 1
         let id = "msg-\(outboxCounter)"
-        outbox[sessionID, default: []].append(OutboxEntry(id: id, text: message.text, time: now, status: .queued))
+        var entry = OutboxEntry(id: id, text: message.text, time: now, status: .queued)
+        entry.via = message.via
+        outbox[sessionID, default: []].append(entry)
         return id
     }
 
@@ -73,8 +86,8 @@ extension AgentHub {
         guard var list = outbox[sessionID] else { return nil }
         let waiting = list.indices.filter { list[$0].status == .queued }
         guard !waiting.isEmpty else { return nil }
-        // labelled so Claude (and the terminal) see it's from you (Transcript.label)
-        let text = Transcript.label(via: "typed on the Mac") + waiting.map { list[$0].text }.joined(separator: "\n\n")
+        // labelled so Claude (and the terminal) see it's from you, and where you said it
+        let text = waiting.map { Transcript.label(via: list[$0].via) + list[$0].text }.joined(separator: "\n\n")
         for i in waiting { list[i].status = .delivered; list[i].note = note }
         outbox[sessionID] = list
         return text

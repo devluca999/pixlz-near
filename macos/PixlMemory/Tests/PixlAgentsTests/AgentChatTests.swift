@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PixlAgents
+@_spi(DeviceInput) @testable import PixlAgents
 
 @Suite struct AgentChatTests {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
@@ -170,6 +170,14 @@ import Testing
         #expect(h.outbox["s"]?.first?.status == .failed && h.take(for: "s") == nil)
     }
 
+    @Test func aReplyFromAPairedDeviceSaysWhereItCameFrom() throws {
+        var h = hub()
+        h.queue(try #require(TypedMessage.fromPairedDevice("ship it", via: "dictated on the Mosaico")), for: "s", at: t0)
+        h.queue(typed("and tag it"), for: "s", at: t0)
+        let r = h.take(for: "s")
+        #expect(r == Transcript.label(via: "dictated on the Mosaico") + "ship it\n\n" + Transcript.label(via: "typed on the Mac") + "and tag it")
+    }
+
     @Test func emptyMessagesArentMessages() {
         #expect(TypedMessage("   \n ") == nil)
         #expect(TypedMessage(" hi ")?.text == "hi")
@@ -212,6 +220,9 @@ import Testing
         #expect(!chat.contains("public init?(_ text") && !chat.contains("public init(_ text"))
         let makers = all.filter { $0.text.contains("TypedMessage(") && !$0.text.contains("struct TypedMessage") }.map(\.name)
         #expect(makers == ["AgentChatInput.swift"])
+        // a paired device's replies come in through one opted-in door, used only by the device link
+        let deviceDoor = all.filter { $0.text.contains("@_spi(DeviceInput)") && $0.name != "AgentChat.swift" }.map(\.name)
+        #expect(deviceDoor.allSatisfy { $0 == "TravelController.swift" })
         // the outbox is filled only by AgentController.send, and send only from the chat panel's field
         let queuers = all.filter { $0.text.contains(".queue(") }.map(\.name)
         #expect(queuers == ["AgentController.swift"])
