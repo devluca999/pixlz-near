@@ -4,8 +4,8 @@ Two cuts come out of the same takes:
 
 | Cut | File | Length | For |
 |---|---|---|---|
-| 9:16 rough cut | `showcase/out/pixlz-9x16-rough.mp4` | about 59 s | X, Reels, Shorts. The first 4.5 s are the intro clip. |
-| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 134 s | The submission. Every scene, at real speed, with what to look for written beside it. |
+| 9:16 rough cut | `showcase/out/pixlz-9x16-rough.mp4` | about 60 s | X, Reels, Shorts. The first 5 s are the intro clip. |
+| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 137 s | The submission. Every scene, at real speed, with what to look for written beside it. |
 
 Takes and rendered cuts are not committed (`showcase/takes/`, `showcase/out/*.mp4`). The narration
 lines (`showcase/out/vo/`) are, so a cut can be rebuilt without running the voice model again.
@@ -17,7 +17,7 @@ list of beats. Random choices use one fixed seed, so three takes of a scene matc
 
 | Scene | Title | Beats | Line | Takes |
 |---|---|---|---|---|
-| H1 | Handoff from the intro clip | zoom out from where the intro leaves Frogg to the desktop | L0 | 3 |
+| H1 | Handoff from the intro clip | the intro ends pushed in on Frogg on the Mosaico display; the app's Frogg takes his place at the same spot and size, then the picture zooms out to the desktop | L0 | 3 |
 | F1 | Fly snack | a fly loops, his eyes follow it · tongue snap, gulp, a satisfied blink | L1 | 3 |
 | F2 | Frogg's wallet | a coin pops over him · his wallet: account, balance, last receipt · the same payment on the testnet explorer | L2 | 3 |
 | F3 | A private brain | a brain with a padlock glows above him · click: the attestation card (verified · TEE · NEAR AI) | L3 | 3 |
@@ -104,6 +104,7 @@ showcase/tts/.venv/bin/python showcase/cut.py tall|wide|all [--dry]
 | `src`, `in`, `out` | the take (under `showcase/takes/`) and the seconds used from it |
 | `speed`, `hold` | play faster; freeze the last frame for this long |
 | `zoom` | `[centre x, centre y, factor]`: punch in on a card |
+| `push` | `[centre x, centre y, factor, seconds]`: an eased push-in over the segment's last seconds, ending on that point at that factor (the intro's last move, into Frogg on the display) |
 | `vo` | `{line, at}`: start a narration line this far into the segment (`slot` high/low, `captions: false` when the picture already says it) |
 | `sfx` | `[[seconds, name, gain]]`: the app's own sounds, rebuilt from the formulas in `Sfx.swift` |
 | `chip` | 9:16 only: the feature label, top left |
@@ -122,8 +123,13 @@ What the cut adds on top of the takes:
 - **Sound**: narration levelled line to line, the app's sounds, the mix at −14 LUFS with peaks
   under −1 dB. A music bed is optional: put `showcase/music.wav` (or `.mp3`, `.m4a`) there and
   it is ducked 22 dB under the voice.
-- **Speed**: the judges' cut plays every take at real speed; waits are cut, not sped up. The 9:16
-  cut speeds up only the intro clip's first 14 s.
+- **Speed**: every take plays at real speed in both cuts; waits are cut, not sped up. Only the
+  intro clip's walk-in is sped up (9:16: ×7, then ×3.5, up to 14.8 s of the clip; 16:9: ×4 up to
+  9.5 s). From the moment Frogg is held up, the clip runs at real speed.
+
+The intro is `showcase/takes/intro-frogg.mp4`: the phone clip turned upright, 1080 × 1920, 30 fps,
+with its first sound track only (`ffmpeg -i clip.mov -map 0:v:0 -map 0:a:0 -c:v libx264 -crf 15
+-c:a aac`). `push` reads the picture's stored size, so a rotated clip has to be made upright first.
 
 Fonts: captions use Inter and the labels Silkscreen when `showcase/fonts/Inter-SemiBold.ttf`,
 `Inter-Regular.ttf` and `Silkscreen-Regular.ttf` are present (both are OFL). Without them the cut

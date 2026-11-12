@@ -239,6 +239,16 @@ def source_size(path):
     return _size[path]
 
 
+def pushed(im, push, u, w, h):
+    """im at w x h, cut in toward a point; u runs 0 to 1 over the push."""
+    cx, cy, k = push[:3]
+    z = k ** (u * u)                                    # eased in: the move speeds up into the cut
+    fx, fy = ((c * k - 0.5) / (k - 1) for c in (cx, cy))   # the point that stays put on screen
+    bw, bh = im.width / z, im.height / z
+    x, y = (fx - (fx - 0.5) / z) * im.width - bw / 2, (fy - (fy - 0.5) / z) * im.height - bh / 2
+    return im.resize((w, h), Image.LANCZOS, box=(x, y, x + bw, y + bh))
+
+
 def frames(seg, w, h):
     """The segment's pictures at w x h, one per output frame."""
     if "slate" in seg:
@@ -253,19 +263,26 @@ def frames(seg, w, h):
         cw, ch = round(sw / k / 2) * 2, round(sh / k / 2) * 2
         x, y = min(max(round(cx * sw - cw / 2), 0), sw - cw), min(max(round(cy * sh - ch / 2), 0), sh - ch)
         vf.append(f"crop={cw}:{ch}:{x}:{y}")
-    vf.append(f"scale={w}:{h}:flags=lanczos")
+    push = seg.get("push")                              # [centre x, centre y, factor, seconds]: push in at the end
+    dw, dh = source_size(path) if push else (w, h)      # a push is cut from the full-size picture
+    vf.append(f"scale={dw}:{dh}:flags=lanczos")
     dec = subprocess.Popen([FFMPEG, "-v", "error", "-ss", str(seg["in"]), "-t", str(seg["out"] - seg["in"]), "-i", path,
                             "-an", "-vf", ",".join(vf), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    size, last = w * h * 3, None
+    size, last, i = dw * dh * 3, None, 0
+    m = max(round(push[3] * FPS), 2) if push else 0
     try:
         while True:
             buf = dec.stdout.read(size)
             if len(buf) == size:
-                last = Image.frombytes("RGB", (w, h), buf)
+                last = Image.frombytes("RGB", (dw, dh), buf)
             elif last is None:
                 sys.exit(f"no picture from {seg['src']} at {seg['in']} s")
-            yield last                                  # past the end: the last frame holds
+            if push:
+                yield pushed(last, push, min(max((i - (seg["n"] - m)) / (m - 1), 0), 1), w, h)
+            else:
+                yield last                              # past the end: the last frame holds
+            i += 1
     finally:
         dec.kill()
         dec.wait()

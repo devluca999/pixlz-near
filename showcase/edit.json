@@ -1,8 +1,9 @@
 {
-  "tall": {"size": [1080, 1920], "out": "pixlz-9x16-rough.mp4", "titles": [{"lines": ["A desktop pet with", "its own NEAR wallet"], "keywords": ["NEAR wallet"], "from": 0.1, "to": 2.9, "y": 440, "size": 66}, {"lines": ["github.com/devluca999/pixlz-near"], "from": -2.6, "to": -0.05, "y": 1250, "size": 30, "font": "pixel", "colour": [124, 217, 58]}], "segments": [
-    {"src": "intro.mp4", "in": 0, "out": 14.0, "speed": 4.67},
-    {"src": "intro.mp4", "in": 16.4, "out": 17.9, "audio": 0.35, "vo": {"line": "L0", "at": 0.05}},
-    {"src": "H1/take-1.mov", "in": 2.0, "out": 4.3, "dissolve": 0.2, "sfx": [[0.2, "whoosh"], [1.9, "thud"]]},
+  "tall": {"size": [1080, 1920], "out": "pixlz-9x16-rough.mp4", "titles": [{"lines": ["A desktop pet with", "its own NEAR wallet"], "keywords": ["NEAR wallet"], "from": 0.1, "to": 2.8, "y": 440, "size": 66}, {"lines": ["github.com/devluca999/pixlz-near"], "from": -2.6, "to": -0.05, "y": 1250, "size": 30, "font": "pixel", "colour": [124, 217, 58]}], "segments": [
+    {"src": "intro-frogg.mp4", "in": 0, "out": 9.5, "speed": 7, "sfx": [[0.0, "whoosh", 0.3]]},
+    {"src": "intro-frogg.mp4", "in": 9.5, "out": 14.8, "speed": 3.5},
+    {"src": "intro-frogg.mp4", "in": 14.8, "out": 16.87, "audio": 0.35, "push": [0.512, 0.585, 4.3, 0.8], "vo": {"line": "L0", "at": 0.45, "slot": "high"}},
+    {"src": "H1/take-1.mov", "in": 2.2, "out": 4.3, "dissolve": 0.3, "sfx": [[0.05, "whoosh"], [1.7, "thud"]]},
     {"src": "F1/take-1.mov", "in": 0.4, "out": 4.6, "vo": {"line": "L1", "at": 0.1}, "sfx": [[2.35, "snap"], [3.1, "gulp"]]},
     {"src": "F2/take-1.mov", "in": 0.1, "out": 1.5, "chip": "NEAR wallet", "vo": {"line": "L2", "at": 0.05}, "sfx": [[0.15, "coin"]]},
     {"src": "F2/take-1.mov", "in": 8.3, "out": 10.6, "zoom": [0.5, 0.55, 1.4], "sfx": [[0.05, "pop"]]},
@@ -24,8 +25,9 @@
     {"src": "E2/take-1.mov", "in": 0.9, "out": 6.4, "vo": {"line": "L9", "at": 1.2, "captions": false}, "sfx": [[0.2, "whoosh"], [1.4, "ding"]]}
   ]},
   "wide": {"size": [1920, 1080], "out": "pixlz-16x9-judges.mp4", "brand": "PIXLZ · NEAR HACKATHON 2026", "segments": [
-    {"src": "intro.mp4", "in": 11.5, "out": 17.9, "audio": 0.35, "vo": {"line": "L0", "at": 4.9}, "panel": {"kicker": "NEAR Hackathon 2026 · Privacy & Private AI", "title": ["Pixlz"], "body": ["Desktop pets that think with private AI on NEAR", "and pay for it from their own NEAR wallet."], "proof": ["macOS app · NEAR testnet · Mosaico display"]}},
-    {"src": "H1/take-1.mov", "in": 2.0, "out": 5.2, "dissolve": 0.2, "sfx": [[0.2, "whoosh"], [1.9, "thud"]], "panel": {"kicker": "Meet Frogg", "title": ["This is Frogg"], "body": ["A pixel pet that lives on your Mac's desktop,", "on top of whatever you're working on."]}},
+    {"src": "intro-frogg.mp4", "in": 0, "out": 9.5, "speed": 4, "sfx": [[0.0, "whoosh", 0.3]], "panel": {"kicker": "NEAR Hackathon 2026 · Privacy & Private AI", "title": ["Pixlz"], "body": ["Desktop pets that think with private AI on NEAR", "and pay for it from their own NEAR wallet."], "proof": ["macOS app · NEAR testnet · Mosaico display"]}},
+    {"src": "intro-frogg.mp4", "in": 9.5, "out": 16.87, "audio": 0.35, "push": [0.512, 0.585, 4.3, 0.8], "vo": {"line": "L0", "at": 5.75}, "panel": {"kicker": "NEAR Hackathon 2026 · Privacy & Private AI", "title": ["Pixlz"], "body": ["Desktop pets that think with private AI on NEAR", "and pay for it from their own NEAR wallet."], "proof": ["macOS app · NEAR testnet · Mosaico display"]}},
+    {"src": "H1/take-1.mov", "in": 2.2, "out": 5.2, "dissolve": 0.3, "sfx": [[0.05, "whoosh"], [1.7, "thud"]], "panel": {"kicker": "Meet Frogg", "title": ["This is Frogg"], "body": ["A pixel pet that lives on your Mac's desktop,", "on top of whatever you're working on."]}},
     {"src": "F1/take-1.mov", "in": 0.4, "out": 6.4, "vo": {"line": "L1", "at": 0.1}, "sfx": [[2.35, "snap"], [3.1, "gulp"]], "panel": {"kicker": "Meet Frogg", "title": ["Frogg is simple"], "body": ["He sits on your desktop. He likes flies."]}},
     {"src": "F2/take-1.mov", "in": 0.1, "out": 2.0, "vo": {"line": "L2", "at": 0.05}, "sfx": [[0.15, "coin"]], "panel": {"kicker": "NEAR wallet", "title": ["He has his own wallet"], "body": ["Every Pixl gets its own NEAR account:", "its own key and its own spending caps."], "proof": ["account  frogg.pixlz-petz-faucet.testnet", "network  NEAR testnet", "receipt  each payment opens on the explorer"]}},
     {"src": "F2/take-1.mov", "in": 8.2, "out": 15.0, "sfx": [[0.15, "pop"], [4.25, "pop"]], "panel": {"kicker": "NEAR wallet", "title": ["He has his own wallet"], "body": ["Every Pixl gets its own NEAR account:", "its own key and its own spending caps."], "proof": ["account  frogg.pixlz-petz-faucet.testnet", "network  NEAR testnet", "receipt  each payment opens on the explorer"]}},
