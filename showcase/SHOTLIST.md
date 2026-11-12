@@ -17,7 +17,8 @@ It opens like an ordinary reel and turns into the demo on the track's beat drop.
 
 - **Part 1** is `takes/intro-frogg.mp4` from its first frame to its last: 1.0×, its own sound, no
   cuts, no grade. On top of it: one caption in the style of the Instagram app ("POV: 2026 startup
-  founders be like"), and the track very low underneath. No brand, no logo, no narration.
+  founders be like"), subtitles of what is said in the room (both voices, 2 to 4 words at a time,
+  same style, lower middle), and the track very low underneath. No brand, no logo, no narration.
 - **The handoff.** Over the clip's last 0.9 s the picture pushes in on Frogg on the Mosaico
   display, following him (`intro-track.json` has his position in each frame), until he has the
   size, tilt and place of the app's Frogg in H1's first frame. The display's glare is taken down
