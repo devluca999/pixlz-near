@@ -4,8 +4,8 @@ Two cuts come out of the same takes:
 
 | Cut | File | Length | For |
 |---|---|---|---|
-| 9:16 rough cut | `showcase/out/pixlz-9x16-rough.mp4` | about 56 s | X, Reels, Shorts. The first 4.5 s are the intro clip. |
-| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 108 s | The submission. Every scene, at real speed, with what to look for written beside it. |
+| 9:16 rough cut | `showcase/out/pixlz-9x16-rough.mp4` | about 59 s | X, Reels, Shorts. The first 4.5 s are the intro clip. |
+| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 134 s | The submission. Every scene, at real speed, with what to look for written beside it. |
 
 Takes and rendered cuts are not committed (`showcase/takes/`, `showcase/out/*.mp4`). The narration
 lines (`showcase/out/vo/`) are, so a cut can be rebuilt without running the voice model again.
@@ -22,20 +22,25 @@ list of beats. Random choices use one fixed seed, so three takes of a scene matc
 | F2 | Frogg's wallet | a coin pops over him · his wallet: account, balance, last receipt · the same payment on the testnet explorer | L2 | 3 |
 | F3 | A private brain | a brain with a padlock glows above him · click: the attestation card (verified · TEE · NEAR AI) | L3 | 3 |
 | E1 | The Pixlz | friends enter from both sides and drop from the top · "The Pixlz" pops in | L4 | 3 |
-| F4 | Pays for its own thinking | he's asked a short question; it's answered privately and paid from his wallet | L5 | **to record** |
+| F4 | Pays for its own thinking | he's asked a short question; it's answered privately and paid from his wallet | L5 | 1 |
 | M1 | Highlight to memory | highlight a passage · the tongue grabs it, saved to memory | L6 | 3 |
-| M2 | Ask, from memory | ask what the article said; the answer comes from memory, with its source | L6 | **to record** |
+| M2 | Ask, from memory | ask what the article said; the answer comes from memory, with its source | L6 | 1 |
 | M3 | Back to the passage | the memories panel pops in · click the highlight: the page opens at the passage, glowing | L6 | 3 |
-| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft | L6 | **to record** |
+| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft, where it takes the original's place | L6 | 1 |
 | C1 | Tests, with Slugg | `swift test` in the demo repo; Slugg climbs the Terminal and rounds the corner | L7 | 3 |
 | C2 | Guard on a risky command | a Claude Code session asks to run `rm -rf build && npm run deploy` · the Pixl leaps onto the Terminal, alert · Deny, it stomps | L7 | 3 |
 | C3 | Reply to a finished session | the session finishes, the Pixl asks "done, anything else?" · a reply typed into its bubble, Claude carries on | L7 | 3 |
 | D1 | Any device | a render, not a recording: Mosaico display, Mac and iPhone side by side, the Pixlz hopping across. The iPhone is labelled "coming soon". | L8 | render |
-| E2 | Pixlz · powered by NEAR | the Pixlz converge into one lineup · the title, hold | L9 | 3 (re-record: the title was too wide for the frame, now smaller) |
+| E2 | Pixlz · powered by NEAR | the Pixlz converge into one lineup · the title, hold | L9 | 3 |
 
-F4, M2 and W1 wait on live inference, and each take pays for it with a small testnet payment
-(under 0.01 NEAR, from `frogg.pixlz-petz-faucet.testnet`). Until they are recorded, the cuts
-show a labelled slate in their place.
+F4, M2 and W1 wait on live inference (20 to 60 s), and each take pays for it with a small
+testnet payment (about 0.0001 NEAR, from `frogg.pixlz-petz-faucet.testnet`). That is why they
+have one take each. Both cuts cut the wait out; the judges' cut says so beside the take, with
+how long the answer took. A scene whose take is missing shows as a labelled slate.
+
+To check the framing of W1 without paying, add `--rehearse` when starting the app. The polish
+beat then shows a stand-in card marked "REHEARSAL": nothing is sent and nothing is paid. Never
+record a take in this mode.
 
 Narration (`showcase/plan.json`), one voice, ten lines:
 
@@ -131,7 +136,7 @@ themselves to the new recordings.
 
 ## Before publishing
 
-- [ ] Record F4, M2 and W1 (three takes each), re-record E2, set their in/out points in `edit.json`.
+- [ ] Optional: two more takes each of F4, M2 and W1 (each take is one small testnet payment).
 - [ ] Check the hackathon's video rules: length, AI voice, sped-up footage.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.

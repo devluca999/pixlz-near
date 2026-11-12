@@ -1257,6 +1257,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { await client.markAccepted(draftId: r.draftId) }
     }
 
+    /// A drop lands where the pointer was, usually inside the text that was polished, and splits
+    /// it. When that text is still there intact around the drop, take it out, so dragging the
+    /// polished text in replaces what it was made from. Anything else is left as dropped.
+    func tidyDrop(_ r: PolishResult) {
+        guard let original = polishedText,
+              let element = polishedElement ?? selectionPID.flatMap({ AX.focusedElement(pid: $0) }) else { return }
+        Task { @MainActor in
+            for _ in 0..<8 {   // some apps apply the drop a beat after the drag ends
+                if AX.tidyDrop(in: element, original: original, dropped: r.suggestion) {
+                    Debug.log("drop: took the original out, the polished text stands in its place")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+            Debug.log("drop: the original isn't intact around the drop, left as dropped")
+        }
+    }
+
     /// Writes the suggestion through Accessibility; if the app won't take it, copies it.
     func replaceViaAX(_ r: PolishResult, original: String, panel: NSPanel?) {
         let element = polishedElement ?? selectionPID.flatMap { AX.focusedElement(pid: $0) }
@@ -1310,6 +1328,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel?.orderOut(nil)
             self?.show("emotion_happy", for: 3)
             self?.notify(.droppedIn, voice: .happy)
+            self?.tidyDrop(r)
             Task { await self?.client.markAccepted(draftId: r.draftId) }
         }
         view.onResize = { [weak self, weak panel, weak view, weak card] in

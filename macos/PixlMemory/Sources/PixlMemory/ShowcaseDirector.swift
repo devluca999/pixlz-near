@@ -35,6 +35,9 @@ final class ShowcaseDirector {
     static var enabled: Bool {
         CommandLine.arguments.contains("--showcase") || ProcessInfo.processInfo.environment["PIXL_SHOWCASE"] == "1"
     }
+    /// `--rehearse`: scenes that wait on the model show a labelled stand-in instead (no inference,
+    /// no payment), to check framing. Never for a take.
+    static var rehearsing: Bool { CommandLine.arguments.contains("--rehearse") }
     /// The same seed every take.
     static let seed: UInt64 = 1114
     var rng = SeededRandom(seed: ShowcaseDirector.seed)

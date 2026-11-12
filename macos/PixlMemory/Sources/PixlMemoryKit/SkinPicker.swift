@@ -202,6 +202,12 @@ public enum DecalArt {
         if let r = d.pos["right"] { x = b.width - s.width - max(4, r) }
         if let t = d.pos["top"] { y = max(3, t) } else { y = b.height - s.height - max(3, d.pos["bottom"] ?? 0) }
         iv.frame = NSRect(x: x.rounded(), y: y.rounded(), width: s.width, height: s.height)
+        // it stays on its edge when the surface grows (an Ask card once its answer lands). The view
+        // is flipped, so the flexible margin for a bottom decal is the one above it.
+        var pin: NSView.AutoresizingMask = []
+        if d.pos["top"] == nil { pin.insert(view.isFlipped ? .minYMargin : .maxYMargin) }
+        if d.pos["right"] != nil { pin.insert(.minXMargin) } else if d.pos["left"] == nil { pin.insert([.minXMargin, .maxXMargin]) }
+        iv.autoresizingMask = pin
         iv.setAccessibilityElement(false)
         view.addSubview(iv)
     }

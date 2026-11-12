@@ -166,6 +166,20 @@ enum AX {
         return false
     }
 
+    /// After a polished text was dragged in: if it landed in, or right beside, the text it was
+    /// made from, the original is taken out so the polished text stands in its place.
+    /// False (and nothing touched) when the original isn't there intact around the drop.
+    static func tidyDrop(in element: AXUIElement, original: String, dropped: String) -> Bool {
+        guard let value: String = attr(element, kAXValueAttribute),
+              let r = DropTidy.range(in: value, original: original, dropped: dropped) else { return false }
+        var cf = CFRange(location: r.location, length: r.length)
+        guard let v = AXValueCreate(.cfRange, &cf),
+              AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, v) == .success,
+              AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, dropped as CFString) == .success
+        else { return false }
+        return true
+    }
+
     /// Chromium browsers build the accessibility tree for web pages only when an assistive app
     /// asks (AXEnhancedUserInterface). Without it a textarea's selection can't be read. Only for
     /// these browsers: in other apps the flag can disturb window animations.

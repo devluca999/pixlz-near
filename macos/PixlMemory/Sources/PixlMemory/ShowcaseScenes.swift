@@ -296,6 +296,7 @@ enum ShowcaseScenes {
         h1Idle?.cancel(); h1Idle = nil
         h1Actor?.remove(); h1Actor = nil
         w1Z?.cancel(); w1Z = nil
+        cardKeeper?.cancel(); cardKeeper = nil
     }
 
     static let e1 = ShowcaseScene(id: "E1", title: "The Pixlz", setup: { d in
@@ -343,6 +344,7 @@ enum ShowcaseScenes {
         ShowcaseBeat(name: "he's asked a short question; it's answered privately and paid", hold: 3.2) { d in
             d.app.menu.showAsk()
             guard let card = d.app.menu.askCard else { return }
+            keepAskInFrame(d, gap: 52)      // above him, clear of the coin pill that rises from his head
             let q = "What's a fly's favourite sport?"
             for ch in q { card.input.stringValue.append(ch); try? await Task.sleep(for: .milliseconds(45)) }
             try? await Task.sleep(for: .milliseconds(250))
@@ -546,6 +548,20 @@ extension ShowcaseScenes {
         d.cleanDesk(keeping: textEditID)
     }
 
+    /// Closes TextEdit's windows of a demo draft (its close button, as a person would), so the
+    /// next take opens the file fresh. Other TextEdit windows are left alone.
+    static func closeDraft(_ name: String) async {
+        guard let t = app(textEditID) else { return }
+        let windows: [AXUIElement] = AX.attr(AX.app(t.processIdentifier), kAXWindowsAttribute) ?? []
+        var closed = false
+        for w in windows where ((AX.attr(w, kAXTitleAttribute) as String?) ?? "").hasPrefix(name) {
+            guard let b: AXUIElement = AX.attr(w, kAXCloseButtonAttribute) else { continue }
+            AXUIElementPerformAction(b, kAXPressAction as CFString)
+            closed = true
+        }
+        if closed { try? await Task.sleep(for: .milliseconds(600)) }
+    }
+
     static let m2 = ShowcaseScene(id: "M2", title: "Ask, from memory", setup: { d in
         frogg(on: mark(d), d)
         await openDraft(d)
@@ -554,6 +570,7 @@ extension ShowcaseScenes {
         ShowcaseBeat(name: "ask what the article said; it answers from memory, with its source", hold: 3.5) { d in
             d.app.menu.showAsk()
             guard let card = d.app.menu.askCard else { return }
+            keepAskInFrame(d)
             let q = "What did that article say about glass frog skin?"
             for ch in q { card.input.stringValue.append(ch); try? await Task.sleep(for: .milliseconds(38)) }
             try? await Task.sleep(for: .milliseconds(250))
@@ -597,16 +614,31 @@ extension ShowcaseScenes {
     ])
 
     /// The open card, moved inside the take's 9:16 frame: centered, above the Pixl if it fits there,
-    /// else below it, never over it.
-    static func cardIntoFrame(_ d: ShowcaseDirector) {
+    /// else below it, never over it. `gap` is the space left between the card and the Pixl.
+    static func cardIntoFrame(_ d: ShowcaseDirector, gap: CGFloat = 16) {
         guard let p = d.app.menu.cardPanel else { return }
         let col = column(d), f = p.frame, pet = d.app.topLeft(d.app.froggBox)
         let petTop = pet.maxY - FroggArt.shared.canvas.height * d.app.scale
-        var y = petTop - 16 - f.height                       // top-left y of the card, above the Pixl
+        var y = petTop - gap - f.height                      // top-left y of the card, above the Pixl
         if y < col.minY + 20 { y = pet.maxY + 16 }          // no room: below
         let x = min(max(col.minX + 12, col.midX - f.width / 2), col.maxX - 12 - f.width)
-        p.setFrameOrigin(NSPoint(x: x, y: d.app.primaryHeight - y - f.height))
+        let o = NSPoint(x: x, y: d.app.primaryHeight - y - f.height)
+        if o != f.origin { p.setFrameOrigin(o) }
     }
+
+    /// The Ask card grows when its answer lands: this keeps it inside the frame (and off the Pixl)
+    /// for as long as it is open.
+    static func keepAskInFrame(_ d: ShowcaseDirector, gap: CGFloat = 16) {
+        cardKeeper?.cancel()
+        cardIntoFrame(d, gap: gap)
+        cardKeeper = Task { @MainActor in
+            while !Task.isCancelled, d.app.menu.askCard != nil, d.app.menu.cardPanel != nil {
+                cardIntoFrame(d, gap: gap)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+    static var cardKeeper: Task<Void, Never>?
 
     static func firstHighlightRow(in v: NSView?) -> NSView? {
         guard let v else { return nil }
@@ -621,11 +653,12 @@ extension ShowcaseScenes {
 
     static let w1 = ShowcaseScene(id: "W1", title: "Write in place", setup: { d in
         frogg(on: mark(d), d)
-        // a fresh copy of the clunky draft
+        // a fresh copy of the clunky draft (the last take's copy is still open, changed by the drop)
+        await closeDraft("draft-take")
         try? FileManager.default.removeItem(at: repo.appending(path: "draft-take.txt"))
         try? FileManager.default.copyItem(at: repo.appending(path: "draft.txt"), to: repo.appending(path: "draft-take.txt"))
         await openDraft(d, file: "draft-take.txt")
-        perch(on: textEditID, d, at: 0.82)
+        perch(on: textEditID, d, at: 0.56)          // his bubbles open centred on him: this keeps them in frame
         d.app.frogg.frameName = "rest_1"            // dozing nearby
         w1Z = Task { @MainActor in while !Task.isCancelled { d.app.puffZ(); try? await Task.sleep(for: .seconds(1.6)) } }
     }, beats: [
@@ -641,12 +674,17 @@ extension ShowcaseScenes {
             d.app.menu.open(trigger: "showcase")
             try? await Task.sleep(for: .milliseconds(700))
             d.app.menu.close(reason: "showcase")
-            await d.live("polish") {
-                d.app.polish(0)
-                let start = d.app.now
-                try? await Task.sleep(for: .milliseconds(300))
-                while d.app.now - start < 90, d.app.busy { try? await Task.sleep(for: .milliseconds(100)) }
+            if ShowcaseDirector.rehearsing {
+                await rehearsePolish(d)
+            } else {
+                await d.live("polish") {
+                    d.app.polish(0)
+                    let start = d.app.now
+                    try? await Task.sleep(for: .milliseconds(300))
+                    while d.app.now - start < 90, d.app.busy { try? await Task.sleep(for: .milliseconds(16)) }
+                }
             }
+            resultIntoFrame(d)
             Sfx.shared.play(.pop)
         },
         ShowcaseBeat(name: "drag it into the draft: it drops in place", hold: 2.0) { d in
@@ -660,6 +698,33 @@ extension ShowcaseScenes {
         },
     ])
     static var w1Z: Task<Void, Never>?
+
+    /// The polish card where the take can see it: over the empty part of the draft window, under
+    /// its lines (beside the Pixl it would open outside the recorded column).
+    static func resultIntoFrame(_ d: ShowcaseDirector) {
+        guard let p = d.app.resultPanel else { return }
+        let col = column(d), f = p.frame
+        let top = min(col.minY + 260 + 140, col.maxY - 24 - f.height)       // top-left y
+        p.setFrameOrigin(NSPoint(x: (col.midX - f.width / 2).rounded(), y: d.app.primaryHeight - top - f.height))
+    }
+
+    /// `--rehearse`: a stand-in card that says what it is, instead of asking the model. For
+    /// checking where things land in the frame without an inference or a payment. Never a take.
+    static func rehearsePolish(_ d: ShowcaseDirector) async {
+        let stand = "REHEARSAL, not a model answer. This stand-in only checks where the card opens and where the dragged text lands in the draft."
+        let json = """
+        {"draft_id": "rehearsal", "suggestion": "\(stand)",
+         "diff": [{"op": "delete", "text": "\(intro)"}, {"op": "insert", "text": "\(stand)"}],
+         "verification": {"verdict": "offline", "summary": "Rehearsal: nothing was sent to a model and nothing was paid.", "checks": [], "model": "rehearsal"},
+         "receipt": {"status": "refused", "reason": "rehearsal, nothing to pay for"}}
+        """
+        guard let r = try? JSONDecoder().decode(PolishResult.self, from: Data(json.utf8)) else { return }
+        Debug.log("showcase: REHEARSAL polish (no inference, no payment)")
+        d.app.polishedText = d.app.pendingSelection?.text
+        d.app.polishedElement = d.app.selectionElement
+        try? await Task.sleep(for: .seconds(1.5))
+        d.app.showResult(.result(r, instruction: "Polish", app: "TextEdit"))
+    }
 
     static func findCard(_ v: NSView?) -> NSView? {
         guard let v else { return nil }

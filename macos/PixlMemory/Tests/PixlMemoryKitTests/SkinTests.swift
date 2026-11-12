@@ -50,6 +50,20 @@ struct SkinTests {
         #expect(accents.count == PixlSkins.all.count)
     }
 
+    @Test func theDetailStaysOnItsEdgeWhenTheSurfaceGrows() throws {
+        // an Ask card grows when its answer lands: the detail must not be left behind over the text
+        for skin in PixlSkins.all {
+            let ui = try #require(skin.manifest.ui), d = try #require(ui.decal)
+            let view = FlippedView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+            DecalArt.attach(to: view, ui: ui, look: .init(glass: false, variant: .dark, dim: 1))
+            let decal = try #require(view.subviews.first)
+            let top = decal.frame.minY, below = view.bounds.height - decal.frame.maxY
+            view.setFrameSize(NSSize(width: 320, height: 260))
+            if d.pos["top"] != nil { #expect(decal.frame.minY == top, "\(skin.id)") }
+            else { #expect(view.bounds.height - decal.frame.maxY == below, "\(skin.id)") }
+        }
+    }
+
     @Test func switchingSkinsChangesTheArtAndCharacter() {
         let before = PixlSkins.currentID
         defer { PixlSkins.currentID = before }
