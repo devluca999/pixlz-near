@@ -510,7 +510,7 @@ final class BubbleMenu {
     func resizeCard(_ content: NSView) {
         guard let p = cardPanel, let card = p.contentView as? SurfaceView else { return }
         let top = p.frame.maxY
-        let h = content.frame.height + card.shadowInsetPublic
+        let h = card.height(fitting: content)
         card.setFrameSize(NSSize(width: card.frame.width, height: h))
         p.setContentSize(card.frame.size)
         // grow downward, but never off the screen: a long answer moves the card up instead
@@ -708,8 +708,4 @@ final class BubbleMenu {
     func refreshWallet() {
         Task { @MainActor in wallet = await app.client.wallet() }
     }
-}
-
-extension SurfaceView {
-    var shadowInsetPublic: CGFloat { look.glass ? 0 : 3 }
 }

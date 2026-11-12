@@ -41,6 +41,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var frogg: FroggView!
     var froggPanel: OverlayPanel!
     var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
+    /// Showcase only: the recorded column (AppKit coordinates), so a take never cuts a bubble off.
+    var bubbleArea: CGRect?
     var resultPanel: OverlayPanel?
     lazy var menu = BubbleMenu(app: self)
     lazy var game = GameController(app: self)
@@ -1333,7 +1335,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         view.onResize = { [weak self, weak panel, weak view, weak card] in
             guard let self, let panel, let view, let card else { return }
-            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            card.setFrameSize(NSSize(width: card.frame.width, height: card.height(fitting: view)))
             panel.setContentSize(card.frame.size)
             self.placeBeside(panel, avoid: self.menu.avoidRects())
         }
@@ -1555,7 +1557,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func positionBubble() {
         guard let froggPanel, let frogg else { return }
         _ = frogg
-        bubblePanel.setFrameOrigin(Placement.beside(pet: petRect, size: bubblePanel.frame.size, in: froggScreen, gap: 2).origin)
+        bubblePanel.setFrameOrigin(Placement.beside(pet: petRect, size: bubblePanel.frame.size, in: bubbleArea ?? froggScreen, gap: 2).origin)
     }
 
     /// The box the Pixl covers on screen (AppKit coordinates): standing, its frame's art box
@@ -1711,7 +1713,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         view.onResize = { [weak view, weak panel, weak card] in
             guard let view, let panel, let card else { return }
             let top = panel.frame.maxY
-            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            card.setFrameSize(NSSize(width: card.frame.width, height: card.height(fitting: view)))
             panel.setContentSize(card.frame.size)
             panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
         }
@@ -1736,7 +1738,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let view, let panel, let card, panel.isVisible else { return }
             let top = panel.frame.maxY
             view.update(status: fresh)
-            card.setFrameSize(NSSize(width: card.frame.width, height: view.frame.height + card.shadowInsetPublic))
+            card.setFrameSize(NSSize(width: card.frame.width, height: card.height(fitting: view)))
             panel.setContentSize(card.frame.size)
             panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
             Debug.log("mini menu status updated: service=\(fresh.service) walletReady=\(fresh.walletReady)")

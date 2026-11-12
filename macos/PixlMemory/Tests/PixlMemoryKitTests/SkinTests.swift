@@ -64,6 +64,23 @@ struct SkinTests {
         }
     }
 
+    @Test func aCardThatIsRefittedKeepsTheStripForItsDetail() {
+        // the Ask card is refitted when its answer lands: the strip kept for the detail has to
+        // survive, or the detail sits on the footer's buttons
+        let before = PixlSkins.currentID
+        defer { PixlSkins.currentID = before }
+        for skin in PixlSkins.all {
+            PixlSkins.currentID = skin.id
+            let content = FlippedView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+            let card = SurfaceView.card(content, look: .init(glass: false, variant: .dark, dim: 1))
+            let strip = card.frame.height - content.frame.height
+            #expect(strip > 3, "\(skin.id)")
+            content.setFrameSize(NSSize(width: 320, height: 260))
+            card.setFrameSize(NSSize(width: 320, height: card.height(fitting: content)))
+            #expect(card.frame.height - content.frame.height == strip, "\(skin.id)")
+        }
+    }
+
     @Test func switchingSkinsChangesTheArtAndCharacter() {
         let before = PixlSkins.currentID
         defer { PixlSkins.currentID = before }

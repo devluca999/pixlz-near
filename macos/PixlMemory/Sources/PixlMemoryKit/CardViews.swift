@@ -16,6 +16,13 @@ extension SurfaceView {
         s.setAccessibilityRole(.group)
         return s
     }
+
+    /// The card's height once its content has grown or shrunk: the content, the strip kept for
+    /// the Pixl's decal, and the shadow. Without the strip the decal lands on the footer's buttons.
+    public func height(fitting content: NSView) -> CGFloat {
+        let r = DecalArt.reserve(PixlData.ui)
+        return content.frame.height + r.top + r.bottom + (look.glass ? 0 : 3)
+    }
 }
 
 /// Shared card scaffolding (C10 `.card`): a header plate (grip, pixel icon, title, ×), a body

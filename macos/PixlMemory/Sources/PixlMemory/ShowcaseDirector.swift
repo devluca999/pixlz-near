@@ -157,6 +157,7 @@ final class ShowcaseDirector {
         app.cancelMotion()
         app.sleep.held = false
         app.busy = false
+        app.bubbleArea = nil
         app.frogg.squash = CGSize(width: 1, height: 1)
         app.userPlaced = false
         app.reposition(force: true)

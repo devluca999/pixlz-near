@@ -42,6 +42,7 @@ enum ShowcaseScenes {
         app.leaveSurface()
         app.userPlaced = true
         app.busy = true            // no roaming, no idle quirks during a take
+        app.bubbleArea = app.topLeft(column(d))     // his bubbles stay inside the recorded column
         if app.settings.scale != takeScale { app.setSize(takeScale, live: true) }
         app.froggPanel.alphaValue = 1
         app.place(at: p)
@@ -658,7 +659,7 @@ extension ShowcaseScenes {
         try? FileManager.default.removeItem(at: repo.appending(path: "draft-take.txt"))
         try? FileManager.default.copyItem(at: repo.appending(path: "draft.txt"), to: repo.appending(path: "draft-take.txt"))
         await openDraft(d, file: "draft-take.txt")
-        perch(on: textEditID, d, at: 0.56)          // his bubbles open centred on him: this keeps them in frame
+        perch(on: textEditID, d, at: 0.56)
         d.app.frogg.frameName = "rest_1"            // dozing nearby
         w1Z = Task { @MainActor in while !Task.isCancelled { d.app.puffZ(); try? await Task.sleep(for: .seconds(1.6)) } }
     }, beats: [
