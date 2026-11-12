@@ -22,25 +22,37 @@ list of beats. Random choices use one fixed seed, so three takes of a scene matc
 | F2 | Frogg's wallet | a coin pops over him · his wallet: account, balance, last receipt · the same payment on the testnet explorer | L2 | 3 |
 | F3 | A private brain | a brain with a padlock glows above him · click: the attestation card (verified · TEE · NEAR AI) | L3 | 3 |
 | E1 | The Pixlz | friends enter from both sides and drop from the top · "The Pixlz" pops in | L4 | 3 |
-| F4 | Pays for its own thinking | he's asked a short question; it's answered privately and paid from his wallet | L5 | 1 |
+| F4 | Pays for its own thinking | he's asked a short question; it's answered privately and paid from his wallet | L5 | 3 |
 | M1 | Highlight to memory | highlight a passage · the tongue grabs it, saved to memory | L6 | 3 |
-| M2 | Ask, from memory | ask what the article said; the answer comes from memory, with its source | L6 | 1 |
+| M2 | Ask, from memory | ask what the article said; the answer comes from memory, with its source | L6 | 3 |
 | M3 | Back to the passage | the memories panel pops in · click the highlight: the page opens at the passage, glowing | L6 | 3 |
-| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft, where it takes the original's place | L6 | 1 |
+| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft, where it takes the original's place | L6 | 2 |
 | C1 | Tests, with Slugg | `swift test` in the demo repo; Slugg climbs the Terminal and rounds the corner | L7 | 3 |
 | C2 | Guard on a risky command | a Claude Code session asks to run `rm -rf build && npm run deploy` · the Pixl leaps onto the Terminal, alert · Deny, it stomps | L7 | 3 |
 | C3 | Reply to a finished session | the session finishes, the Pixl asks "done, anything else?" · a reply typed into its bubble, Claude carries on | L7 | 3 |
 | D1 | Any device | a render, not a recording: Mosaico display, Mac and iPhone side by side, the Pixlz hopping across. The iPhone is labelled "coming soon". | L8 | render |
 | E2 | Pixlz · powered by NEAR | the Pixlz converge into one lineup · the title, hold | L9 | 3 |
 
-F4, M2 and W1 wait on live inference (20 to 60 s), and each take pays for it with a small
-testnet payment (about 0.0001 NEAR, from `frogg.pixlz-petz-faucet.testnet`). That is why they
-have one take each. Both cuts cut the wait out; the judges' cut says so beside the take, with
-how long the answer took. A scene whose take is missing shows as a labelled slate.
+F4, M2 and W1 wait on live inference (20 to 90 s), and each take pays for it with a small
+testnet payment (0.00004 to 0.0002 NEAR, from `frogg.pixlz-petz-faucet.testnet`). Both cuts cut
+the wait out; the judges' cut says so beside the take, with how long the answer took. A scene
+whose take is missing shows as a labelled slate.
 
-To check the framing of W1 without paying, add `--rehearse` when starting the app. The polish
-beat then shows a stand-in card marked "REHEARSAL": nothing is sent and nothing is paid. Never
-record a take in this mode.
+The answers differ from take to take, so the cuts pick by what the answer says:
+
+| Scene | 9:16 | 16:9 | Why |
+|---|---|---|---|
+| F4 | take 2 | take 3 | take 2 is short enough to read in 3 s; take 3 is the funnier answer and the judges' cut has the time for it |
+| M2 | (not in the cut) | take 3 | the shortest wait (22 s); the answers are alike |
+| W1 | take 1 | take 1 | the cleanest polish. Its "Verified in TEE" bubble touches the frame's edge (fixed since). Take 2 has the bubble whole, but its polish barely changes the text. |
+
+W1 has a third recording that is not a take: the answer took longer than the 90 s the scene
+waited then, so the card never showed (the payment was still made). The scenes wait 150 s now;
+record them with a limit of 170.
+
+To check the framing of F4, M2 or W1 without paying, add `--rehearse` when starting the app. The
+card then shows a stand-in marked "REHEARSAL": nothing is sent and nothing is paid. Never record
+a take in this mode.
 
 Narration (`showcase/plan.json`), one voice, ten lines:
 
@@ -75,7 +87,7 @@ Narration (`showcase/plan.json`), one voice, ten lines:
 
    ```sh
    showcase/record.sh <scene> <take> <seconds> [x,y,w,h]
-   UNTIL_DONE=1 showcase/record.sh F4 1 120      # scenes that wait on something live
+   UNTIL_DONE=1 showcase/record.sh F4 1 170      # scenes that wait on something live
    ```
 
    The script sets the scene up, starts it, and records a fixed 540 × 960 pt region (1080 × 1920
@@ -142,7 +154,7 @@ themselves to the new recordings.
 
 ## Before publishing
 
-- [ ] Optional: two more takes each of F4, M2 and W1 (each take is one small testnet payment).
+- [ ] Optional: one more take of W1 for a clean polish with the bubble whole (one small testnet payment).
 - [ ] Check the hackathon's video rules: length, AI voice, sped-up footage.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.

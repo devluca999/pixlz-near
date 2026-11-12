@@ -349,12 +349,13 @@ enum ShowcaseScenes {
             let q = "What's a fly's favourite sport?"
             for ch in q { card.input.stringValue.append(ch); try? await Task.sleep(for: .milliseconds(45)) }
             try? await Task.sleep(for: .milliseconds(250))
+            if ShowcaseDirector.rehearsing { await rehearseAsk(card, d); return }
             let before = await d.app.client.wallet()?.balanceNear
             card.submit()
             // the answer lands (inference, attestation and the testnet payment, all live)
             let landed = await d.live("ask") {
                 let start = d.app.now
-                while d.app.now - start < 90 {
+                while d.app.now - start < 150 {
                     if card.lastAnswer.isEmpty == false { return true }
                     try? await Task.sleep(for: .milliseconds(100))
                 }
@@ -576,10 +577,11 @@ extension ShowcaseScenes {
             for ch in q { card.input.stringValue.append(ch); try? await Task.sleep(for: .milliseconds(38)) }
             try? await Task.sleep(for: .milliseconds(250))
             d.app.frogg.frameName = "emotion_curious"
+            if ShowcaseDirector.rehearsing { await rehearseAsk(card, d); return }
             card.submit()
             _ = await d.live("ask") {
                 let start = d.app.now
-                while d.app.now - start < 90, card.lastAnswer.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+                while d.app.now - start < 150, card.lastAnswer.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
             }
             Sfx.shared.play(.pop)
             d.app.frogg.frameName = "emotion_happy"
@@ -682,7 +684,7 @@ extension ShowcaseScenes {
                     d.app.polish(0)
                     let start = d.app.now
                     try? await Task.sleep(for: .milliseconds(300))
-                    while d.app.now - start < 90, d.app.busy { try? await Task.sleep(for: .milliseconds(16)) }
+                    while d.app.now - start < 150, d.app.busy { try? await Task.sleep(for: .milliseconds(16)) }
                 }
             }
             resultIntoFrame(d)
@@ -725,6 +727,21 @@ extension ShowcaseScenes {
         d.app.polishedElement = d.app.selectionElement
         try? await Task.sleep(for: .seconds(1.5))
         d.app.showResult(.result(r, instruction: "Polish", app: "TextEdit"))
+    }
+
+    /// `--rehearse`: a stand-in answer that says what it is, to check how the Ask card sits in the
+    /// frame once it has grown and its buttons show. No inference, no payment. Never a take.
+    static func rehearseAsk(_ card: AskCard, _ d: ShowcaseDirector) async {
+        let json = """
+        {"answer": "REHEARSAL, not a model answer. This stand-in only checks how the card sits in the frame once its answer has landed and its buttons show.",
+         "verification": {"verdict": "offline", "summary": "Rehearsal: nothing was sent to a model and nothing was paid.", "checks": [], "model": "rehearsal"},
+         "receipt": {"status": "refused", "reason": "rehearsal, nothing to pay for"}, "highlights": []}
+        """
+        guard let r = try? JSONDecoder().decode(AskResult.self, from: Data(json.utf8)) else { return }
+        Debug.log("showcase: REHEARSAL ask (no inference, no payment)")
+        try? await Task.sleep(for: .seconds(1.5))
+        card.show(r)
+        d.app.menu.resizeCard(card)
     }
 
     static func findCard(_ v: NSView?) -> NSView? {
