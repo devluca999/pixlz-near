@@ -4,11 +4,27 @@ Two cuts come out of the same takes:
 
 | Cut | File | Length | For |
 |---|---|---|---|
-| 9:16 rough cut | `showcase/out/pixlz-9x16-rough.mp4` | about 60 s | X, Reels, Shorts. The first 5 s are the intro clip. |
-| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 137 s | The submission. Every scene, at real speed, with what to look for written beside it. |
+| 9:16 cut | `showcase/out/pixlz-9x16-draft.mp4` | 59 s | X, Reels, Shorts. Part 1 is the phone clip, whole and at real speed (17 s); Part 2 is the demo, cut on the beat of the track. |
+| 16:9 judges' cut | `showcase/out/pixlz-16x9-judges.mp4` | about 127 s | The submission. The demo only: every scene, at real speed, with what to look for written beside it. |
 
-Takes and rendered cuts are not committed (`showcase/takes/`, `showcase/out/*.mp4`). The narration
-lines (`showcase/out/vo/`) are, so a cut can be rebuilt without running the voice model again.
+Takes, rendered cuts and the music (`showcase/takes/`, `showcase/out/*.mp4`, `showcase/music.*`)
+are not committed. The narration lines (`showcase/out/vo/`) are, so a cut can be rebuilt without
+running the voice model again.
+
+## How the 9:16 cut works
+
+It opens like an ordinary reel and turns into the demo on the track's beat drop.
+
+- **Part 1** is `takes/intro-frogg.mp4` from its first frame to its last: 1.0×, its own sound, no
+  cuts, no grade. On top of it: one caption in the style of the Instagram app ("POV: 2026 startup
+  founders be like"), and the track very low underneath. No brand, no logo, no narration.
+- **The handoff.** Over the clip's last 0.9 s the picture pushes in on Frogg on the Mosaico
+  display, following him (`intro-track.json` has his position in each frame), until he has the
+  size, tilt and place of the app's Frogg in H1's first frame. The display's glare is taken down
+  during the push only. A 5-frame dissolve ends on the drop.
+- **Part 2** is the demo on a grid of beats counted from the drop: every cut is on a beat, and
+  each payoff (tongue snap, coin, card, title, Deny) is placed on one with `hit`. Waits are sped
+  up or cut. Speed changes are only ever made in Part 2.
 
 ## Scenes
 
@@ -17,7 +33,7 @@ list of beats. Random choices use one fixed seed, so three takes of a scene matc
 
 | Scene | Title | Beats | Line | Takes |
 |---|---|---|---|---|
-| H1 | Handoff from the intro clip | the intro ends pushed in on Frogg on the Mosaico display; the app's Frogg takes his place at the same spot and size, then the picture zooms out to the desktop | L0 | 3 |
+| H1 | Handoff from the intro clip | the intro ends pushed in on Frogg on the Mosaico display; the app's Frogg takes his place at the same spot and size, then the picture zooms out to the desktop | L0 (16:9 only: in the clip it is said on camera) | 3 |
 | F1 | Fly snack | a fly loops, his eyes follow it · tongue snap, gulp, a satisfied blink | L1 | 3 |
 | F2 | Frogg's wallet | a coin pops over him · his wallet: account, balance, last receipt · the same payment on the testnet explorer | L2 | 3 |
 | F3 | A private brain | a brain with a padlock glows above him · click: the attestation card (verified · TEE · NEAR AI) | L3 | 3 |
@@ -43,7 +59,7 @@ The answers differ from take to take, so the cuts pick by what the answer says:
 | Scene | 9:16 | 16:9 | Why |
 |---|---|---|---|
 | F4 | take 2 | take 3 | take 2 is short enough to read in 3 s; take 3 is the funnier answer and the judges' cut has the time for it |
-| M2 | (not in the cut) | take 3 | the shortest wait (22 s); the answers are alike |
+| M2 | take 3 | take 3 | the shortest wait (22 s); the answers are alike |
 | W1 | take 1 | take 1 | the cleanest polish. Its "Verified in TEE" bubble touches the frame's edge (fixed since). Take 2 has the bubble whole, but its polish barely changes the text. |
 
 W1 has a third recording that is not a take: the answer took longer than the 90 s the scene
@@ -109,35 +125,51 @@ showcase/tts/.venv/bin/python showcase/cut.py tall|wide|all [--dry]
 ```
 
 `showcase/edit.json` is the edit: one segment per line, in order. `--dry` prints the timeline
-(where each segment and caption lands) without rendering.
+(where each segment and caption lands, and where the track's drop falls) without rendering.
+
+A moment in a segment is written as seconds from its start, as `"@x"` (where second x of the take
+falls) or as `"bX"` (X beats after the segment's first beat).
 
 | Field | Meaning |
 |---|---|
 | `src`, `in`, `out` | the take (under `showcase/takes/`) and the seconds used from it |
 | `speed`, `hold` | play faster; freeze the last frame for this long |
-| `zoom` | `[centre x, centre y, factor]`: punch in on a card |
-| `push` | `[centre x, centre y, factor, seconds]`: an eased push-in over the segment's last seconds, ending on that point at that factor (the intro's last move, into Frogg on the display) |
-| `vo` | `{line, at}`: start a narration line this far into the segment (`slot` high/low, `captions: false` when the picture already says it) |
-| `sfx` | `[[seconds, name, gain]]`: the app's own sounds, rebuilt from the formulas in `Sfx.swift` |
+| `beats` | the segment lasts this many beats of the track (needs `music`); with `in` and `out` the speed follows |
+| `hit` | `[second of the take, beat]`: that moment of the take falls on that beat of the segment; `in` and `out` follow |
+| `drop` | seconds into this segment where the track's drop falls. Beats are counted from there. |
+| `zoom` | `[centre x, centre y, factor]`: punch in |
+| `push` | an eased push-in over the segment's last seconds. `[centre x, centre y, factor, seconds]` for a still subject; `{track, to, scale, turn, seconds, deglare}` to follow a moving one to a given place, size and tilt |
+| `dissolve` | seconds of cross-fade from the segment before |
+| `vo` | `{line, at}`: start a narration line. `slot` high, low or a y, one per phrase if a list; `part: [from, to]` plays only that stretch of the line; `plate` puts a dark patch behind the caption; `captions: false` when the picture already says it |
+| `sfx` | `[[moment, name, gain]]`: the app's own sounds, rebuilt from the formulas in `Sfx.swift` (plus `riser`, the swell into the drop) |
+| `texts` | `[{lines, style, y, from, to}]`: words on the picture. `ig`: white on black boxes, as typed in the Instagram app; `shadow`: like the captions; `small`: a note |
 | `chip` | 9:16 only: the feature label, top left |
 | `panel` | 16:9 only: kicker, title, body and proof lines beside the take |
-| `audio` | keep the source's own sound at this gain (the intro clip) |
+| `audio` | keep the source's own sound: a gain, or `{gain, out}` to fade it out over the last seconds |
+
+For the whole cut: `music` (`src`, the `drop`'s second in the track, `beat` and `bar` lengths,
+`bars` in the section that loops, and levels in dB against the voice: `bed` before the drop,
+`full` after it, `under` while a line is spoken), `snap` (move every cut to the nearest beat),
+`sfx_gain`.
 
 What the cut adds on top of the takes:
 
-- **Captions**, burned in, one phrase at a time with the key words in green, timed to the voice
-  (rules and sources in `CAPTIONS.md`). They take the HIGH or LOW slot so they never cover a pet,
-  and stay inside the platforms' safe area.
-- **The hook** over the intro (9:16): "A desktop pet with its own NEAR wallet", inside the first
-  three seconds.
+- **Captions**, burned in, 3 to 5 words at a time with the key words in green, timed to the
+  voice (`plan.json` has the second each phrase starts; rules in `CAPTIONS.md`). 9:16: bold white
+  with a dark edge and shadow, above the bottom 20 %. 16:9: pills at the bottom.
 - **Proof on screen**: the wallet card and the attestation card are punched in; the explorer
-  shot is labelled as a real testnet payment; the judges' cut prints the account and network.
-- **Sound**: narration levelled line to line, the app's sounds, the mix at −14 LUFS with peaks
-  under −1 dB. A music bed is optional: put `showcase/music.wav` (or `.mp3`, `.m4a`) there and
-  it is ducked 22 dB under the voice.
-- **Speed**: every take plays at real speed in both cuts; waits are cut, not sped up. Only the
-  intro clip's walk-in is sped up (9:16: ×7, then ×3.5, up to 14.8 s of the clip; 16:9: ×4 up to
-  9.5 s). From the moment Frogg is held up, the clip runs at real speed.
+  shot is labelled as a real testnet payment; F3 carries "TEE · NEAR AI private inference"; the
+  judges' cut prints the account and network.
+- **Sound**: narration levelled line to line, the app's sounds, the track, the mix at −14 LUFS
+  with peaks under −1 dB. The track is `showcase/music.mp3` (not committed; without it the cut
+  renders with no music). 9:16: 21 dB under the clip's voices before the drop, a 1.2 s swell
+  into it, then full, dropping 18 dB while a line is spoken. 16:9: the track starts on its drop
+  and stays under the voice throughout.
+- **Speed**: Part 1 is never sped up, cut or zoomed (the push at its end aside). In the 9:16
+  demo, waits are cut or sped up (the Ask wait ×24, typing ×3.4). The judges' cut plays every
+  take at real speed and cuts the waits.
+- **The end card** (E2): the title holds for 2.8 s over "Which Pixl should I make next?". No
+  repository link: it goes in the post.
 
 The intro is `showcase/takes/intro-frogg.mp4`: the phone clip turned upright, 1080 × 1920, 30 fps,
 with its first sound track only (`ffmpeg -i clip.mov -map 0:v:0 -map 0:a:0 -c:v libx264 -crf 15
@@ -155,6 +187,7 @@ themselves to the new recordings.
 ## Before publishing
 
 - [ ] Optional: one more take of W1 for a clean polish with the bubble whole (one small testnet payment).
-- [ ] Check the hackathon's video rules: length, AI voice, sped-up footage.
+- [ ] Check the hackathon's video rules: length, AI voice, sped-up footage, music.
+- [ ] The track is a commercial release: a platform may mute or block the post, and a submission may need licensed music.
 - [ ] Watch both cuts once with sound and once without.
 - [ ] The video says "iPhone: coming soon". Nothing in it claims iPhone support.

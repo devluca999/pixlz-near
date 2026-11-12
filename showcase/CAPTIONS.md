@@ -13,6 +13,11 @@ broadcaster spec; [3P] third-party tool measurements (they disagree); [OPINION] 
   tracking −1 %. (SF Pro's licence only covers Apple UI mockups, so not in a public video.) [DOC]
 - White text; one accent for emphasis all video long (Pixlz green `#7CD93A`, or `#FFD84D`).
 - **Pill, not stroke:** fill `rgba(12,12,14,0.72)`, radius 22 px, padding 18 × 30 px. ≥ 4.5:1.
+- **As built (9:16):** the brief for the final cut asked for the reel look instead: 3 to 5 words
+  at a time, bold white with a thin dark edge and a soft shadow, no pill, key words in green.
+  Where a caption lies on a white page or on small print (M1, W1) it gets a dark patch behind it.
+  Phrase starts come from `times` in `plan.json` (measured on the narration), not from guesses.
+  The judges' cut keeps the pills.
 - In: scale 0.94 → 1 and fade over 140 ms, ease-out `cubic-bezier(.2,.8,.2,1)`; out: 100 ms fade;
   keyword colour snaps over 80 ms at its onset.
 
@@ -49,7 +54,8 @@ broadcaster spec; [3P] third-party tool measurements (they disagree); [OPINION] 
 
 - Every beat must work muted (X autoplays muted). One feature per 4–7 s beat: line → action →
   payoff (SFX + a beat of silence). 1.5–2.5× zooms over ~400 ms, still while reading.
-- Music bed −24 to −28 LUFS under VO at ~−16 LUFS; soft SFX on payoffs only.
+- Music bed −24 to −28 LUFS under VO at ~−16 LUFS; soft SFX on payoffs only. (As built, 9:16: the
+  track is the driver after the drop, so it sits 18 dB under the voice only while a line is spoken.)
 - End card 2.5–3 s, static ≥ 2 s (it's the thumbnail).
 
 ## Sources

@@ -51,3 +51,5 @@ showcase/out/*.mov
 showcase/out/*.mp4
 showcase/out/tmp/
 showcase/demo/draft-take.txt
+# The music under the cuts is a licensed track: never committed
+showcase/music.*
