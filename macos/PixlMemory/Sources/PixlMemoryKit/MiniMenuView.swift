@@ -9,7 +9,9 @@ import PixlzCore
 public final class MiniMenuView: NSView, NSTextFieldDelegate {
     public enum Section: String { case focus, shortcuts, privacy, energy, wallet }
 
-    public var onChange: ((PixlSettings) -> Void)?
+    /// One change, as an edit: the app applies it to its current settings (and saves). Only the
+    /// field that changed, so this panel's older copy never writes other values back.
+    public var onEdit: ((@escaping PixlSettings.Edit) -> Void)?
     public var onClose: (() -> Void)?
     public var onOpenWallet: (() -> Void)?
     public var onOpenMemory: (() -> Void)?
@@ -140,11 +142,12 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
                 let c = SwatchCard(option: o, selected: o.id == chosen, look: look)
                 c.onPress = { [weak self] in
                     guard let self else { return }
-                    var l = self.settings.looks ?? [:]
-                    l[self.settings.skinID] = o.id
-                    self.settings.looks = l
                     self.swatches.forEach { $0.selected = $0.option.id == o.id }
-                    self.changed()
+                    self.edit { s in
+                        var l = s.looks ?? [:]
+                        l[s.skinID] = o.id
+                        s.looks = l
+                    }
                 }
                 return c
             }
@@ -158,9 +161,8 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
             let c = PetCard(skin: s, selected: s.id == settings.skinID, look: look)
             c.onPress = { [weak self] in
                 guard let self else { return }
-                self.settings.skin = s.id
                 self.petCards.forEach { $0.selected = $0.skin.id == s.id }
-                self.changed()
+                self.edit { $0.skin = s.id }
             }
             return c
         }
@@ -176,9 +178,8 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
             let c = SizeCard(letter: l, value: v, selected: settings.scale == v, look: look, width: cw)
             c.onPress = { [weak self] in
                 guard let self else { return }
-                self.settings.scale = v
                 self.sizeCards.forEach { $0.selected = $0.value == v }
-                self.changed()
+                self.edit { $0.scale = v }
             }
             return c
         }
@@ -193,25 +194,23 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
             let c = ChoiceCard(title, detail: d, glyph: g, selected: b == id, look: look, width: w3)
             c.onPress = { [weak self] in
                 guard let self else { return }
-                self.settings.behavior = id
                 self.choice.forEach { $0.selected = $0 === c }
-                self.changed()
+                self.edit { $0.behavior = id }
             }
             return c
         }
         let ch = NSStackView(views: choice); ch.spacing = 6
         stack.addArrangedSubview(ch)
-        stack.addArrangedSubview(toggle("Perch on the window I'm using", settings.perchOnWindows) { [weak self] on in self?.settings.perchOnWindows = on })
-        stack.addArrangedSubview(toggle("Hide when an app goes fullscreen", settings.hideInFullscreen) { [weak self] on in self?.settings.hideInFullscreen = on })
-        stack.addArrangedSubview(toggle("Let me wake them by hovering", settings.hoverWakes ?? false) { [weak self] on in self?.settings.hoverWakes = on })
+        stack.addArrangedSubview(toggle("Perch on the window I'm using", settings.perchOnWindows) { s, on in s.perchOnWindows = on })
+        stack.addArrangedSubview(toggle("Hide when an app goes fullscreen", settings.hideInFullscreen) { s, on in s.hideInFullscreen = on })
+        stack.addArrangedSubview(toggle("Let me wake them by hovering", settings.hoverWakes ?? false) { s, on in s.hoverWakes = on })
         // Sounds: soft effects on payoffs (a tongue snap, a ding). Off by default; read by Sfx.
-        stack.addArrangedSubview(toggle("Sounds", UserDefaults.standard.bool(forKey: "PixlMemory.sounds")) { on in UserDefaults.standard.set(on, forKey: "PixlMemory.sounds") })
+        stack.addArrangedSubview(toggle("Sounds", UserDefaults.standard.bool(forKey: "PixlMemory.sounds")) { _, on in UserDefaults.standard.set(on, forKey: "PixlMemory.sounds") })
         let sleepiness = settings.sleepiness ?? "normal"
         var sleepyButtons: [PixelButton] = []
         sleepyButtons = [("Night owl", "nightOwl"), ("Normal", "normal"), ("Sleepy", "sleepy")].map { title, id in
             PixelButton(title: title, primary: sleepiness == id) { [weak self] in
-                self?.settings.sleepiness = id
-                self?.changed()
+                self?.edit { $0.sleepiness = id }
             }
         }
         stack.addArrangedSubview(row([label("Sleepiness", .systemFont(ofSize: 13, weight: .medium), t.text), NSView()] + sleepyButtons, width: inner, spacing: 4))
@@ -318,9 +317,12 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         return r
     }
 
-    private func toggle(_ title: String, _ on: Bool, _ set: @escaping (Bool) -> Void) -> PixelToggle {
+    private func toggle(_ title: String, _ on: Bool, _ set: @escaping (inout PixlSettings, Bool) -> Void) -> PixelToggle {
         let tg = PixelToggle(title, on: on, look: look, width: inner)
-        tg.onPress = { [weak self, weak tg] in set(tg?.isOn ?? false); self?.changed() }
+        tg.onPress = { [weak self, weak tg] in
+            let on = tg?.isOn ?? false
+            self?.edit { set(&$0, on) }
+        }
         return tg
     }
 
@@ -346,21 +348,22 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         return v
     }
 
-    /// Instant apply: every change is saved and handed to the app at once.
-    private func changed() {
-        settings.save()
-        onChange?(settings)
+    /// Instant apply: the change is handed to the app at once (the app saves).
+    private func edit(_ e: @escaping PixlSettings.Edit) {
+        e(&settings)
+        onEdit?(e)
     }
 
     public func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
         if field === nameField {
-            let n = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            settings.name = n.isEmpty ? PixlSkins.current.manifest.name : String(n.prefix(24))
+            let t = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let n = t.isEmpty ? PixlSkins.current.manifest.name : String(t.prefix(24))
+            if n != settings.name { edit { $0.name = n } }
         } else if field === appsField {
-            settings.distractingApps = field.stringValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let apps = field.stringValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if apps != settings.distractingApps { edit { $0.distractingApps = apps } }
         }
-        changed()
     }
 }
 

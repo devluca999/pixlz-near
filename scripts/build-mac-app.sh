@@ -92,6 +92,8 @@ iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Add :PixlMemoryServiceDir string $(cd memory && pwd)" "$APP/Contents/Info.plist"
 # Local Network privacy: finding your other devices (Bonjour) to send your Pixl to them
 /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string Pixl Memory finds your other devices running Pixl on this network, so your Pixl can hop over to them. Only its name and mood travel, never your memory or keys." "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string Pixl Memory turns what you say into your Mosaico into text, here on your Mac, so you can reply to your Claude Code sessions." "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string Pixl Memory talks to your ESP-Mosaico over Bluetooth, so your Pixl and your agents reach it even when the Wi-Fi is weak." "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :NSBonjourServices array" -c "Add :NSBonjourServices:0 string _pixlz._tcp" "$APP/Contents/Info.plist"
 
 ensure_identity
@@ -110,7 +112,7 @@ echo "Installed: $DEST"
 
 case "${1:-}" in
   --open)     open "$DEST" ;;
-  --debug)    rm -f "$HOME/Library/Logs/PixlMemory/debug.log"
+  --debug)    # the log is kept across installs (it rotates itself past 5 MB)
               open --env PIXL_DEBUG=1 "$DEST"
               echo "Debug log: tail -f ~/Library/Logs/PixlMemory/debug.log" ;;
   --selftest) PIXL_DEBUG=1 "$DEST/Contents/MacOS/PixlMemory" --selftest ;;

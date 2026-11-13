@@ -113,7 +113,7 @@ struct TravelSim {
         #expect(arrived.owner == phone)
         #expect(arrived.stats.pokes == 41 && arrived.stats.trips == 1)
         #expect(arrived.emotion?.kind == .happy)
-        guard case .away(_, 2, "Luca's iPhone", let t?)? = sim[mac].record else { Issue.record("mac not away"); return }
+        guard case .away(_, 2, "Luca's iPhone", _, let t?)? = sim[mac].record else { Issue.record("mac not away"); return }
         #expect(t.epoch == 2)
         #expect(sim.events == ["Luca's Mac: exit → Luca's iPhone", "Luca's iPhone: entrance"])
         #expect(!sim[mac].inTrip && !sim[phone].inTrip)
@@ -126,7 +126,7 @@ struct TravelSim {
     }
 
     @Test func callFromThePhone() {
-        var sim = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", tombstone: nil))
+        var sim = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", ownerId: nil, tombstone: nil))
         sim.input(phone, .call(owner: mac))
         sim.drain()
         #expect(sim.owners == [phone])
@@ -178,7 +178,7 @@ struct TravelSim {
         sim.drain()
         #expect(sim.events == ["Luca's Mac: shrug checksumMismatch"])
         #expect(sim.owners == [mac])
-        guard case .away(_, 1, _, nil)? = sim[phone].record else { Issue.record("phone kept pending: \(String(describing: sim[phone].record))"); return }
+        guard case .away(_, 1, _, _, nil)? = sim[phone].record else { Issue.record("phone kept pending: \(String(describing: sim[phone].record))"); return }
         #expect(sim.violations == [])
     }
 
@@ -196,7 +196,7 @@ struct TravelSim {
         sim.violations = []
         sim.reconnect(); sim.drain()
         #expect(sim.owners == [phone])
-        #expect(sim[mac].record?.completeCopy?.epoch == 4)   // kept as a tombstone
+        #expect(sim[mac].record?.completeCopy == nil)   // the losing copy is stale: no tombstone (P3)
     }
 
     @Test func conflictTieGoesToSmallerDeviceId() {
@@ -218,6 +218,77 @@ struct TravelSim {
         sim.reconnect(); sim.drain()
         #expect(sim.owners == [mac])
         #expect(sim.owned(mac)?.epoch == 3)   // tombstone epoch 2, +1
+    }
+
+    @Test func reclaimWhileTheHolderIsAwayThenItGivesWay() throws {
+        var sim = TravelSim()
+        sim.input(mac, .send(to: phone))
+        sim.drain()
+        #expect(sim.owners == [phone])
+        #expect(sim[mac].canReclaim)
+        // The phone goes dark (battery, left at the office). The Mac brings Frogg back anyway.
+        sim.crash(phone)
+        sim.violations = []
+        sim.input(mac, .reclaim)
+        #expect(sim.owned(mac)?.epoch == 4)            // phone holds epoch 2
+        #expect(sim.events.last == "Luca's Mac: entrance")
+        #expect(!sim[mac].canReclaim)
+        // Both think they have him until they meet; then the phone gives way.
+        sim.violations = []
+        sim.reconnect(); sim.drain()
+        #expect(sim.owners == [mac])
+        #expect(sim.owned(mac)?.epoch == 4)
+        guard case .away? = sim[phone].record else { Issue.record("phone should have let go"); return }
+        // Nothing to reclaim when the Pixl is here or there's no safety copy.
+        var fresh = TravelSim(otherRecord: .away(petId: sampleFrogg().petId, epoch: 1, ownerName: "Luca's Mac", ownerId: nil, tombstone: nil))
+        fresh.input(phone, .reclaim)
+        #expect(fresh.owners == [mac] && !fresh[phone].canReclaim && !fresh[mac].canReclaim)
+    }
+
+    /// Two copies after two reclaims (Mac at 11, Mosaico at 13). The Mosaico only asks (it never
+    /// asks back when asked): the Mac must ask back, learn it's older, and leave the screen.
+    @Test func anOlderCopyAsksBackAndGivesWay() throws {
+        var frogg = sampleFrogg()
+        frogg.epoch = 11
+        var node = TravelNode(me: mac, record: .owned(frogg))
+        let status = Envelope(petId: frogg.petId, from: phone.deviceId, to: mac.deviceId, type: .status, epoch: 13, sentAt: tripStart)
+        let out = node.handle(.received(status, from: phone), at: tripStart)
+        let sent = out.compactMap { o -> EnvelopeType? in if case .send(let e, _) = o { return e.type } else { return nil } }
+        #expect(sent == [.statusReply, .status])
+        let reply = Envelope(petId: frogg.petId, from: phone.deviceId, to: mac.deviceId, type: .statusReply, epoch: 13,
+                             payload: Payload(held: .owned, inTrip: false), sentAt: tripStart)
+        let settled = node.handle(.received(reply, from: phone), at: tripStart)
+        #expect(settled.contains(.playExit(to: phone)))
+        guard case .away(_, 13, _, _, _)? = node.record else { Issue.record("the Mac should have let go"); return }
+        // The newer side, asked by an older one, just answers: no ping-pong.
+        var newer = sampleFrogg()
+        newer.epoch = 13
+        var other = TravelNode(me: phone, record: .owned(newer))
+        let ask = Envelope(petId: newer.petId, from: mac.deviceId, to: phone.deviceId, type: .status, epoch: 11, sentAt: tripStart)
+        #expect(other.handle(.received(ask, from: mac), at: tripStart).count == 1)
+    }
+
+    /// Sending a Pixl that's already on the other device: it says so, and the copies settle.
+    @Test func sendingToWhereItAlreadyIsSettlesTheCopies() throws {
+        var older = sampleFrogg(); older.epoch = 11
+        var newer = sampleFrogg(); newer.epoch = 13
+        var m = TravelNode(me: mac, record: .owned(older))
+        var p = TravelNode(me: phone, record: .owned(newer))
+        // Mac → offer → phone declines "alreadyHere"
+        var toPhone = m.handle(.send(to: phone), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(toPhone.first?.type == .offer)
+        let decline = p.handle(.received(toPhone[0], from: mac), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(decline.first?.type == .decline && decline.first?.payload.reason == "alreadyHere")
+        // The Mac shrugs and asks; the phone answers; the Mac (older) leaves.
+        let afterDecline = m.handle(.received(decline[0], from: phone), at: tripStart)
+        #expect(afterDecline.contains(.shrug(reason: "alreadyHere")))
+        toPhone = afterDecline.compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(toPhone.last?.type == .status)
+        let reply = p.handle(.received(toPhone.last!, from: mac), at: tripStart).compactMap { o -> Envelope? in if case .send(let e, _) = o { e } else { nil } }
+        #expect(reply.map(\.type) == [.statusReply])   // the phone is newer: it just answers
+        let settled = m.handle(.received(reply[0], from: phone), at: tripStart)
+        #expect(settled.contains(.playExit(to: phone)))
+        guard case .away? = m.record, case .owned? = p.record else { Issue.record("the Mac should have let go"); return }
     }
 
     /// SPEC §14: kill either process (or both) between any two messages, and right after any save,

@@ -1,0 +1,5 @@
+#!/bin/sh
+# The simulator compiles the engine with -Werror, and Apple clang 21 flags the engine's own
+# renderer for -Wmisleading-indentation. This wrapper (first on PATH only for sim.sh) turns
+# that one warning off. Our sources build clean without it.
+exec /usr/bin/cc "$@" -Wno-misleading-indentation

@@ -18,9 +18,10 @@ Changes to any decision here should be made by editing this file in the same com
 | **M1** | macOS | Frogg on the desktop: idles, walks, perches on window edges and menu bar/Dock, falls when a window closes. Poke, grab, file ride. Menu bar icon. First-run permissions onboarding. Meets idle CPU budget (D7). |
 | **M2** | iOS | Frogg on an in-app stage, idling and reacting to taps (D8). |
 | **M3** | Travel | Frogg goes Mac → iPhone → Mac over the local network (D9) with exit/entrance animations; PetState intact. |
-| **v1 done** | All | M1–M3 + remaining system reactions (fullscreen hide, Trash signature, typing avoidance, battery, focus guardian) + hotkey mini menu + one small home-screen widget. |
+| **M4** | ESP-Mosaico | Frogg goes Mac → Mosaico → Mac over the same Wi-Fi (D17): drop-in entrance, idle with blink, hop-out exit; PetState intact. Spike first (plain TCP), then pairing + TLS before merge. |
+| **v1 done** | All | M1–M4 + remaining system reactions (fullscreen hide, Trash signature, typing avoidance, battery, focus guardian) + hotkey mini menu + one small home-screen widget + Send to / Lock (D18). |
 
-Order: M1 → M2 → M3 → remaining v1 items.
+Order: M1 → M2 → M3 → M4 → remaining v1 items. Platform order: **macOS → iOS → ESP-Mosaico → Windows.** (amended 2026-11-10, D17)
 
 ## D3. Launch roster
 Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
@@ -36,6 +37,7 @@ Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
 - **macOS 15.0+**, **iOS 18.0+**.
 - Owner's devices: Mac on macOS 15 Sequoia (may upgrade to macOS 26 Tahoe; the floor stays at 15). iPhone 11 on iOS 18.7.8 (no Dynamic Island; has U1).
 - Build with the latest Xcode that runs on the host Mac (Xcode 26.x on macOS 15.6+), Swift 6 language mode.
+- **ESP-Mosaico** (ESP32-S31, 2.16" 480×480 AMOLED, touch): a travel device like the iPhone (D17). ESP-IDF pinned at `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`, target `esp32s31`, built and installed only through the vendor's `python mosaico.py` (repo `esp-mosaico/esp-mosaico-vibe`, cloned next to this one). Pixlz code for it lives in `mosaico/`.
 - Windows (WPF) later, from the platform-neutral SPEC.md.
 
 ## D5. Repository
@@ -48,7 +50,7 @@ Order: **Frogg → Cat → Ghost → Spider.** Only Frogg ships in v1.
   - `assets/<pixl>/<slot>.png`, e.g. `assets/frogg/poke.png`
   - Slots: `idle, move, rest, poke, grab, file_ride, perch, signature, mischief`
 - **Emotions:** front view, `assets/<pixl>/emotions/<emotion>.png`. Emotions: `happy, annoyed, sleepy, startled, curious, proud`.
-- **Canvas:** fixed per-frame canvas **per Pixl**, declared in `pixl.json`. All frames of one Pixl share it. Frogg: **104×76 px**, from the Claude Design source. *(P2)*
+- **Frames:** `assets/<pixl>/sprites.json` is the source of truth: indexed-colour rows, each frame with its own `w × h`, trimmed to the art and drawn bottom-centred (SPEC §3.1). The fixed per-Pixl canvas from P2 is gone (amended 2026-11-10).
 - **Scaling:** whole-number multiples only, nearest-neighbor (no smoothing). User-selectable 2×/3×/4×.
 - **Facing:** behavior slots drawn facing right; the engine mirrors them for left.
 - **Manifest** `assets/<pixl>/pixl.json`: species, frame size, fps per slot, foot anchor (ground-contact pixel), hitbox, aura preset, movement type (`hop | walk | float | climb`).
@@ -100,6 +102,10 @@ Each milestone includes an Instruments check against these numbers.
   - **Timeout 8 s** or decline → `annoyed` shrug, the Pixl stays.
   - Every move increments a **version number**. On conflict (both devices think they own it), the higher version wins; the other device drops its copy.
 - **Transport-agnostic interface;** local network in v1, cloud later for Windows.
+- **Device kinds** (amended 2026-11-10): every device advertises `_pixlz._tcp` with TXT `id`, `name` and `kind` (`mac`, `iphone`, `mosaico`, later `windows`). `kind` picks the device icon in Send to (D18). The Mosaico advertises `kind=mosaico` and only travels with a Mac on the same Wi-Fi (D17).
+- **Pairing blocks travel off the Mac** (2026-11-10): a 6-digit code fed straight into TLS-PSK can be brute-forced offline from a recorded handshake (SPEC §15 Q7). Pairing must use the code to authenticate a fresh key exchange (a PAKE such as SPAKE2) before **M3 iPhone travel ships** and before `mosaico` merges. The planned iroh spike (`IOS-PLAN.md`) is the leading candidate: the code authenticates one exchange of iroh public keys, and after that only paired keys connect. The plain-TCP Mosaico spike is the only exception, and it stays on its branch.
+- **Protocol version:** `offer` and the TXT record carry `proto` (now 2). A device declines an offer from a newer protocol with `needsUpdate`, so mismatched builds stop cleanly before any transfer. The checksum is SHA-256 of the raw received `payload.state` bytes on every platform; nobody re-encodes to check it (SPEC §10.1, §10.3).
+- **Pairing direction:** the device without a keyboard shows the 6-digit code. Mac ↔ iPhone: the Mac shows it. Mac ↔ Mosaico: the **Mosaico shows it, the user types it on the Mac**. The key derivation doesn't care who shows it (both device ids are sorted into the salt).
 
 ## D10. Out of scope for v1
 - AI/LLM calls, accounts, cloud sync, payments, analytics
@@ -109,10 +115,14 @@ Each milestone includes an Instruments check against these numbers.
 - Cat, Ghost, Spider (Frogg only)
 - Live Activities / Dynamic Island, lock-screen widgets, extra widgets
 - Alarm wake reaction
-- Swipe-to-fling travel; Nearby Interaction direction-aware travel
+- Swipe-to-fling travel on the iPhone (on the Mosaico it is how travel works, D17); Nearby Interaction direction-aware travel
+- Tiling several Mosaicos into one bigger stage
 - Chat and Mic functionality (UI shown greyed out; `IBrain` stub and speech bubble exist, unused)
 - Mirroring system Focus modes
-- Pixls roaming across displays on their own
+- Pixls walking across displays on their own (D11)
+- **Free roam:** a Pixl starting trips between devices on its own. Specified now (SPEC §10.6, D18) so the PetState field and rules are settled; ships in v1.1, after pairing + TLS
+- On-device AI on the Mosaico (Ask and memory run on the Mac or the cloud; D17)
+- A cloud relay (the Mosaico needs an awake Mac on the same Wi-Fi until it exists)
 - Localization (English only), auto-update, crash reporting
 - Sound effects
 
@@ -182,6 +192,36 @@ Each milestone includes an Instruments check against these numbers.
 - **Per-pet UI data** (accent, menu face, signature, Ask placeholder, personality) lives in `pixl.json` → `ui`.
 - The iPhone stage (long-press, previously the radial menu) will use the same bubbles when the iPhone app is built.
 
+## D17. ESP-Mosaico is a travel device (2026-11-10)
+
+The Mosaico is a first-class home for a Pixl, like the iPhone (D8): the Pixl can live on it, and it travels to and from the Mac with the same trip protocol (SPEC §10.4). SPEC §12.1 has the details.
+
+- **Screen:** 2.16" 480×480 square AMOLED. To avoid burn-in, the Pixl never holds still in one spot for long (it drifts a few pixels between idle loops), the background is black (unlit pixels), there is no fixed UI chrome, and the screen dims when nobody touches it: 50% after 2 min, 10% after 10 min.
+- **Touch only:** no hover, right-click or keyboard. Touch targets at least ~110 px (about 9 mm), so **at most 4 options per screen**. Menus page with "more".
+- **Small battery:** when unplugged, the Pixl goes to sleep on the Mosaico and Wi-Fi turns off. It can't send, receive or be called until it's plugged in again. Its state is safe in flash (R8).
+- **Network:** travel only with a Mac that is awake and on the same Wi-Fi, until the cloud relay exists. No iPhone ↔ Mosaico trips in v1. Whether the Mosaico later runs iroh itself or keeps plain TCP to a Mac that bridges is Stage B of the iroh spike.
+- **No on-device AI.** Ask, Polish and memory run on the Mac (or the cloud later). The Mosaico only shows results the Mac sends it.
+- **Pairing is reversed:** the Mosaico shows the 6-digit code; the user types it on the Mac (D9).
+- **Mischief:** cursor-based mischief (tongue snatch, ghost drag, icon lick, Dock hop) doesn't port. Each Pixl gets a touch version (for example Frogg's tongue snatches the spot you just tapped) or none. Listed per species in SPEC §9.
+- **Pixl size:** a **per-device scale** in device settings, never in PetState. Whole numbers only (no blurry pixels), chosen so the screen is about 4 pet-widths across: `max(1, round(screenWidth / (4 × idle frame width)))`. The rule is for stage devices (Mosaico, iPhone); the Mac keeps its 2× default (D14). `scale.<device>` in `pixl.json` overrides it. Frogg on the Mosaico → **2× (136 px)**. Physics (hop apex and distance, walk/crawl speed) is in sprite pixels and scales with the pet.
+- **World map:** all four screen edges are surfaces (floor, walls, ceiling) for the Pixls that can use them. Slugg crawls the whole perimeter, upside down along the top, leaving its slime trail; Frogg hops along the floor and clings to walls because it's sticky (SPEC §12.3).
+- **Small-screen menu:** double-tap shows up to 4 bubbles at the screen edges; "more" leads to a second page. Swiping the Pixl off an edge flings it to the device assigned to that side. Tiling several Mosaicos comes later.
+- **The spike** (Phase 2 of the 2026-11-10 plan) uses plain TCP with PixlzCore's Framing and a `{"hello":{"deviceId","deviceName"}}` first frame, and maps a single tap on the Pixl to "go home" once the double-tap window expires. Pairing + TLS are required before `mosaico` merges.
+
+## D18. Send to, Lock, Free roam (2026-11-10)
+
+- **Send to ▸** lists paired devices, each with its device icon (`kind`, D9). Reachable ones can be picked. Known devices that are asleep or unreachable are greyed out with "wake it to send". It appears on the Mac (option bubbles and menu bar), the iPhone and the Mosaico.
+- **Lock to this device:** a PetState field (`policy.locked`), so the lock stays with the Pixl through restores and conflict resolution. A locked Pixl declines calls with the new reason `locked`, and no offer can start from it (Send to is greyed out: "unlock to send").
+- **Free roam:** a PetState field (`policy.freeRoam`). When on, the owner device may start `send` by itself, only to a device that is awake and in use, never during Focus on either device, never while locked, and with a cooldown. Rules in SPEC §10.6.
+- **New PetState fields are optional.** Old files still decode; the canonical encoding doesn't change. Adding them raises `proto` to 2 (D9).
+- **Free roam ships in v1.1, not v1.** Reasons:
+  1. *Trust first.* Until pairing + TLS exist, every trip runs over plain TCP. An autonomous sender would push the Pixl's state onto the network without the user asking.
+  2. *Surprise.* A dogfood user whose Pixl vanishes from the Mac with no action of their own will read it as a bug. Lock and Send to need to exist and feel solid first, so the user has an easy way to stop it.
+  3. *"In use" needs a signal that doesn't exist yet.* Each device must advertise whether someone is using it right now (SPEC §10.6). That's new TXT data and needs testing on all three platforms.
+  4. *Failures are more likely.* A Mosaico that is unplugged or a Mac that is asleep makes autonomous trips fail often. Each failure costs an `annoyed` shrug the user didn't cause.
+  - The field and the rules are specified now, so v1 PetState files already carry it and no migration is needed later.
+- D10's non-goal "Pixls roaming across displays on their own" is split in two: walking across displays stays out (D11); free roam between devices moves to v1.1.
+
 ## D19. Agent mode (2026-11-10)
 
 A Pixl can watch your coding agents. **Agent mode** is a front-page entry in the Pixl's menu, on the Mac and on the Mosaico: it lists the Claude Code sessions running on this Mac, what each is doing, and the ones waiting on you, and lets you answer their permission requests with Allow / Deny. SPEC §16 has the details.
@@ -193,3 +233,33 @@ A Pixl can watch your coding agents. **Agent mode** is a front-page entry in the
 - **Voice later:** the Mosaico has a microphone (ES8311). Dictation goes to the Mac, which transcribes it on the Mac and starts or resumes a session it runs itself (headless `claude -p --resume`), since no supported API types into a running terminal session.
 - **Installing the hooks** writes to the user's global Claude Code settings (`~/.claude/settings.json`). Pixlz asks before doing it and can remove them again.
 - Order: Mac (sessions, approvals, alerts) → Mosaico (list, alerts, Deny) → pairing (then Allow on the Mosaico) → voice.
+
+## D20. Pairing compares codes; a paired Mosaico can Allow (2026-11-11)
+
+Replaces the typed-code TLS-PSK plan for the Mac ↔ Mosaico link (open question 7, D9) with **numeric comparison**, as Bluetooth does it:
+
+- The Mac commits to its X25519 key (a hash), the Mosaico sends its key, the Mac reveals its own. Both derive the same key (HKDF) and the same 6-digit code, and the user confirms on **both** screens that the codes match. Because of the commitment, an attacker in the middle gets one chance in a million per attempt, and the code is no secret, so there's nothing to guess offline.
+- Only standard parts: X25519, SHA-256, HMAC, HKDF (CryptoKit on the Mac; a small dependency-free C version on the Mosaico, checked against the RFC vectors and against CryptoKit).
+- **What pairing buys now:** Allow from the Mosaico (D19). A decision is signed with the paired key over the request id, a number that only goes up (saved before sending, so it never repeats), and a hash of the summary and command the Mosaico showed. The Mac checks all three against what it sent, so a fake list on the Wi-Fi can't get you to approve something else. Unsigned Deny still works from any feed device.
+- The link itself still isn't encrypted (the feed and the sessions list travel in the clear on the local network). Encrypting frames with the paired key is the next step before the iPhone (M3).
+- Pair and Unpair from the Agents list on the Mac; Unpair on the Mosaico's page 3. The key lives in the Mac's Keychain and the Mosaico's own NVS.
+
+## D21. Bluetooth LE link to the Mosaico (2026-11-11)
+
+The Mosaico's Wi-Fi can be weak where it sits (-82 dBm measured), and calls and trips got lost. The Mac and the Mosaico now also talk over **Bluetooth LE**, directly, with no router:
+
+- The Mosaico advertises a GATT service (`6E1B0001-8F3C-4C6A-9B1E-70697868C0DE`): RX (write), TX (notify), INFO (read: id and name). Its bridge feeds RX bytes into a loopback connection to its own trip port and sends what comes back as notifications. The dock can't tell the link apart, so trips, the feed, agents and pairing are unchanged.
+- The Mac's bridge (CoreBluetooth) connects, reads INFO, opens a local port and tells the transport to reach that Mosaico at 127.0.0.1:port while linked (a route that wins over Wi-Fi). Its first bytes are a hello with the Mac's clock, since a Mosaico with no Wi-Fi has no time server.
+- Writes are acknowledged and ordered; notifications carry up to MTU − 3 bytes each. A trip (about 4 KB) takes a second or two.
+- Security is the same as Wi-Fi today: Allow is signed (D20); encrypting frames with the paired key is still the next step.
+- Range is about 10 m. Wi-Fi stays as the fallback when Bluetooth isn't linked.
+
+## D22. Dictation on the Mosaico (2026-11-11)
+
+Reply to a Claude Code session by voice from the Mosaico. Hold the mic button in a session's chat, talk, let go; the Mosaico shows what was heard, and green sends it as your reply.
+
+- **Recording on the Mosaico:** the onboard microphone (LMA2718B331) through the ES8311's ADC on I2S RX (MCLK 54, BCLK 37, WS 49, DIN 52, from Espressif's pin table). 16 kHz mono, IMA ADPCM (4:1), up to 30 s in PSRAM. The codec is opened only while recording.
+- **Speech to text on the Mac:** Apple's Speech framework, on-device when supported. The Mosaico can't run a speech model (Whisper's smallest is ~39M parameters; the S31 has 16 MB RAM and no NPU). Whisper (whisper.cpp) stays an option on the Mac if Apple's recognizer struggles with code words.
+- **Safety:** the transcript is sent as a signed reply (D20), and the Mac accepts free text only if it transcribed exactly that text for that Mosaico (once). A paired Mosaico can't type anything else.
+- **Cost:** nothing while not dictating. While dictating: the codec and mic (tens of mW), under 2 % of a core, ~8 KB/s of audio (a 10 s clip is ~80 KB: under a second over Wi-Fi, a few seconds over Bluetooth).
+

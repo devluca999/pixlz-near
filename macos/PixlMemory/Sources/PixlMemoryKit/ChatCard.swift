@@ -57,6 +57,19 @@ public final class ChatCard: PixlCard {
         onReply?(t)
     }
 
+    /// How far the view sits above the newest turn (0: at the end), to keep a reader's place
+    /// when the chat redraws with new turns.
+    public var distanceFromEnd: CGFloat {
+        guard let doc = bodyScroll.documentView else { return 0 }
+        return max(0, doc.bounds.height - bodyScroll.contentView.bounds.height - bodyScroll.contentView.bounds.origin.y)
+    }
+
+    public func scroll(toDistanceFromEnd d: CGFloat) {
+        guard let doc = bodyScroll.documentView else { return }
+        layoutSubtreeIfNeeded()
+        doc.scroll(NSPoint(x: 0, y: max(0, doc.bounds.height - bodyScroll.contentView.bounds.height - d)))
+    }
+
     /// The newest turn in view.
     public func scrollToEnd() {
         guard let doc = bodyScroll.documentView else { return }

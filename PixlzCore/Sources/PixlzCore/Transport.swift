@@ -10,6 +10,8 @@ public enum EnvelopeType: String, Codable, Sendable, CaseIterable {
 
 public enum DeclineReason: String, Codable, Sendable {
     case busy, hasOtherPet, unsupportedSpecies, userDeclined
+    /// The receiver already holds this very Pixl: two copies; status settles which is newer.
+    case alreadyHere
 }
 
 /// What a device holds for a pet, as reported in `statusReply`.
@@ -34,9 +36,13 @@ public struct Payload: Codable, Equatable, Sendable {
     /// statusReply
     public var held: HeldKind?
     public var inTrip: Bool?
+    /// statusReply with held == away: the device it went to (from the away record).
+    public var holderId: String?
+    public var holderName: String?
 
     public init(species: String? = nil, name: String? = nil, reason: String? = nil, state: PetState? = nil,
-                checksum: String? = nil, held: HeldKind? = nil, inTrip: Bool? = nil) {
+                checksum: String? = nil, held: HeldKind? = nil, inTrip: Bool? = nil,
+                holderId: String? = nil, holderName: String? = nil) {
         self.species = species
         self.name = name
         self.reason = reason
@@ -44,6 +50,8 @@ public struct Payload: Codable, Equatable, Sendable {
         self.checksum = checksum
         self.held = held
         self.inTrip = inTrip
+        self.holderId = holderId
+        self.holderName = holderName
     }
 }
 
@@ -99,14 +107,18 @@ public enum Framing {
         public init() {}
 
         public mutating func feed(_ bytes: Data) throws -> [Envelope] {
+            try frames(bytes).map { try PetState.decoder.decode(Envelope.self, from: $0) }
+        }
+
+        /// Whole frame bodies, undecoded (a link may carry other messages beside envelopes).
+        public mutating func frames(_ bytes: Data) throws -> [Data] {
             buffer.append(bytes)
-            var out: [Envelope] = []
+            var out: [Data] = []
             while buffer.count >= 4 {
                 let length = buffer.prefix(4).reduce(0) { Int($0) << 8 | Int($1) }
                 guard length <= maxFrame else { throw FramingError.frameTooLarge(length) }
                 guard buffer.count >= 4 + length else { break }
-                let body = buffer.dropFirst(4).prefix(length)
-                out.append(try PetState.decoder.decode(Envelope.self, from: Data(body)))
+                out.append(Data(buffer.dropFirst(4).prefix(length)))
                 buffer = Data(buffer.dropFirst(4 + length))
             }
             return out

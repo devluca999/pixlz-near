@@ -130,6 +130,8 @@ public extension Notice {
     static let noOtherApp = Notice(.info, "No other app is open to hand this to.", seconds: 2)
     static let localNetworkOff = Notice(.warn, "To see your other devices, turn on Pixl Memory in System Settings → Privacy & Security → Local Network.", seconds: 5)
     static let tripDeclined = Notice(.info, "The other device said not now.")
+    /// Sent to where it already was: two copies; the older steps aside.
+    static func alreadyThere(_ name: String) -> Notice { Notice(.info, "\(name) is already there. Sorting out which copy is newest.") }
     static func tripFailed(_ why: String) -> Notice { Notice(.error, "Couldn't travel there (\(why)). Staying here.") }
     static func notHere(_ name: String) -> Notice { Notice(.info, "\(name) isn't on this device right now.", seconds: 2) }
     static func travelling(_ name: String, to device: String) -> Notice { Notice(.info, "\(name) is heading to \(device)…", seconds: 8) }
@@ -137,6 +139,13 @@ public extension Notice {
     static func arrived(_ name: String) -> Notice { Notice(.done, "\(name) came over from another device.") }
     static func ownerAway(_ owner: String) -> Notice { Notice(.info, "\(owner) isn't nearby right now.") }
     static func callingFrom(_ owner: String) -> Notice { Notice(.info, "Calling from \(owner)…") }
+    /// Two copies met and the one here was older: it steps aside.
+    static func alreadyHas(_ device: String, _ name: String) -> Notice { Notice(.info, "\(device) already has \(name).") }
+    static func awayNoSwap(_ name: String) -> Notice { Notice(.info, "\(name) is away — swap when it's back.") }
+    static func arriving(_ name: String) -> Notice { Notice(.info, "\(name) is on the way here.", seconds: 2) }
+    static func travelProblem(_ why: String) -> Notice { Notice(.error, sentence(why), seconds: 8) }
+    static let petUnreadable = Notice(.error, "Your saved Pixl couldn't be read, so it was kept aside (pet.json.corrupt). No new Pixl was made.", seconds: 10)
+    static func trustRemoved(_ device: String) -> Notice { Notice(.done, "\(device) will ask before sending a Pixl.") }
     // permissions and the service
     static let accessibilityNeeded = Notice(.warn, "Pixl Memory needs Accessibility to see your window and selected text. Turn it on in System Settings → Privacy & Security → Accessibility.", seconds: 8)
     static func serviceProblem(_ why: String) -> Notice { Notice(.error, sentence("The memory service isn't working: \(why)"), seconds: 6) }
@@ -199,7 +208,9 @@ public extension Notice {
     static func catalog(name: String = "Frogg") -> [Notice] {
         [answerSaved, answerNotSaved, noteSaved("Research"), noteNotSaved, noDevices, noOtherApp, localNetworkOff, tripDeclined,
          tripFailed("timeout"), notHere(name), travelling(name, to: "Laptop"), left(name, to: "Laptop"), arrived(name),
-         ownerAway("Studio Mac"), callingFrom("Studio Mac"), accessibilityNeeded, serviceProblem("not running"),
+         ownerAway("Studio Mac"), callingFrom("Studio Mac"), alreadyHas("Studio Mac", name), awayNoSwap(name), arriving(name),
+         travelProblem("Couldn't save the Pixl"), petUnreadable, trustRemoved("Studio Mac"),
+         accessibilityNeeded, serviceProblem("not running"),
          error(.upstream("NEAR AI hiccup")), checkingEnclave, thinking, polished("Verified in TEE · 17/17"), replaced, couldntWrite,
          copied, droppedIn, handingOff("Claude"), handedOff("Claude"), pasteIn("Claude"), walletPaused(true, perWeek: "0.25"),
          walletPaused(false, perWeek: "0.25"), walletLimit("Weekly limit set to 0.25 NEAR."), walletError("Couldn't change the limit."),

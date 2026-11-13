@@ -24,6 +24,23 @@ class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// The Pixl's own window. One Pixl, one place: while it's away on another device, nothing may
+/// put this window on screen (D17). Whatever tries is refused and logged.
+final class PixlPanel: OverlayPanel {
+    var isAway: () -> Bool = { false }
+    private func refused(_ how: String) -> Bool {
+        guard isAway() else { return false }
+        Debug.log("pixl window: \(how) refused while away\n" + Thread.callStackSymbols.dropFirst(2).prefix(5).joined(separator: "\n"))
+        return true
+    }
+    override func orderFrontRegardless() { if !refused("orderFrontRegardless") { super.orderFrontRegardless() } }
+    override func orderFront(_ sender: Any?) { if !refused("orderFront") { super.orderFront(sender) } }
+    override func makeKeyAndOrderFront(_ sender: Any?) { if !refused("makeKeyAndOrderFront") { super.makeKeyAndOrderFront(sender) } }
+    override func order(_ place: NSWindow.OrderingMode, relativeTo other: Int) {
+        if place == .out || !refused("order(\(place.rawValue))") { super.order(place, relativeTo: other) }
+    }
+}
+
 /// The mini menu takes typing (its name field) without activating the app.
 final class KeyPanel: OverlayPanel {
     var onCancel: (() -> Void)?
@@ -33,13 +50,20 @@ final class KeyPanel: OverlayPanel {
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// Opening the app again (its icon on the Desktop, Spotlight, Finder) while it runs: the Pixl
+    /// comes out, or, when it's away on another device, the offer to call it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        summon()
+        return false
+    }
+
     enum Mode { case perched, held, airborne, dropping }
 
     var settings = PixlSettings.load() { didSet { PixlSkins.displayName = settings.name } }
     let client = MemoryClient()
     let watcher = WindowWatcher()
     var frogg: FroggView!
-    var froggPanel: OverlayPanel!
+    var froggPanel: PixlPanel!
     var bubblePanel = OverlayPanel(size: NSSize(width: 10, height: 10))
     /// Showcase only: the recorded column (AppKit coordinates), so a take never cuts a bubble off.
     var bubbleArea: CGRect?
@@ -125,7 +149,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         EnergyMonitor.shared.start()
         Debug.log("launch pid=\(ProcessInfo.processInfo.processIdentifier) accessibility=\(AX.trusted) debug=\(Debug.enabled)")
         bubblePanel.ignoresMouseEvents = true  // the bubble is opaque; it must never swallow clicks (R2)
-        PixlSkins.currentID = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
+        // an unknown skin in settings (removed, or a typo) becomes the one actually shown, and stays so
+        let shown = PixlSkins.skin(settings.skinID) != nil ? settings.skinID : "frogg"
+        PixlSkins.currentID = shown
+        if settings.skin != shown {
+            Debug.log("settings: skin \(settings.skin ?? "none") → \(shown)")
+            settings.skin = shown
+            settings.save()
+        }
         PixlSkins.displayName = settings.name
         PixlSkins.looks = settings.looks ?? [:]
         buildFrogg()
@@ -162,8 +193,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // bridge and the service with the first: it doesn't start its own
         let secondCopy = ProcessInfo.processInfo.environment["PIXL_DEVICE_ID"] != nil
         if !secondCopy { bridge.start() }
-        if !secondCopy && !CommandLine.arguments.contains("--selftest") { agents.start(); _ = chats }
-        if ShowcaseDirector.enabled { showcase.start() }   // a recording aid: only with --showcase / PIXL_SHOWCASE=1   // chats: messages and finished turns
+        if !secondCopy && !CommandLine.arguments.contains("--selftest") { agents.start(); _ = chats }   // chats: messages and finished turns
+        if ShowcaseDirector.enabled { showcase.start() }   // a recording aid: only with --showcase / PIXL_SHOWCASE=1
         if !secondCopy { Task { @MainActor in
             if let why = await service.ensureRunning() {
                 Debug.log("service: \(why)")
@@ -181,7 +212,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         updateHover()
         if !CommandLine.arguments.contains("--selftest") { sleep.start() }
-        froggPanel.orderFrontRegardless()
+        // away on another device (a Mosaico, a phone): it isn't here, so nothing to show
+        if awayOn == nil { froggPanel.orderFrontRegardless() }
         scheduleIdle()
         if CommandLine.arguments.contains("--selftest") {
             Task { @MainActor in await self.selfTest() }
@@ -199,7 +231,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         frogg = FroggView(scale: scale)
         frogg.onMouse = { [weak self] kind, event in self?.mouse(kind, event) }
         frogg.onContactChange = { [weak self] in if let self, let f = self.foot { self.place(at: f) } }
-        froggPanel = OverlayPanel(size: frogg.frame.size)
+        froggPanel = PixlPanel(size: frogg.frame.size)
+        froggPanel.isAway = { [weak self] in self?.awayOn != nil }
         froggPanel.animationBehavior = .none
         froggPanel.contentView = frogg
         if let current { place(at: current) }
@@ -537,6 +570,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shows Frogg and invalidates any fade-out still running, so its completion can't hide him.
     func showFrogg() {
+        guard awayOn == nil else { return }   // one Pixl, one place: never on screen while it's away
         pond.cancel()   // the pond draws him while he's in it: showing the real one ends it
         visGen += 1
         froggPanel.animator().alphaValue = 1  // replaces a running fade animation…
@@ -1678,6 +1712,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func toggleHidden() {
+        // Away on another device: ⌃⌥H offers to call it here instead (it's on one device at a time)
+        if awayOn != nil { summon(); return }
         userHidden.toggle()
         Debug.log("hide toggled hidden=\(userHidden)")
         closeMenus()
@@ -1709,7 +1745,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.contentView = card
         panel.onCancel = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil }
         view.onClose = panel.onCancel
-        view.onChange = { [weak self] s in self?.apply(s) }
+        // only the field that changed, applied to the current settings (never the panel's older copy)
+        view.onEdit = { [weak self] edit in
+            guard let self else { return }
+            var s = self.settings
+            edit(&s)
+            self.apply(s)
+        }
         view.onOpenWallet = { [weak self] in self?.openWallet() }
         view.onOpenMemory = { [weak self] in self?.miniPanel?.orderOut(nil); self?.miniPanel = nil; self?.menu.showMemory() }
         view.onResize = { [weak view, weak panel, weak card] in
@@ -1720,8 +1762,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.setFrameTopLeftPoint(NSPoint(x: panel.frame.minX, y: top))
         }
         view.onAdjustSize = { [weak self] in
-            self?.miniPanel?.orderOut(nil); self?.miniPanel = nil
-            self?.resizer.beginAdjust()
+            guard let self else { return }
+            if let away = self.awayOn { self.notify(.notHere(self.settings.name)); Debug.log("adjust blocked: away on \(away)"); return }
+            self.miniPanel?.orderOut(nil); self.miniPanel = nil
+            self.resizer.beginAdjust()
         }
         placeBeside(panel, avoid: menu.avoidRects())
         panel.autorecalculatesKeyViewLoop = true   // Tab walks the controls
@@ -1747,12 +1791,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Every settings change goes through here, and is saved once at the end.
     func apply(_ new: PixlSettings) {
         let old = settings
         settings = new
-        // a rename belongs to the Pixl it was made on
-        if new.name != old.name, new.skinID == old.skinID { settings.rememberName(default: PixlSkins.current.manifest.name) }
-        if new.skinID != old.skinID { settings.skin = old.skin; setSkin(new.skinID); return }
+        defer { settings.save() }
+        // A rename belongs to the Pixl it was made on, and travels with it (the record wins).
+        // Not while it's away or mid-trip.
+        if new.name != old.name, new.skinID == old.skinID {
+            if travel.runner?.restyle(species: PixlSkins.currentID, name: new.name) == false {
+                settings.name = old.name
+                notify(.awayNoSwap(old.name))
+                Debug.log("rename blocked: \(awayOn.map { "away on \($0)" } ?? "mid-trip or not saved")")
+            } else {
+                settings.rememberName(default: PixlSkins.current.manifest.name)
+            }
+        }
+        if new.skinID != old.skinID { settings.skin = old.skin; settings.name = old.name; setSkin(new.skinID); return }
         if new.scale != old.scale { setSize(new.scale) }
         if new.perchOnWindows != old.perchOnWindows { userPlaced = false; reposition(force: true) }
         if new.hideInFullscreen != old.hideInFullscreen { updateFullscreen() }
@@ -1772,7 +1827,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// follows the skin unless the user renamed their Pixl.
     func setSkin(_ id: String) {
         guard let next = PixlSkins.skin(id), id != PixlSkins.currentID else { return }
-        let nextName = next.manifest.name
+        // the swapped-in Pixl is the one that travels: only while it's here and not mid-trip
+        var after = settings
+        after.switchSkin(to: id, default: next.manifest.name)   // each Pixl keeps its own name
+        guard travel.runner?.restyle(species: id, name: after.name) != false else {
+            notify(.awayNoSwap(settings.name))
+            Debug.log("skin swap blocked: \(awayOn.map { "away on \($0)" } ?? "mid-trip or not saved")")
+            return
+        }
         Debug.log("skin \(PixlSkins.currentID) → \(id)")
         let reopenSettings = miniPanel?.isVisible == true
         if reopenSettings { toggleMiniMenu() }
@@ -1786,12 +1848,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                PixlSkins.currentID = id
-                self.settings.switchSkin(to: id, default: nextName)   // each Pixl keeps its own name
-                self.settings.save()
+                self.becomeSkin(id: id, name: after.name)
                 let at = self.foot
-                self.buildFrogg()  // new canvas size, same feet
-                if let at { self.place(at: at) }
                 self.showFrogg()
                 if let at {
                     // pop in: the landing spring, with dust
@@ -1799,11 +1857,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.puff(at: at)
                 }
                 self.speak(.greet)
-                self.roam.refresh()   // each Pixl roams its own way
-                self.updateHover()    // a ghost floats
                 if reopenSettings { self.toggleMiniMenu() }
             }
         })
+    }
+
+    /// Becomes Pixl `id` called `name` (a swap, an arrival, or the record at launch): settings,
+    /// art, roaming and hover follow. No puff or sound: the caller plays what fits.
+    func becomeSkin(id: String, name: String) {
+        guard let skin = PixlSkins.skin(id) else { return }
+        let changed = id != PixlSkins.currentID
+        PixlSkins.currentID = id
+        settings.skin = id
+        settings.name = name
+        settings.rememberName(default: skin.manifest.name)
+        settings.save()
+        guard changed else { return }
+        let at = foot
+        buildFrogg()  // new canvas size, same feet
+        if let at { place(at: at) }
+        roam.refresh()   // each Pixl roams its own way
+        updateHover()    // a ghost floats
     }
 
     /// Hand-off: bring `target` forward, let the Pixl hop to its window, then put the text into
@@ -1872,7 +1946,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pond.cancel()   // drawn at the old size
         cancelMotion()
         buildFrogg()
-        froggPanel.orderFrontRegardless()
+        if awayOn == nil { froggPanel.orderFrontRegardless() }
         if live { return }
         settings.save()
         userPlaced = false
@@ -1913,10 +1987,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The menu bar icon was clicked: a hidden Pixl springs out of the icon onto your window;
     /// a visible one opens its bubbles.
     func summon() {
+        if awayOn == Whereabouts.arriving { notify(.arriving(settings.name)); return }
         if let away = awayOn {
-            menu.showList([ListMenuView.Row(id: "call", title: "Call \(settings.name) back from \(away)", icon: nil, trailing: "↵")], near: nil) { [weak self] _ in
+            var rows = [ListMenuView.Row(id: "call", title: "Call \(settings.name) back from \(away)", icon: nil, trailing: "↵")]
+            if travel.runner?.canReclaim == true {
+                rows.append(ListMenuView.Row(id: "reclaim", title: "\(away) is off? Bring \(settings.name) back anyway", icon: nil, trailing: nil))
+            }
+            menu.showList(rows, near: nil) { [weak self] row in
                 self?.menu.closeList()
-                self?.travel.callBack()
+                if row.id == "reclaim" { self?.travel.reclaim() } else { self?.travel.callBack() }
             }
             return
         }
@@ -1926,6 +2005,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         userHidden = false
         fullscreenHidden = false
         paused = false
+        springOut()
+    }
+
+    /// The entrance: out of the menu bar icon, hanging from it, then a hop down to the perch.
+    /// Leaves pause and full-screen hiding as they are (an arrival doesn't undo them).
+    func springOut() {
+        guard awayOn == nil, !userHidden else { return }
+        if fullscreenHidden { return }   // it drops in when the full-screen app goes
         userPlaced = false
         guard let spot = target() else { return }
         // start just under the icon, hanging from it, then hop down to the perch
@@ -1960,7 +2047,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status.isEnabled = false
         if let best = game.statusLine { add(best, nil).isEnabled = false }   // best game scores, per pet
         menu.addItem(.separator())
-        _ = add(userHidden ? "Call \(settings.name)" : "Open \(settings.name)'s menu", #selector(summonFromMenu))
+        let callTitle = awayOn == Whereabouts.arriving ? "\(settings.name) is on the way…"
+            : awayOn.map { "Call \(settings.name) back from \($0)…" }
+            ?? (userHidden ? "Call \(settings.name)" : "Open \(settings.name)'s menu")
+        _ = add(callTitle, #selector(summonFromMenu))
         let login = add("Open at login", #selector(toggleLogin))
         login.state = LoginItem.enabled ? .on : .off
         let polish = add("Polish selection", nil)
@@ -1990,12 +2080,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             size.submenu?.addItem(i)
         }
         size.submenu?.addItem(.separator())
-        let adjust = NSMenuItem(title: "Adjust by dragging a corner…", action: #selector(adjustSize), keyEquivalent: "")
+        let adjust = NSMenuItem(title: "Adjust by dragging a corner…", action: awayOn == nil ? #selector(adjustSize) : nil, keyEquivalent: "")
         adjust.target = self
         size.submenu?.addItem(adjust)
         _ = add(paused ? "Resume" : "Pause", #selector(togglePause))
         _ = add("Reset position", #selector(resetPosition))
-        _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
+        if let away = awayOn {
+            add("\(settings.name) is on \(away == Whereabouts.arriving ? "the way here" : away)", nil).isEnabled = false
+        } else {
+            _ = add(userHidden ? "Show \(settings.name)  ⌃⌥H" : "Hide \(settings.name)  ⌃⌥H", #selector(toggleHidden))
+        }
         menu.addItem(.separator())
         let wallet = add("\(settings.name)'s wallet…", #selector(openWallet))
         Task { @MainActor in
@@ -2025,7 +2119,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.mischief = sender.representedObject as? String ?? "normal"
         settings.save()
     }
-    @objc func adjustSize() { resizer.beginAdjust() }
+    @objc func adjustSize() { if awayOn == nil { resizer.beginAdjust() } }
     @objc func sizeChosen(_ sender: NSMenuItem) { setSize(sender.representedObject as? Double ?? 2) }
 
     @objc func togglePause() {

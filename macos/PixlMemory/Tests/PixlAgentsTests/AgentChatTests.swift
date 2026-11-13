@@ -227,7 +227,7 @@ import Testing
         let queuers = all.filter { $0.text.contains(".queue(") }.map(\.name)
         #expect(queuers == ["AgentController.swift"])
         let senders = all.filter { $0.text.contains("agents.send(") || $0.text.contains("app.agents.send(") }.map(\.name)
-        #expect(senders == ["AgentChatPanel.swift"])
+        #expect(senders.sorted() == ["AgentChatPanel.swift", "TravelController.swift"])   // the panel's field; a paired device
     }
 
     @Test func transcriptsAndChatsNeverTouchTheNetwork() throws {

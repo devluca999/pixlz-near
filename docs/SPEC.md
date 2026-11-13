@@ -1,6 +1,6 @@
 # Pixlz — Specification v3
 
-The platform-neutral source of truth for how a Pixl behaves. The macOS, iOS and (later) Windows apps implement this document; where they differ, §12 says how. `DECISIONS.md` says *what* v1 includes; this file says *how it works*. `RESEARCH.md` has the platform APIs and sources.
+The platform-neutral source of truth for how a Pixl behaves. The macOS, iOS and ESP-Mosaico apps (and later Windows) implement this document; where they differ, §12 says how. `DECISIONS.md` says *what* v1 includes; this file says *how it works*. `RESEARCH.md` has the platform APIs and sources.
 
 Status: draft for owner review, 2026-10-15. Items marked **(spec choice)** were not settled in Phase 0; they are my defaults and can be changed here.
 
@@ -36,6 +36,7 @@ These override everything else in this document. A behavior that would break one
 | **Needs** | Slow-moving values that drive which behavior runs next (§2). |
 | **World map** | The surfaces the Pixl can stand on, hang from or must avoid (§7). |
 | **Owner device** | The one device that currently has the Pixl (§10). |
+| **Device kind** | `mac`, `iphone`, `mosaico` (later `windows`). Advertised in Bonjour TXT; picks the device icon (§10.3). |
 | **pt** | Screen points. **apx** = art pixels at 1×. On screen, 1 apx = `scale` pt. |
 | **Tick** | One animation step at 12 fps (≈ 83 ms). The Pixl animates "on twos". |
 
@@ -90,17 +91,30 @@ The **mood** is derived, not stored: the lowest need decides it.
 
 ```
 assets/<pixl>/
-  pixl.json
-  idle.png  move.png  rest.png  poke.png  grab.png
-  file_ride.png  perch.png  signature.png  mischief.png
-  emotions/happy.png  annoyed.png  sleepy.png  startled.png  curious.png  proud.png
+  pixl.json            behavior, physics, UI data (§3.2)
+  sprites.json         every frame, as indexed-colour rows (the source of truth for art)
+  sprites_<skin>.json  optional: a skin whose shape differs (a recolour is a palette in pixl.json)
 ```
 
-- Each slot strip holds **3 frames side by side** (anticipation → action → reaction) on the species canvas: size `3·W × H`. Frogg: W×H = **104×76**, so strips are 312×76.
-- Each emotion file is one frame, W×H, front view.
-- Transparent background. Alpha is 0 or 255 only, no anti-aliasing.
+`sprites.json`:
+
+```json
+{
+  "chars": "0123…", "palette": ["#1b2a1a", …], "transparent": ".",
+  "frames": {
+    "idle_0": { "w": 68, "h": 48, "rows": ["....0111…", …] },
+    "grab_0": { "w": 39, "h": 74, "rows": […], "pin": [19, 2] }
+  }
+}
+```
+
+- **Frame sizes come from `sprites.json`.** Each frame carries its own `w × h` and is trimmed to the art, so sizes differ between frames (Frogg: idle 68×48, a mid-hop frame 91×74, the grab dangle 39×74). Nothing else declares a frame size.
+- Frames are named `<slot>_<0..2>` for the 9 slots (anticipation → action → reaction), `emotion_<kind>` for the 6 emotions, plus extras a species uses (`blink`, `pond_<n>`).
+- **Placement:** a frame is drawn **bottom-centred** on the Pixl's spot: its bottom row is the feet, centred horizontally. A frame with an `anchor` (soft-body loops) is drawn with that point on the spot instead; `pin` is where a hanging frame is held.
+- **Canvas** (for layout and hit areas) = the widest frame's width × the tallest frame's height, computed from the file. Frogg: 91×75.
+- One character per pixel; `transparent` marks empty pixels. No partial transparency, no anti-aliasing.
 - Frames face **right**; the engine mirrors them for left.
-- Shown at whole-number scales only, nearest-neighbor. Default **2×**; 3× and 4× in settings.
+- Shown at whole-number scales only, nearest-neighbor. The scale is a **per-device setting**, never in PetState (§12.2). Mac default **2×**, 3× and 4× in settings.
 - Pet only, no props. Props (pond, fly, fake cursor) come from the FX layer (§8).
 
 ### 3.2 `pixl.json`
@@ -110,7 +124,6 @@ assets/<pixl>/
   "id": "frogg",
   "name": "Frogg",
   "species": "Red-eyed tree frog",
-  "canvas": { "w": 104, "h": 76 },
   "anchor": { "x": 50, "y": 70 },
   "hitbox": { "x": 22, "y": 30, "w": 62, "h": 40 },
   "movement": "hop",
@@ -134,24 +147,26 @@ assets/<pixl>/
 
 | Field | Meaning |
 |---|---|
-| `anchor` | The ground-contact pixel, in apx from the frame's top left. The world places the Pixl by this point. |
+| `anchor`, `hitbox` | Legacy, from the retired fixed canvas. Frames are placed bottom-centred (§3.1) and mouse hits use opaque pixels, so neither is used for placement. To be removed from `pixl.json` and the validator, together with its `canvas` key. |
 | `hitbox` | Rect used for world collisions and keep-out checks (§6.4). Must end at or above `anchor.y`, so a standing Pixl can perch on the focused window's title bar. Mouse hits use the frame's actual opaque pixels. |
 | `movement` | `hop` · `walk` · `float` (ignores gravity) · `climb` (walls and threads). |
 | `sticky` | Can hang from undersides and cling to window sides (Frogg's toe pads). |
 | `physics.gravity` | apx/s². Multiplied by `scale` on screen. |
+| `physics.hopApex`, `hopDistance`, `walkSpeed` | In apx (sprite pixels) and apx/s. They scale with the pet, so a hop covers the same number of pet-widths at any scale. |
 | `holds` | Ticks each frame stays up. `0` = held for as long as physics needs (the airborne frame of a hop). |
 | `loop` | What repeats while the slot stays active: `none`, `all` (frames 0→2), `middle` (frame 1), `last` (frame 2). |
+| `scale` | Optional. `scale.<device kind>` (`mosaico`, `iphone`, `mac`) replaces the default scale on that kind of device (§12.2), whole numbers only. The user's device setting overrides both. |
 
 **Validation** (PixlzCore unit test, fails the build):
-- All 9 slots and 6 emotions present.
-- Strip size = `3·W × H`; emotion size = `W × H`.
-- Alpha only 0 or 255; no fully empty frame.
-- Opaque pixels exist at `anchor.y` within ±2 apx in every grounded frame.
+- Every slot frame (`<slot>_0..2`) and all 6 emotions are present in `sprites.json`.
+- Every frame has `h` rows of `w` characters, and every character is in `chars` or is `transparent`.
+- `chars` and `palette` have the same length; no frame is fully empty.
+- The bottom row of every grounded frame has opaque pixels (the feet).
 - File isn't an unfetched Git LFS pointer.
 
 ### 3.3 Where the art comes from
 
-Sprites are rendered from the Claude Design C7 source in `design/explorations/c3/` (D6, P6). The render script runs the engine headlessly, draws only the pet layer onto the fixed canvas, aligns every frame to the anchor, and writes the strips. PixelLab only fills poses the design lacks.
+Sprites are rendered from the Claude Design C7 source in `design/explorations/c3/` (D6, P6). The render script (`scripts/render-pixls.mjs`) runs the design's engine headlessly, draws only the pet layer, trims each frame to its art and writes `sprites.json`. PixelLab only fills poses the design lacks.
 
 ---
 
@@ -225,6 +240,7 @@ Two layers: **reactions** interrupt, **autonomy** fills the gaps.
 | rest | 1 | ×4 when tired; forced when the user has been away ≥ 10 min |
 | signature | 1 | fun ≥ 70, cooldown 10 min |
 | mischief | — | only through §9 |
+| roam (free roam, **v1.1**) | — | only through §10.6 |
 
 - Weights are multiplied by the mood effects (§2.3) and zeroed by any rule that forbids them (typing, focus session, Low Power Mode).
 - **Idle budget:** a run of idles lasts 8–40 s before autonomy may pick something else. Most of the Pixl's life is idle, which keeps CPU low (R6).
@@ -239,7 +255,7 @@ Two layers: **reactions** interrupt, **autonomy** fills the gaps.
 
 ### 4.5 Physics
 
-- Units are apx, converted to pt by `scale`. Gravity from `pixl.json` (Frogg 900 apx/s²).
+- Units are apx (sprite pixels), converted to pt or screen pixels by the device's `scale` (§12.2). Gravity, hop apex and distance, and walk/crawl speed are all apx values from `pixl.json`, so motion scales with the pet. Frogg: 900 apx/s².
 - **Hop:** pick a landing point; choose apex height from `hopApex`; solve the parabola. Frame 0 plays (3 ticks), frame 1 holds while airborne, frame 2 on landing. Dust FX on landing.
 - **Fall:** starts at rest, terminal velocity 1500 apx/s. Lands on the first platform below; if none, lands on the screen ground (§7.1).
 - **Throw:** release velocity = cursor velocity over the last 100 ms, capped at 3000 pt/s. Bounces off screen edges and the menu bar with restitution 0.4; ground friction stops it within about 1 s.
@@ -448,6 +464,15 @@ Sticky species can also reach a window top by climbing its side: hop to the side
 
 The moment the user moves the mouse or types, mischief ends with its reveal frame and the Pixl returns to idle.
 
+**On touch devices (iPhone stage, Mosaico)** there's no cursor, no Dock and no desktop icons, so those acts don't port. Each species lists a touch version or none. "User idle" means no touch for 2 min.
+
+| Mac act | Frogg on touch |
+|---|---|
+| Pond | Same (drawn pond on the stage) |
+| Tongue snatch | Snatches a drawn fly from the spot last tapped |
+| Title-bar nap | none |
+| Icon lick, Dock hop, Ghost drag | none |
+
 ---
 
 ## 10. State, storage and travel
@@ -476,9 +501,29 @@ One JSON document per Pixl. The same schema on every platform.
 }
 ```
 
-- **Not** in PetState: device settings (size, hotkeys, mischief level, distracting apps). Those stay on each device.
+- **Not** in PetState: device settings (size/scale, hotkeys, mischief level, distracting apps, edge map). Those stay on each device.
 - `epoch` = D9's version number. It increases by 1 on every ownership change and never otherwise.
-- **Checksum:** SHA-256 of the canonical encoding (keys sorted, UTF-8, no whitespace), used by travel acks.
+- **Canonical encoding** (how every writer encodes PetState): keys sorted, UTF-8, no whitespace, dates as `yyyy-MM-ddTHH:mm:ss.SSSZ`. Envelopes use the same encoder.
+- **Checksum:** SHA-256 of the **raw bytes of `payload.state` exactly as they appear in the `transfer` frame**, from its opening `{` to its closing `}`. The sender hashes the bytes it wrote; every receiver (Mac, iPhone, Mosaico) hashes the bytes it received. **No platform re-encodes before hashing**, so the check can't fail because two encoders disagree, and a receiver needs no JSON encoder to verify it. The `ack` carries this checksum.
+- A device without a full JSON encoder (the Mosaico) sends the Pixl on by editing the received bytes: it changes `epoch`, `owner`, `savedAt` and `stats.trips` in place, and inserts or removes `policy` at its sorted position, so the result is still canonical.
+
+**Optional fields (added 2026-11-10, D18):**
+
+```json
+"policy": { "locked": true, "freeRoam": true }
+```
+
+| Field | Meaning |
+|---|---|
+| `policy.locked` | The Pixl stays on its owner device: calls are declined with `locked`, and no offer can start (§10.6). |
+| `policy.freeRoam` | The owner device may start trips on its own (§10.6, v1.1). |
+
+- **Compatibility rules for every new PetState field:**
+  - It is optional. A file without it decodes, and absent means the default (`false`, off).
+  - Writers **omit** a field that holds its default (`policy` disappears when both are off). So a Pixl that never used a new feature encodes to exactly the same bytes as before, and its checksum doesn't change.
+  - `schema` stays `1`. It goes up only for a change an old reader can't safely ignore.
+  - The canonical encoding rules above don't change.
+  - A new field **raises the protocol version** (`proto`, §10.3). A device never accepts a Pixl from a newer protocol than its own: it declines the offer with `needsUpdate` before anything is transferred, so it can never drop a field it doesn't know.
 
 ### 10.2 PetStore
 
@@ -514,7 +559,8 @@ enum StoredPet {
   - the menu-bar icon offers "Call <name> back" while away;
   - Ask answers "what screens are available?" and "jump to <device or display>" on the Mac itself, with no model involved.
 - **Tested** by two transports in one process over real Bonjour.
-- **Next:** code pairing (6-digit code + TLS-PSK, `Pairing.deriveKey` exists), then a relay for devices on other networks (Windows, a phone on cellular).
+- **Next:** code pairing, then devices on other networks (Windows, a phone on cellular, a Mosaico away from home). Both are planned through an iroh spike (`IOS-PLAN.md`): peers dialled by public key, direct or relayed, with a `P2PTransport` beside the Bonjour one. The 6-digit code + TLS-PSK design below is the fallback if iroh doesn't work out.
+- **TXT record** (all devices): `id`, `name`, `kind` (`mac` | `iphone` | `mosaico`), `proto` (protocol version, §10.3 below), and from v1.1 `use` (`active` | `idle`) and `focus` (`1` during a Focus session) for free roam (§10.6). The Mosaico advertises `kind=mosaico` and browses only for `kind=mac`.
 
 ```swift
 protocol PetTransport {
@@ -525,9 +571,15 @@ protocol PetTransport {
 ```
 
 - v1: `LocalBonjourTransport` over Network.framework (D9, P1). The Mac always listens on `_pixlz._tcp`; the iPhone browses only while its app is in the foreground. Peer-to-peer Wi-Fi enabled.
+- Mosaico: ESP-IDF mDNS advertising `_pixlz._tcp` (TXT `kind=mosaico`) and a TCP socket using the same Framing. Only while plugged in (Wi-Fi is off on battery, §12.1).
 - Later: `RelayTransport` over WebSocket to a Pixlz server, for Windows.
-- **Pairing:** the first connection shows a 6-digit code on the Mac; the user types it on the iPhone. Both derive a TLS pre-shared key from it (HKDF-SHA256) and store it in the Keychain. Unpaired peers are ignored.
+- **Pairing:** the first connection shows a 6-digit code on one device and the user types it on the other. Mac ↔ iPhone: the Mac shows it, typed on the iPhone. Mac ↔ Mosaico (no keyboard): the **Mosaico** shows it, typed on the Mac. Both derive a TLS pre-shared key (HKDF-SHA256, both device ids sorted into the salt, so the direction doesn't matter) and store it (Keychain; NVS on the Mosaico). Unpaired peers are ignored.
+- **Spike only (Mosaico, not mergeable):** plain TCP, no pairing. The first frame each way is `{"hello":{"deviceId":…,"deviceName":…}}`, then envelopes.
 - **Framing:** length-prefixed JSON messages.
+- **Protocol version (`proto`):** an integer, now **2** (absent = 1, the builds before 2026-11-10). It goes up whenever PetState gains a field or a message changes meaning. Proto 2 adds `policy`, `decline(locked)`, `decline(needsUpdate)` and the raw-bytes checksum.
+  - Every `offer` carries the sender's `proto`. A receiver whose own `proto` is lower declines with **`needsUpdate`**; nothing is transferred and the Pixl stays. A newer receiver accepts an older offer.
+  - Devices also advertise `proto` in TXT, so Send to can show a peer with a lower version greyed out as "needs update" before offering. That also covers proto-1 builds, which predate `needsUpdate` and can't decline.
+  - After a `needsUpdate` decline, the sender shows the notice "<device> needs an update to host <name>." instead of the `annoyed` shrug.
 
 **Envelope:**
 
@@ -539,10 +591,10 @@ protocol PetTransport {
 | Type | From → to | Payload |
 |---|---|---|
 | `call` | non-owner → owner | — ("Call Frogg") |
-| `offer` | owner → target | species, name (so the target can check it can host it) |
-| `accept` / `decline` | target → owner | decline reason: `busy`, `hasOtherPet`, `unsupportedSpecies`, `userDeclined` |
+| `offer` | owner → target | species, name (so the target can check it can host it), `proto` |
+| `accept` / `decline` | target → owner, or owner → caller for a `call` | decline reason: `busy`, `hasOtherPet`, `unsupportedSpecies`, `userDeclined`, `locked` (the Pixl is locked to its device, §10.6), `needsUpdate` (the offer's `proto` is newer than the receiver's) |
 | `transfer` | owner → target | full PetState with `epoch + 1` and the new owner |
-| `ack` | target → owner | checksum of the received state |
+| `ack` | target → owner | checksum of the received `payload.state` bytes (§10.1) |
 | `commit` | owner → target | — |
 | `commitAck` | target → owner | — |
 | `abort` | either | reason |
@@ -552,7 +604,7 @@ protocol PetTransport {
 
 **Sender (current owner):**
 
-1. User picks "Send to <device>" or drags the Pixl into the portal hole (D9). Or the other device sent `call`.
+1. User picks "Send to <device>", drags the Pixl into the portal hole (D9), or flings it off a Mosaico edge (§11.1). Or the other device sent `call`. Or free roam picked a target (§10.6, v1.1). If `policy.locked` is set, nothing starts (and a `call` gets `decline(locked)`).
 2. Send `offer`. The Pixl plays `idle` with a "…" bubble; it hasn't left.
 3. On `accept`: send `transfer` (state with `epoch + 1`, owner = target).
 4. On `ack` with a matching checksum: save `.away(epoch + 1, tombstone: full state)`, send `commit`, **then** play the exit: crouch, look at the camera, big hop off the nearest screen edge (or into the portal), shrink, speed lines, dust (~1 s).
@@ -560,8 +612,8 @@ protocol PetTransport {
 
 **Receiver (target):**
 
-1. On `offer`: accept automatically if it can host the Pixl (its app is in the foreground on iOS, no other pet, species known); otherwise `decline`.
-2. On `transfer`: verify, save `.pendingArrival(state)`, send `ack(checksum)`.
+1. On `offer`: if the offer's `proto` is newer than its own, `decline(needsUpdate)`. Otherwise accept automatically if it can host the Pixl (its app is in the foreground on iOS, no other pet, species known); otherwise `decline`.
+2. On `transfer`: hash the raw `payload.state` bytes, decode and verify, save `.pendingArrival(state)`, send `ack(checksum)`.
 3. On `commit`: save `.owned(state)`, send `commitAck`, play the entrance: iPhone — drop from the top edge, squash, puff, `happy`; Mac — drop onto the window or ground under the cursor (~1 s).
 
 **Failure and timeout (8 s from `offer` to `ack`):**
@@ -580,18 +632,48 @@ protocol PetTransport {
 - **Conflicts:** if two devices both hold `.owned` for the same pet, the higher `epoch` wins and the other drops to `.away`. Equal epochs can't arise from the protocol; if they do (manual file copy), the lexicographically smaller `deviceId` wins.
 - The Pixl is only drawn by a device whose record is `.owned`.
 
+### 10.6 Send to, Lock, Free roam (D18)
+
+**Send to ▸** (Mac option bubbles and menu bar, iPhone, Mosaico):
+- Lists every paired device with its icon from `kind` (Mac, iPhone, Mosaico).
+- Reachable now → a normal row; picking it starts the trip (§10.4).
+- Paired but not reachable (asleep, unplugged Mosaico, iPhone app closed, other Wi-Fi) → greyed out, "wake it to send". Not pickable.
+- Reachable but advertising a lower `proto` than this device → greyed out, "needs update".
+- No paired devices → one row, "Pair a device…".
+- While `policy.locked` is set, the whole menu is greyed out with "unlock to send".
+
+**Lock to this device** (a toggle next to Send to; on the Mosaico on the "more" page):
+- Sets `policy.locked` in PetState and saves. Because it lives in PetState, a tombstone restore or a conflict win (§10.5) keeps it.
+- While locked: no `offer` can start (user, fling, portal or free roam), and an incoming `call` gets `decline(locked)`. The calling device shows "<name> is locked to <device>." and greys out Call until the next `status` says otherwise.
+- Unlocking removes the field (writers omit defaults, §10.1).
+
+**Free roam** (`policy.freeRoam`, **ships in v1.1**, D18):
+- A toggle in Pixl settings. Off by default. Turning it on is a user action on the owner device.
+- The owner device's autonomy (§4.3) may pick "roam" when **all** of these hold:
+  - not locked; no trip in progress; the Pixl is Grounded and idle;
+  - no Focus session on this device; the user hasn't touched or clicked the Pixl in the last 5 min;
+  - energy ≥ 25 (a tired Pixl stays put);
+  - the **cooldown** has passed: at least 45 min since the Pixl last arrived on this device (kept in device settings, not PetState), and at least 2 h after a failed roam attempt (doubling up to 8 h);
+  - a Mosaico owner is plugged in.
+- **Allowed targets:** paired, reachable now, and advertising `use=active` (someone used it in the last 2 min: input on a Mac, the app in the foreground on an iPhone, a touch on a plugged-in Mosaico) and not `focus=1`. Never a device in Focus, asleep or idle.
+- Picks one target at random among the allowed ones, then runs the normal trip (§10.4); the receiver treats it like any offer. The exit goes toward the edge mapped to that device when there is one.
+- A failed roam (decline, timeout) is **silent**: no `annoyed` shrug, since the user didn't ask for it. It only starts the failure cooldown.
+- The user's Lock always wins over free roam, and any manual Send to resets the cooldown.
+
 ---
 
 ## 11. Controls
 
 ### 11.1 Mouse and touch
 
-| Action | macOS | iPhone stage |
-|---|---|---|
-| **Poke** | Click (press + release < 250 ms, < 6 pt movement). A single click only pokes | Tap |
-| **Option bubbles** (§11.2) | Double-click, right-click, or press and hold 450 ms. The poke from the first click is cut short | Double-tap or long-press |
-| **Grab / throw** | Drag (after 6 pt movement), release to throw. Starting a drag pops any open bubbles | Drag, release to toss; bounces off screen edges |
-| **Signature** | An idle quirk (now and then while perched), or More ▸ "Do a trick" | Same |
+| Action | macOS | iPhone stage | Mosaico |
+|---|---|---|---|
+| **Poke** | Click (press + release < 250 ms, < 6 pt movement). A single click only pokes | Tap | Tap on the Pixl |
+| **Option bubbles** (§11.2) | Double-click, right-click, or press and hold 450 ms. The poke from the first click is cut short | Double-tap or long-press | Double-tap anywhere (small-screen menu, §11.2) |
+| **Grab / throw** | Drag (after 6 pt movement), release to throw. Starting a drag pops any open bubbles | Drag, release to toss; bounces off screen edges | Same as iPhone, except a **fling off an edge** sends the Pixl to the device on that side (below) |
+| **Signature** | An idle quirk (now and then while perched), or More ▸ "Do a trick" | Same | Same |
+
+**Fling to travel (Mosaico):** a release faster than ~1200 px/s whose path crosses an edge mapped to a reachable device starts a trip to it (§10.4). The Pixl clings half off that edge with a "…" bubble until the `ack`, then hops out. No mapped device, unreachable, locked or declined → it bounces back off the edge as a normal toss, with the `annoyed` shrug when the trip itself failed. The **edge map** is a device setting: each of the four edges → a paired device; by default every edge → the Mac the Pixl last came from. (The spike instead maps a single tap on the Pixl to "go home", fired only after the double-tap window (300 ms) expires with no second tap, so a double-tap never sends him away.)
 
 - Poke reaction: `poke` slot, fun +3, affection +4. 3 pokes in 4 s → `annoyed`. A poke while asleep → `startled`, then `annoyed`.
 - Mouse hits only on opaque pixels of the current frame (R2).
@@ -606,7 +688,7 @@ protocol PetTransport {
 | 1 | **Polish** when text is selected, otherwise **Ask** | Polish: the instruction list. Ask: the Ask card (attested TEE answer, paid from the Pixl's wallet) |
 | 2 | **Memory** | Recent highlights with backlinks, searchable |
 | 3 | **Wallet** (sub-label: balance) | Balance, cap and recent receipts; "Set up" if the sub-account doesn't exist |
-| 4 | **Send to <device>** | Only while a paired peer is reachable (none in the hackathon build) |
+| 4 | **Send to ▸** | Shown once a device is paired. The device list of §10.6 (asleep ones greyed out) and Lock to this Mac |
 | last | **More** | The mini list: Ask ⌘K · Memory · Wallet · Send to device · Focus · Do a trick · Pixl settings ⌃⌥P · Hide for now ⌃⌥H |
 
 - **Close:** Esc, a click anywhere else, or a click on the Pixl → reverse stagger (30 ms, 170 ms). Starting a drag → all bubbles pop at once (130 ms, with a 220 ms dither ring).
@@ -617,10 +699,21 @@ protocol PetTransport {
 - **Surface:** one material for every overlay (bubbles, label pills, the More list, cards, the speech bubble, the polish result, the mini menu): Liquid Glass (`NSGlassEffectView`) on macOS 26+, the paper fallback (paper fill, 2 pt ink ring, hard 3 pt ink shadow) on older systems or with Reduce Transparency.
 - **Legibility:** no screen capture (D12), so text surfaces use a backdrop dim that keeps text ≥ 4.5:1 over *any* backdrop (worst case black…white), choosing the light or dark variant from the system appearance. Icon-only bubbles keep the design fill (outlined icons).
 - **Per-pet data:** accent, menu face, signature name, Ask placeholder and personality live in `pixl.json` → `ui`, not code.
+- **Send to** (slot 4 and More) opens the device list of §10.6, with **Lock to this Mac** below it.
+
+**Small-screen menu (Mosaico, and any screen too small for the arc):**
+- Double-tap shows **up to 4 bubbles**, one at the middle of each screen edge, each at least 110 px (about 9 mm). Nothing else is tappable while it's open except the Pixl (closes it).
+- Page 1: **Home** (send it to the Mac; **Call** when it's away and a Mac is connected; **Bring** when it's away, no Mac answers, and a safety copy is here, §10.5) · **Trick** · **Swap** · **More**.
+- Page 2: **Answers** (the latest Ask results the Mac pushed; read-only) · **Memory** (recent highlights, read-only) · **More** · **Back**.
+- Page 3: **Lock / Unlock** · **Exit** · **Back**. Exit asks first (red stay, green leave), then restarts into Vibe Mode. With a Mac connected and the Pixl unlocked, the Pixl hops home first so it isn't left on a device that stopped running Pixlz.
+- With no Pixl on screen, the screen says where it is ("Frogg is on M's MacBook Pro" with the way to get it back, or "No Pixl here yet"), drifting slowly (§12.1).
+- When a Mac connects, the Mosaico asks it for status: if the Mac brought the Pixl back while the Mosaico was off, the Mosaico gives way and the Pixl walks off.
+- Lists (Send to, Answers) show at most 3 rows plus "back" or "more" per screen.
+- Closes after 8 s without a touch (no static UI on the AMOLED, §12.1).
 
 ### 11.3 macOS menu bar item
 
-Open menu · Send to <device> ▸ · Mischief ▸ (Chill / Normal / Chaos) · Size ▸ (2× / 3× / 4×) · Pause · Reset position · Permissions… · Quit.
+Open menu · Send to ▸ (device list with icons, asleep ones greyed, §10.6) · Lock to this Mac · Mischief ▸ (Chill / Normal / Chaos) · Size ▸ (2× / 3× / 4×) · Pause · Reset position · Permissions… · Quit.
 
 ### 11.4 Hotkeys (macOS, D14)
 
@@ -663,19 +756,77 @@ A Pixl's text goes through exactly one of three channels. Code: `PixlVoice.swift
 
 ## 12. Platform mapping
 
-| Concept | macOS (v1) | iOS (v1) | Windows (later) |
-|---|---|---|---|
-| Pet surface | Borderless non-activating `NSPanel`, `.screenSaver` level, joins all Spaces; CALayer per sprite | SpriteKit scene in the app ("stage") | Layered WPF window, per-pixel hit test |
-| Click-through | Toggle `ignoresMouseEvents` by alpha under the cursor | n/a (in-app) | `WS_EX_TRANSPARENT` toggling |
-| World map | CGWindowList + AX observers, `NSScreen.visibleFrame` | Stage edges only | `EnumWindows` + WinEvent hooks |
-| System reactions | §6, all | none | §6 equivalents |
-| Typing signal | Opt-in listen-only event tap (count only); AX fallback | n/a | Raw input count |
-| Hotkeys | Carbon `RegisterEventHotKey` | n/a | `RegisterHotKey` |
-| PetStore | App Group container file (shared with nothing on Mac) | App Group container file, read by the widget | `%LOCALAPPDATA%\Pixlz\pet.json` |
-| Transport | `LocalBonjourTransport` (listens) | `LocalBonjourTransport` (browses, foreground only) | `RelayTransport` |
-| Rendering clock | Ticks only on frame changes; display link only during motion | SpriteKit at 60 fps, frames stepped at 12 fps | Composition target only during motion |
+| Concept | macOS (v1) | iOS (v1) | ESP-Mosaico (v1) | Windows (later) |
+|---|---|---|---|---|
+| Pet surface | Borderless non-activating `NSPanel`, `.screenSaver` level, joins all Spaces; CALayer per sprite | SpriteKit scene in the app ("stage") | Full-screen 480×480 stage, Raylib Lite, black background | Layered WPF window, per-pixel hit test |
+| Click-through | Toggle `ignoresMouseEvents` by alpha under the cursor | n/a (in-app) | n/a (whole screen is the stage) | `WS_EX_TRANSPARENT` toggling |
+| World map | CGWindowList + AX observers, `NSScreen.visibleFrame` | Stage edges only | Four screen edges: floor, walls, ceiling (§12.3) | `EnumWindows` + WinEvent hooks |
+| System reactions | §6, all | none | power only: unplugged → sleep (§12.1) | §6 equivalents |
+| Typing signal | Opt-in listen-only event tap (count only); AX fallback | n/a | n/a | Raw input count |
+| Hotkeys | Carbon `RegisterEventHotKey` | n/a | n/a (touch only) | `RegisterHotKey` |
+| PetStore | App Group container file (shared with nothing on Mac) | App Group container file, read by the widget | NVS blob, committed atomically | `%LOCALAPPDATA%\Pixlz\pet.json` |
+| Transport | `LocalBonjourTransport` (listens) | `LocalBonjourTransport` (browses, foreground only) | mDNS `_pixlz._tcp` TXT `kind=mosaico` + TCP Framing, plugged in only | `RelayTransport` |
+| AI (Ask, Polish, memory) | Local service + NEAR AI (D15) | via the Mac (later) | none on device: shows results from the Mac | later |
+| Pairing | Shows the code to an iPhone; types the Mosaico's code | Types the Mac's code | Shows the code | later |
+| Rendering clock | Ticks only on frame changes; display link only during motion | SpriteKit at 60 fps, frames stepped at 12 fps | Redraws only on frame changes and during motion | Composition target only during motion |
 
 Sources and caveats for each macOS/iOS row: `RESEARCH.md` §1–§3.
+
+### 12.1 ESP-Mosaico (D17)
+
+The Mosaico is a travel device like the iPhone: the Pixl can live there, and it goes there and back with the normal trip (§10.4).
+
+| Constraint | What the app does |
+|---|---|
+| **2.16" 480×480 square AMOLED, burn-in** | Black background (unlit pixels). No fixed chrome: bubbles, notices and lists time out (≤ 8 s). The Pixl never stays on one spot: after each idle loop it drifts a few px (±8 px, random), and every few minutes it hops somewhere else on the stage. Dims to 50% after 2 min without a touch, 10% after 10 min; while asleep the screen shows only the dim Pixl and Zz, which also drift. **(spec choice:** drift and screen-off timings.) |
+| **Touch only** | No hover, right-click or keyboard. Targets ≥ ~110 px (≈ 9 mm), so **≤ 4 options per screen** (§11.2). Hover-based behaviors (wake by hovering, status tooltip) don't exist here. |
+| **Small battery** | Unplugged → the Pixl plays `rest` and falls asleep, **Wi-Fi turns off**, the screen goes to sleep level, then off after 2 min. A touch shows the sleeping Pixl for a few seconds. It can't send, receive or be called; Macs show it greyed out, "wake it to send". Plugged in again → Wi-Fi back, the Pixl wakes with a stretch. State is safe in flash throughout (R8). |
+| **Same Wi-Fi as an awake Mac** | Its only travel partner is a Mac on the same network, until the cloud relay exists. No iPhone ↔ Mosaico trips in v1. |
+| **No on-device AI** | Ask, Polish and memory run on the Mac (or the cloud later). The Mosaico only shows results the Mac sends it (Answers, Memory pages). The feed format is not specified yet (§15). |
+| **Pairing reversed** | The Mosaico shows the 6-digit code; the user types it on the Mac (§10.3). |
+| **Mischief** | Cursor-based acts don't port; touch versions per species (§9). |
+| **Time** | Needs are computed from timestamps (§2.2), so the Mosaico needs a wall clock: SNTP while on Wi-Fi, kept by the RTC across sleep. Without a valid clock it leaves needs and `updatedAt` untouched. |
+| **Wi-Fi credentials** | Read from the shared NVS partition `sysmeta`, namespace `shared` (`wifi_ssid`, `wifi_password`) set up by the Mosaico's own setup; Kconfig as fallback. |
+
+**Building:** ESP-IDF pinned at `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`, target `esp32s31`, only through the vendor's `python mosaico.py` (validate in `game sim` before flashing). Code in `mosaico/`: the trip protocol as a host-testable C module, the game, and a Mac-side `PixlzSend` tool for the spike.
+
+### 12.2 Pixl size per device
+
+- Size is a **per-device scale** in that device's settings, never in PetState, so the Pixl can be a different size on each device.
+- Whole numbers only, nearest-neighbor, everywhere (§3.1).
+- **Default on stage devices** (the Mosaico and the iPhone stage, where the screen is the Pixl's whole world): the screen is about **4 pet-widths across**:
+  `scale = max(1, round(screenWidth / (4 × w of idle_0)))`, with `screenWidth` in the units the Pixl is drawn in (pt on the iPhone, pixels on the Mosaico).
+- **The Mac** keeps its fixed default of **2×** (D14), with 2×/3×/4× in settings. The rule above would make Frogg 5× (about 340 pt) on a 1440-pt screen.
+- `scale.<device kind>` in `pixl.json` replaces the computed default (§3.2). The user's setting (default ± 1) overrides both.
+- Physics is in apx and scales with the pet (§4.5).
+
+Mosaico (480 px wide) defaults:
+
+| Pixl | idle_0 width | Scale | On screen |
+|---|---|---|---|
+| Frogg | 68 | **2×** | 136 px |
+| Kiti | 45 | 3× | 135 px |
+| Mochi | 39 | 3× | 117 px |
+| Boo | 32 | 4× | 128 px |
+| Slugg | 64 | 2× | 128 px |
+| Silky | 77 | 2× | 154 px |
+
+### 12.3 Mosaico world map
+
+All four screen edges are surfaces: the **floor** (bottom), two **walls** (left, right) and the **ceiling** (top). A Pixl uses the ones its `movement` and `sticky` allow:
+
+| Pixl | Movement | How it uses the edges |
+|---|---|---|
+| Frogg | hop, sticky | Hops along the floor. Sticky, so it can hop to a wall and cling (`perch` frame 1), and hang from the ceiling the way it hangs under the menu bar on the Mac (§7.1). |
+| Slugg | crawl (`walk`), sticky | Crawls the **full perimeter**: floor, up a wall, upside down along the ceiling, down the other wall. Rounds each corner through its corner frames, and leaves its slime trail. |
+| Silky | hop, sticky (climber) | Climbs the walls and walks the ceiling; drops from the ceiling on a thread. |
+| Kiti | hop | Floor only. Jumps toward a wall and lands back on the floor. |
+| Mochi | hop | Floor only. |
+| Boo | float | Ignores surfaces; drifts anywhere inside the four edges, which only bound it. |
+
+- Moving along an edge never starts a trip. Only a fling released past an edge does (§11.1).
+- Burn-in (§12.1): the slime trail fades within a few seconds, and a Pixl clinging to a wall or ceiling still drifts and moves on like one on the floor.
+- A Pixl that loses its surface (grabbed off a wall, Frogg's grip times out) falls to the floor (§4.5).
 
 ---
 
@@ -692,6 +843,7 @@ Sources and caveats for each macOS/iOS row: `RESEARCH.md` §1–§3.
 | iOS stage | 60 fps at < 10% CPU | SpriteKit, small textures |
 | iOS background | zero work | Recompute on foreground (§2.2) |
 | Widget | ≥ 30 min between refreshes | Timeline built from timestamps |
+| Mosaico | Redraw only on frame changes and motion; dim at 2 min and 10 min; Wi-Fi off on battery | §12.1 |
 
 ---
 
@@ -703,7 +855,11 @@ PixlzCore holds everything testable without a screen:
 - **Physics:** hop parabolas land where planned; fall lands on the first platform below.
 - **World map:** given window rects, the visible platform intervals and reachability are correct; keep-out exclusion works.
 - **Travel:** a two-node simulation with an in-memory transport covers every row of §10.4's failure table, including crashes at each step (process killed between any two messages). The invariant "at least one complete copy, at most one `.owned`" is checked after every step.
-- **Manifests:** §3.2 validation.
+- **Manifests:** §3.2 validation, including any `scale.<kind>` being a whole number ≥ 1 whose canvas fits the device's screen (480×480 on the Mosaico).
+- **Scale rule:** `max(1, round(screenWidth / (4 × idle width)))` gives the §12.2 table for every roster Pixl.
+- **PetState compatibility:** an old file (no `policy`) decodes and re-encodes to the same bytes; the checksum is computed over raw frame bytes on both sides; an offer with a newer `proto` gets `decline(needsUpdate)` and nothing is transferred; `policy` is omitted when both flags are off; a locked Pixl declines `call` with `locked` and refuses to start an offer.
+- **Free roam (v1.1):** the eligibility rules of §10.6 as a pure function, table-tested.
+- **Mosaico protocol module** (C, `mosaico/pixl_trip`): host tests for framing, the hello frame, the receiver and sender halves of the trip, the checksum over raw `payload.state` bytes (matching what PixlzCore's sender computes), and that splicing `epoch`, `owner`, `savedAt` and `stats.trips` keeps the bytes equal to PixlzCore's canonical encoding (fixtures generated by PixlzCore).
 
 Platform tests (manual each milestone): Instruments CPU/energy check against §13; permission onboarding on a fresh user account.
 
@@ -750,3 +906,6 @@ Hold on the Pixl to talk (Mosaico microphone): audio to the Mac, transcribed on 
 2. Menu bar perch = hang below the menu bar (§7.1). OK?
 3. When the Pixl can't escape the focused window, fade to 25% (§6.4). OK, or hide fully?
 4. Emotion pose only during idle, FX always (§5). OK?
+5. Mosaico burn-in timings (§12.1): screen off 2 min after unplugging, ±8 px drift. OK? (Dimming settled: 50% at 2 min, 10% at 10 min.)
+6. How the Mac pushes Ask answers and highlights to the Mosaico for display (a new envelope type, or a separate feed connection)? Needed before the Answers and Memory pages.
+7. Pairing with a 6-digit code feeding TLS-PSK directly lets someone who recorded the handshake try all million codes offline. Use the code to authenticate a fresh key exchange instead (a PAKE such as SPAKE2). **Blocks M3 (iPhone travel) and the Mosaico merge** (D9).
