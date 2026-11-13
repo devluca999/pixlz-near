@@ -334,6 +334,26 @@ final class RoamController {
 
     // MARK: the world
 
+    /// Every on-screen app window but ours, any size (top-left coordinates): what Slugg can be on.
+    func windowRects() -> [CGRect] {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let infos = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        return infos.compactMap { i in
+            guard (i[kCGWindowLayer as String] as? Int) == 0, (i[kCGWindowOwnerPID as String] as? pid_t) != me,
+                  let b = i[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+            return CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: b["Width"] ?? 0, height: b["Height"] ?? 0)
+        }
+    }
+
+    /// An outing ended early (Slugg lost his footing, say): forget it and plan the next.
+    func outingCutShort() {
+        guard outingSince != nil else { return }
+        outingSince = nil
+        lastOutingEnd = Date()
+        hidePond()
+        schedule()
+    }
+
     func world() -> RoamWorld {
         let me = ProcessInfo.processInfo.processIdentifier
         let infos = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []

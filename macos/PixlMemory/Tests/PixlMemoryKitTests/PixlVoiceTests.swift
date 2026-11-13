@@ -23,7 +23,7 @@ import PixlzCore
             }
         }
         #expect(VoicePicker.allSounds(ui: ui("frogg")).isSuperset(of: ["ribbit!", "rrbt?", "RIBBIT!"]))
-        #expect(VoicePicker.allSounds(ui: ui("ghost")).isSubset(of: ["...", "…", "……", "…?", "…!", "!", "boo", "boo?", "boo!", "boo…"]))
+        #expect(VoicePicker.allSounds(ui: ui("ghost")).isSubset(of: ["...", "…", "……", "…?", "…!", "…!!", "!", "boo", "boo?", "boo!", "boo…"]))   // "…!!": its alert (Agent mode)
     }
 
     @Test func theAppOnlyPutsSoundsInSpeechBubbles() throws {

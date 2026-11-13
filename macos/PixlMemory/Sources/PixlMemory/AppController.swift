@@ -212,6 +212,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !CommandLine.arguments.contains("--selftest") { roam.refresh() }
         updateHover()
         if !CommandLine.arguments.contains("--selftest") { sleep.start() }
+        if !CommandLine.arguments.contains("--selftest") { startSupportWatch() }   // the self-test puts him anywhere on purpose
         // away on another device (a Mosaico, a phone): it isn't here, so nothing to show
         if awayOn == nil { froggPanel.orderFrontRegardless() }
         scheduleIdle()
@@ -540,6 +541,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let current = foot else { place(at: target); return }
         if motion != nil { reposition(force: true); return }
         let d = hypot(target.x - current.x, target.y - current.y)
+        if crawls || floats {   // Slugg never hops (he crawls there), Boo glides: the startle, then their own way
+            run(Choreography(Choreography.whoa(at: current, then: nil).segments + (d >= 1 ? move(from: current, to: target).segments : [])), target: target)
+            Debug.log("whoa, then \(crawls ? "crawl" : "glide") → (\(Int(target.x)),\(Int(target.y)))")
+            return
+        }
         run(Choreography.whoa(at: current, then: d >= 1 ? route(from: current, to: target) : nil), target: target)
         Debug.log("hop start (whoa) → (\(Int(target.x)),\(Int(target.y)))")
     }
@@ -725,6 +731,44 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     var repositionAfterMotion = false
+
+    // MARK: Slugg is never on nothing (C11)
+
+    var supportTimer: Timer?
+    var unsupportedSince: TimeInterval?
+
+    /// Twice a second while Slugg is out: is what he's crawling or resting on still there? His
+    /// paths are planned against the windows of that moment; a window that moves, shrinks or
+    /// closes under him would leave him in midair. A second without it: he lets go, drops and
+    /// crawls on to where he should be.
+    func startSupportWatch() {
+        supportTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkSupport() }
+        }
+    }
+
+    func checkSupport() {
+        guard crawls, !paused, mode == .perched, !userHidden, !fullscreenHidden, !spaceTransition, awayOn == nil, !pond.active,
+              !resizer.adjusting, let f = foot, froggPanel.isVisible else { unsupportedSince = nil; return }
+        let surface: Surface
+        if let m = motion {
+            guard let s = m.crawlSurface(at: now - motionStart) else { unsupportedSince = nil; return }   // a drop, a corner: not now
+            surface = s
+        } else { surface = frogg.surface }
+        let screens = NSScreen.screens.flatMap { [topLeft($0.frame), topLeft($0.visibleFrame)] }
+        if SluggSupport.supported(foot: f, surface: surface, screens: screens, windows: roam.windowRects()) { unsupportedSince = nil; return }
+        guard let since = unsupportedSince else { unsupportedSince = now; return }
+        guard now - since >= 0.9 else { return }
+        unsupportedSince = nil
+        Debug.log("slugg: nothing under him (\(surface) at \(Int(f.x)),\(Int(f.y))): drops and crawls on")
+        roam.outingCutShort()
+        cancelMotion()
+        leaveSurface()
+        frogg.turns = 0
+        userPlaced = false
+        let to = target()?.foot ?? CGPoint(x: f.x, y: (screensTopLeft.first { $0.minX <= f.x && f.x <= $0.maxX } ?? screensTopLeft.first ?? .zero).maxY)
+        run(move(from: f, to: to), target: to)
+    }
 
     func finishMotion() {
         if repositionAfterMotion {
@@ -2436,8 +2480,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             check("Space change: \"whoa\" startle frame shown", frames.contains(MotionFrames.startle))
             check("Space change: no drop from the menu bar (highest feet \(Int(minY)), menu bar line \(Int(menuBar)))", minY > menuBar + 20 || abs(minY - start.y) < 1)
             check("Space change: never the old splat frame", !frames.contains("grab_2"))
-            check("Space change: lands at the perch, squash neutral",
-                  motion == nil && frogg.squash == CGSize(width: 1, height: 1) && foot.map { p in target().map { hypot($0.foot.x - p.x, $0.foot.y - p.y) < 1 } ?? true } == true)
+            if crawls {   // Slugg crawls there (no hop), which takes longer than this check waits: he's on his way
+                check("Space change: Slugg crawls to the perch (never a hop)",
+                      motionTarget.map { m in target().map { hypot($0.foot.x - m.x, $0.foot.y - m.y) < 1 } ?? true } ?? (motion == nil))
+            } else {
+                check("Space change: lands at the perch, squash neutral",
+                      motion == nil && frogg.squash == CGSize(width: 1, height: 1) && foot.map { p in target().map { hypot($0.foot.x - p.x, $0.foot.y - p.y) < 1 } ?? true } == true)
+            }
         }
 
         // a fade-out that finishes after Frogg was shown again must not hide him
