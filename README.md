@@ -225,7 +225,7 @@ Frogg's NEAR key isn't an API key. It's stored outside the repository, in `~/Lib
 
 ## Baseline vs hackathon work
 
-Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR work on top of it.
+Before the hackathon, Pixlz was an early idea for a desktop pet that hadn't been built. One evening (2026-10-15 to 10-16, before the hackathon was announced) produced a written spec and a small core logic library, `PixlzCore`: pet needs, behaviour rules, physics and a trip protocol, with tests. There was no app, nothing on screen, no AI and nothing NEAR. Everything that makes this entry run was built during the hackathon, from 2026-11-08. About 6% of today's code (roughly 3,000 of 50,700 lines) traces back to that baseline.
 
 This repository holds only what the entry needs to build, run and test. It's extracted from the private Pixlz repository with its history, so every commit keeps its original date. Left out: the Claude Design source (`design/`), the iOS and Windows plans, and product research notes. The pixel art is already exported into `assets/` and embedded in the app; `scripts/render-pixls.mjs`, which re-exports it, needs the design source and only runs in the private repository.
 
@@ -236,7 +236,7 @@ This repository holds only what the entry needs to build, run and test. It's ext
 
 **All hackathon work as one diff:** https://github.com/devluca999/pixlz-near/compare/pre-hackathon...hackathon-submission
 
-- **Baseline:** `PixlzCore/` (pet needs, behaviour, world map, physics, pet state, the travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `assets/` (re-exported during the hackathon).
+- **Baseline (spec and core logic only):** `PixlzCore/` (pet needs, behaviour, world map, physics, pet state, the travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, and Frogg's first manifest in `assets/` (all the art was re-exported during the hackathon).
 - **New in the hackathon:** `memory/`, `macos/PixlMemory/`, `extension/`, `mosaico/`, `showcase/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, and this README.
 
 Pixlz also plans a Solana layer. It isn't part of this submission. Our other, independent entry is **Evernear** (shipment escrow).
