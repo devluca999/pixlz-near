@@ -306,7 +306,8 @@ final class TravelController {
             }
         }
         ble.onUnlink = { [weak r] id in r?.transport.clearRoute(id) }
-        ble.start()
+        // the self-test runs from a terminal: Bluetooth would ask the terminal for permission and wait
+        if !CommandLine.arguments.contains("--selftest") { ble.start() }
         bluetooth = ble
         // away on another device since last time (or never had it): stay hidden until it comes
         recordChanged(r.record)
