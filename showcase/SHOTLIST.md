@@ -198,8 +198,9 @@ beside them). Without those files the cut falls back to Helvetica Neue and Menlo
 
 Narration: `showcase/narrate.py` (Chatterbox, an open text-to-speech model, run locally; nothing
 is sent anywhere). The voice is synthetic. `voice` in `plan.json` sets the read: the reference
-recording it copies (`voice-slow.wav`, a slowed one, which is what brings the pace down to
-150 to 180 words a minute), how lively it is, and a last small slow-down. A line can carry `say`
+recording it copies (`voice-slow.wav`, a slowed one, which is what brings the read down from
+about 250 words a minute), how lively it is, and `tempo`, a last change of pace without a change
+of pitch (1.06: the lines come out at 175 to 210 words a minute). A line can carry `say`
 (what is spoken when it differs from the caption: "Near" for NEAR, so that it is said as a word,
 and "Pixels" for Pixlz) and `seed` (another reading of the same line). If the hackathon's rules ask for a human voice, record
 the ten lines as `showcase/out/vo/L0.wav … L9.wav` and render again: the captions re-time

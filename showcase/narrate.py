@@ -6,7 +6,8 @@
 
 The read follows its reference, pace included. plan.json's "voice" names one ("reference", a
 file in showcase/): voice-slow.wav is Chatterbox's own voice reading three of these lines,
-slowed to two thirds, which brings the read down from about 250 words a minute to about 175.
+slowed to two thirds, which brings the read down from about 250 words a minute to about 175;
+"tempo" 1.06 then brings the finished lines to about 190.
 
 Writes showcase/out/vo/<id>.wav and showcase/out/vo/timings.json (each line's length), which
 the cut uses to time scenes and captions. Nothing is sent anywhere: the model runs locally.
@@ -14,7 +15,7 @@ the cut uses to time scenes and captions. Nothing is sent anywhere: the model ru
 A line's "say" in plan.json is what is spoken when that is not how it is written ("NEAR" is
 written in capitals and said as the word). plan.json's "voice" sets the read: "exaggeration"
 and "cfg_weight" are Chatterbox's (a lower cfg_weight is a calmer read), and "tempo" slows or
-speeds the finished line without changing its pitch (0.9 is 10 % slower).
+speeds the finished line without changing its pitch (0.9 is 10 % slower, 1.06 is 6 % faster).
 """
 import json
 import subprocess

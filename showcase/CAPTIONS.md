@@ -43,7 +43,7 @@ broadcaster spec; [3P] third-party tool measurements (they disagree); [OPINION] 
 ## Narration and timing
 
 - 140–160 words per minute; 40–60 s ≈ 70–110 words; one 5–9 word sentence per 4–6 s scene.
-  (As built: the lines are read at 150 to 180 words a minute and no take is sped up, so the
+  (As built: the lines are read at 175 to 210 words a minute and no take is sped up, so the
   9:16 cut runs 85 s instead of 40 to 60.)
 - **Silence for payoffs:** 0.8–1.5 s after each payoff (fly caught, card pops), SFX only, no caption.
 - Captions verbatim with the VO: in 0–2 frames before the voice, out 150–250 ms after,
