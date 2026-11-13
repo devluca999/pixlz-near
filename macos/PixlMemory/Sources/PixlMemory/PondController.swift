@@ -15,14 +15,29 @@ final class PondController {
     var looping = false
     var onLeft: (() -> Void)?
     var active: Bool { panel != nil }
+    /// Each pond is its own: a dip's timer only ends the pond it made.
+    private(set) var generation = 0
+    /// A Roam dip still waiting to be told it's over (it holds `app.busy`, so it must always hear).
+    private var dipDone: (() -> Void)?
 
     init(app: AppController) { self.app = app }
 
     var available: Bool { PixlSkins.currentID == "frogg" && PondArt.shared != nil }
 
+    /// Where he can be in the pond: standing still and seen. A hidden, travelling, held or moving
+    /// Frogg can't be (the pond would be a second, sleeping Frogg beside the real one).
+    var canEnter: Bool {
+        available && !active && app.foot != nil && app.mode == .perched && !app.moving
+            && !app.userHidden && !app.fullscreenHidden && app.awayOn == nil && app.froggPanel.isVisible
+    }
+
     /// Into the pond and asleep: forms, slide in, sink, lids droop, then the breathing loop.
     func enter() {
-        guard available, !active, let pond = PondArt.shared, let foot = app.foot, let start = pond.feet(0) else { return }
+        guard canEnter, let pond = PondArt.shared, let foot = app.foot, let start = pond.feet(0) else {
+            if available, !active { Debug.log("pond: not now (mode \(app.mode), moving \(app.moving), hidden \(app.userHidden), fullscreen \(app.fullscreenHidden), away \(app.awayOn ?? "no"), visible \(app.froggPanel.isVisible))") }
+            return
+        }
+        generation += 1
         let s = app.scale
         origin = CGPoint(x: (foot.x - start.x * s).rounded(), y: (foot.y - start.y * s).rounded())
         let v = PondView(pond: pond, scale: s)
@@ -49,23 +64,43 @@ final class PondController {
     func leave(then done: (() -> Void)? = nil) {
         guard active else { done?(); return }
         looping = false
-        onLeft = done
+        let before = onLeft   // already on his way out: both hear when he's on the bank
+        onLeft = before == nil ? done : done.map { d in { before?(); d() } } ?? before
         Debug.log("pond: wakes, launches and steps out")
         play(8)
     }
 
-    /// Gone at once (he was grabbed): Frogg reappears where he was.
+    /// Gone at once (grabbed, moved, shown, hidden, resized, re-skinned): Frogg himself again where
+    /// he stood. Whoever was waiting hears on the next turn, after the caller has set up what comes
+    /// next (a hop that's starting must not be met by a backToIdle that puts him straight back in).
     func cancel() {
         guard active else { return }
-        timer?.invalidate()
+        Debug.log("pond: gone at once")
+        let waiting = [onLeft, dipDone].compactMap { $0 }
+        onLeft = nil; dipDone = nil
         finish(at: nil)
+        if !waiting.isEmpty { app.later(0) { waiting.forEach { $0() } } }
     }
 
-    /// A short dip (Roam): in, a few breaths, out.
+    /// A short dip (Roam): in, a few breaths, out. If he falls asleep in it, it becomes his bed.
     func dip(_ seconds: TimeInterval, then done: @escaping () -> Void) {
         enter()
         guard active else { done(); return }
-        app.later(max(2.5, seconds)) { [weak self] in self?.leave(then: done) }
+        dipDone = done
+        let mine = generation
+        app.later(max(2.5, seconds)) { [weak self] in
+            guard let self, self.generation == mine, let done = self.dipDone else { return }
+            self.dipDone = nil
+            self.leave(then: done)
+        }
+    }
+
+    /// He fell asleep in a dip: the pond is his bed now, and the outing is over.
+    func keepForSleep() {
+        guard let done = dipDone else { return }
+        dipDone = nil
+        Debug.log("pond: the dip turns into sleep")
+        done()
     }
 
     func play(_ i: Int) {
@@ -89,8 +124,8 @@ final class PondController {
         panel = nil; view = nil
         if let feet { app.place(at: CGPoint(x: origin.x + feet.x * app.scale, y: origin.y + feet.y * app.scale)) }
         app.froggPanel.alphaValue = 1
-        let done = onLeft
-        onLeft = nil
-        done?()
+        let done = [onLeft, dipDone].compactMap { $0 }
+        onLeft = nil; dipDone = nil
+        done.forEach { $0() }
     }
 }

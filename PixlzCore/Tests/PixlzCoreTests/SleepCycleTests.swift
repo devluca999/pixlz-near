@@ -164,4 +164,30 @@ import Testing
         _ = run(&s, t, t + 1) { $0 }
         #expect(s.stage == .deep)
     }
+
+    /// Woken any way but the long one (a menu click, a poke while drowsy), a napping Pixl starts
+    /// a fresh day: the energy it dozed off at isn't still "due", so it doesn't nod off again at once.
+    @Test func wokenFromANapByTheMenuItStaysAwake() {
+        var s = SleepCycle(at: 0)
+        _ = run(&s, 0, 10, energy: 80) { _ in 0.5 }
+        let low = 80 - s.napDropNeeded - 1
+        _ = run(&s, 10, 40, energy: low) { _ in 0.5 }
+        #expect(s.stage == .asleep && s.cause == .nap)
+        let out = s.handle(.menuClick, at: 41)
+        #expect(out.contains(.react(.wakeAndMenu)) && s.stage == .awake)
+        _ = run(&s, 41, 60, energy: low) { _ in 0.5 }
+        #expect(s.stage == .awake)
+    }
+
+    @Test func rousedFromANapWhileDrowsyItStaysAwake() {
+        var s = SleepCycle(at: 0)
+        _ = run(&s, 0, 10, energy: 80) { _ in 0.5 }
+        let low = 80 - s.napDropNeeded - 1
+        _ = run(&s, 10, 11, energy: low) { _ in 0.5 }
+        #expect(s.stage == .drowsy && s.cause == .nap)
+        _ = s.handle(.poke, at: 12)
+        #expect(s.stage == .awake)
+        _ = run(&s, 12, 30, energy: low) { _ in 0.5 }
+        #expect(s.stage == .awake)
+    }
 }

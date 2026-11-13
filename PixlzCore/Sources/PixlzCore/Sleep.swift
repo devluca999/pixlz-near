@@ -136,8 +136,6 @@ public struct SleepCycle: Sendable {
             }
             if t - stageSince >= length {
                 out += go(.awake, at: t, why: "awake")
-                energyAtWake = energy
-                napDue = Double.random(in: Self.napDrop, using: &rng) * sleepiness.napScale
             }
         }
         return out
@@ -174,9 +172,7 @@ public struct SleepCycle: Sendable {
                 return []
             case .poke: return wake(.startled, at: t, why: "poked")
             case .menuClick:
-                let out = wake(.wakeAndMenu, at: t, why: "menu")
-                stage = .awake   // the menu opens at once
-                return out + [.stage(from: .waking, to: .awake, why: "menu")]
+                return wake(.wakeAndMenu, at: t, why: "menu") + go(.awake, at: t, why: "menu")   // the menu opens at once
             case .grab, .release: return []   // dangling, still asleep
             case .windowSwitch, .notification: return [.react(.earTwitch)]
             case .hotkey, .focusEnded: return wake(.wake, at: t, why: input.rawValue)
@@ -210,6 +206,12 @@ public struct SleepCycle: Sendable {
         stage = s
         stageSince = t
         if !s.dozing { sleptAt = nil; napEnds = nil; wakeAt = nil; hoverSince = nil; eyeOpen = false }
+        // up from a doze, however it ended: a fresh nap baseline (the next tick takes today's energy),
+        // or the drop it dozed off at would still be "due" and it would nod off again at once
+        if s == .awake, from.dozing || from == .waking {
+            energyAtWake = nil
+            napDue = Double.random(in: Self.napDrop, using: &rng) * sleepiness.napScale
+        }
         return [.stage(from: from, to: s, why: why)]
     }
 

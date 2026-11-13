@@ -537,6 +537,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shows Frogg and invalidates any fade-out still running, so its completion can't hide him.
     func showFrogg() {
+        pond.cancel()   // the pond draws him while he's in it: showing the real one ends it
         visGen += 1
         froggPanel.animator().alphaValue = 1  // replaces a running fade animation…
         froggPanel.alphaValue = 1             // …and lands on 1 at once
@@ -562,6 +563,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var moving: Bool { motion != nil || flight != nil }
 
     func run(_ c: Choreography, target: CGPoint?, roam: Bool = false, then done: (@MainActor () -> Void)? = nil) {
+        pond.cancel()   // the pond can't move: any motion takes him out of it (else two Froggs)
         cancelAnimations()
         if !roam { leaveSurface() }
         motion = c
@@ -813,10 +815,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         idleTimer?.invalidate()
         sleepTimer?.invalidate()
         // Frogg sleeps in his pond (C14): it forms beside him and he slides in
-        if pond.available, mode == .perched {
-            if !pond.active { pond.enter() }
-            return
-        }
+        if pond.active { pond.keepForSleep(); return }   // asleep in a dip: it's his bed now
+        if pond.canEnter { pond.enter(); return }
         frogg.frameName = sleepFrame(deep: deep)
         if crawls, frogg.surface == .floor {
             // Slugg pulls back into his shell: half in, then gone, the shell left sitting there
@@ -1665,6 +1665,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         visGen += 1
         let gen = visGen
         Debug.log("hide overlays gen=\(gen)")
+        pond.cancel()      // his pond hides with him (sleep picks it up again where he lands)
+        roam.hidePond()
         for p in [froggPanel, bubblePanel, resultPanel, menu.panel, menu.listPanel, menu.cardPanel].compactMap({ $0 }) {
             NSAnimationContext.runAnimationGroup({ $0.duration = fade; p.animator().alphaValue = 0 },
                                                  completionHandler: { [weak self] in MainActor.assumeIsolated {
@@ -1774,6 +1776,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("skin \(PixlSkins.currentID) → \(id)")
         let reopenSettings = miniPanel?.isVisible == true
         if reopenSettings { toggleMiniMenu() }
+        pond.cancel()   // only Frogg has a pond
         cancelMotion()
         cancelAnimations()
         if let f = foot { puff(at: f) }
@@ -1866,6 +1869,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// `live`: while a corner is being dragged. The feet stay put and nothing is saved yet.
     func setSize(_ s: Double, live: Bool = false) {
         settings.scale = s
+        pond.cancel()   // drawn at the old size
         cancelMotion()
         buildFrogg()
         froggPanel.orderFrontRegardless()
@@ -2355,6 +2359,48 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         spaceChanged()
         await wait(1.6)
         check("two quick Space changes: settles once, visible, not moving", motion == nil && froggPanel.isVisible && mode == .perched)
+
+        // Frogg's pond draws him while he's in it: whatever shows, moves or hides him must never leave
+        // a second Frogg beside the pond (the duplicate after a Space change while he slept)
+        if pond.available {
+            func twoFroggs() -> Bool { pond.active && froggPanel.isVisible && froggPanel.alphaValue > 0.01 }
+            let away = awayOn
+            awayOn = nil   // the travel record may say he's elsewhere; here he's on screen
+            defer { awayOn = away }
+            var seen = false
+            pond.enter()
+            await wait(0.3)
+            check("pond forms for the checks below", pond.active && froggPanel.alphaValue < 0.01)
+            spaceChanged()
+            let tp = now
+            while now - tp < 2 { if twoFroggs() { seen = true }; await wait(0.01) }
+            check("pond + Space change: never two Froggs (pond \(pond.active ? "still there" : "gone"))", !seen && !twoFroggs())
+            pond.enter()
+            await wait(0.3)
+            dropIn(to: foot ?? .zero)
+            check("pond + drop-in: never two Froggs", !twoFroggs())
+            while motion != nil { await wait(0.02) }
+            pond.enter()
+            await wait(0.3)
+            hideOverlays(fade: 0.05)
+            await wait(0.2)
+            check("pond + hide: the pond goes too", !pond.active)
+            showFrogg()
+            // a dip's timer belongs to its own pond: it can't kick him out of a later one
+            var dipDone = false
+            pond.dip(2.5) { dipDone = true }
+            await wait(0.3)
+            pond.cancel()
+            await wait(0.1)
+            pond.enter()
+            await wait(2.6)
+            check("pond: a dip's timer can't end a later pond (dip done \(dipDone))", pond.active && dipDone)
+            pond.cancel()
+            await wait(0.2)
+            check("pond cancelled: Frogg himself again", !pond.active && froggPanel.alphaValue > 0.99)
+        } else {
+            print("SKIP  pond checks (not Frogg)")
+        }
 
         // across displays (only with two screens): one arc on screen, or edge → pop → in
         let screens = screensTopLeft
