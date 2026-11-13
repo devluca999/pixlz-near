@@ -7,7 +7,7 @@
 The read follows its reference, pace included. plan.json's "voice" names one ("reference", a
 file in showcase/): voice-slow.wav is Chatterbox's own voice reading three of these lines,
 slowed to two thirds, which brings the read down from about 250 words a minute to about 175;
-"tempo" 1.06 then brings the finished lines to about 190.
+"tempo" then brings the finished lines up to between about 175 and 210.
 
 Writes showcase/out/vo/<id>.wav and showcase/out/vo/timings.json (each line's length), which
 the cut uses to time scenes and captions. Nothing is sent anywhere: the model runs locally.
@@ -15,7 +15,10 @@ the cut uses to time scenes and captions. Nothing is sent anywhere: the model ru
 A line's "say" in plan.json is what is spoken when that is not how it is written ("NEAR" is
 written in capitals and said as the word). plan.json's "voice" sets the read: "exaggeration"
 and "cfg_weight" are Chatterbox's (a lower cfg_weight is a calmer read), and "tempo" slows or
-speeds the finished line without changing its pitch (0.9 is 10 % slower, 1.06 is 6 % faster).
+speeds the finished line without changing its pitch (0.9 is 10 % slower, 1.25 is 25 % faster);
+a line's own "tempo" overrides it. voice-deep.wav is voice-slow.wav three semitones lower, for a
+deeper, calmer read; its lines come out slower, so the shared tempo is 1.25 and the short, quick
+lines (L2, L6b, L7) set their own to stay between about 175 and 210 words a minute.
 """
 import json
 import subprocess
@@ -51,12 +54,13 @@ def main(argv: list[str]) -> int:
         path = OUT / f"{l['id']}.wav"
         ta.save(str(path), wav, model.sr)
         seconds = wav.shape[-1] / model.sr
-        if read["tempo"] != 1:
+        tempo = l.get("tempo", read["tempo"])   # a line can set its own (a short line reads fast)
+        if tempo != 1:
             raw = path.with_suffix(".raw.wav")
             path.rename(raw)
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-af", f"atempo={read['tempo']}", str(path)], check=True)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-af", f"atempo={tempo}", str(path)], check=True)
             raw.unlink()
-            seconds /= read["tempo"]
+            seconds /= tempo
         timings[l["id"]] = round(seconds, 3)
         print(f"{l['id']}  {timings[l['id']]:5.2f} s  {l['vo']}")
     timings_path.write_text(json.dumps(timings, indent=2))

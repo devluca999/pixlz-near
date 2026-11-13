@@ -46,7 +46,7 @@ list of beats. Random choices use one fixed seed, so three takes of a scene matc
 | M1 | Highlight to memory | highlight a passage · the tongue grabs it, saved to memory | L6 | 3 |
 | M2 | Ask, from memory | ask what the article said; the answer comes from memory, with its source | L6 | 3 |
 | M3 | Back to the passage | the memories panel pops in · click the highlight: the page opens at the passage, glowing | L6 | 3 |
-| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft, where it takes the original's place | L6 | 2 |
+| W1 | Write in place | select the intro, the Pixl hops up · polish: the text in its card · drag it into the draft, where it takes the original's place | L6b | 2 |
 | C1 | Tests, with Slugg | `swift test` in the demo repo; Slugg climbs the Terminal and rounds the corner | L7 | 3 |
 | C2 | Guard on a risky command | a Claude Code session asks to run `rm -rf build && npm run deploy` · the Pixl leaps onto the Terminal, alert · Deny, it stomps | L7 | 3 |
 | C3 | Reply to a finished session | the session finishes, the Pixl asks "done, anything else?" · a reply typed into its bubble, Claude carries on | L7 | 3 |
@@ -84,7 +84,8 @@ Narration (`showcase/plan.json`), one voice, ten lines:
 | L3 | …and a brain powered by private AI on NEAR, so nobody else can see what he's thinking. |
 | L4 | And he brought friends, just like him. The Pixlz. |
 | L5 | They pay for their own thinking, from their own wallet, never from mine. |
-| L6 | They remember what you highlight, and help you write right where you are. |
+| L6 | They remember what you highlight, and always take you back to the source. |
+| L6b | They help you write right where you are. |
 | L7 | They keep an eye on your coding agents. |
 | L8 | And they can be on any device, anywhere, anytime. |
 | L9 | Pixlz. Powered by NEAR. |
@@ -198,12 +199,16 @@ beside them). Without those files the cut falls back to Helvetica Neue and Menlo
 
 Narration: `showcase/narrate.py` (Chatterbox, an open text-to-speech model, run locally; nothing
 is sent anywhere). The voice is synthetic. `voice` in `plan.json` sets the read: the reference
-recording it copies (`voice-slow.wav`, a slowed one, which is what brings the read down from
-about 250 words a minute), how lively it is, and `tempo`, a last change of pace without a change
-of pitch (1.06: the lines come out at 175 to 210 words a minute). A line can carry `say`
+recording it copies (`voice-deep.wav`: `voice-slow.wav`, a slowed one that brings the read down
+from about 250 words a minute, lowered three semitones for a deeper, calmer voice), how lively
+it is, and `tempo`, a last change of pace without a change of pitch (1.25, and a line's own
+`tempo` for the short quick ones: the lines come out at 175 to 210 words a minute). L6 is split
+over the Memory shots (its first half on M1, "and always take you back to the source" over M2's
+answer into M3) so the narration doesn't go quiet there. A line can carry `say`
 (what is spoken when it differs from the caption: "Near" for NEAR, so that it is said as a word,
-and "Pixels" for Pixlz) and `seed` (another reading of the same line). If the hackathon's rules ask for a human voice, record
-the ten lines as `showcase/out/vo/L0.wav … L9.wav` and render again: the captions re-time
+and "Pixels" for Pixlz) and `seed` (another reading of the same line: L9's is the one whose
+"Near" falls, like the end of a sentence). If the hackathon's rules ask for a human voice, record
+the eleven lines as `showcase/out/vo/L0.wav … L9.wav` (with `L6b.wav`) and render again: the captions re-time
 themselves to the new recordings.
 
 ## Before publishing
