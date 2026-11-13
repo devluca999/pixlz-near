@@ -16,9 +16,9 @@ A line's "say" in plan.json is what is spoken when that is not how it is written
 written in capitals and said as the word). plan.json's "voice" sets the read: "exaggeration"
 and "cfg_weight" are Chatterbox's (a lower cfg_weight is a calmer read), and "tempo" slows or
 speeds the finished line without changing its pitch (0.9 is 10 % slower, 1.25 is 25 % faster);
-a line's own "tempo" overrides it. voice-deep.wav is voice-slow.wav three semitones lower, for a
-deeper, calmer read; its lines come out slower, so the shared tempo is 1.25 and the short, quick
-lines (L2, L6b, L7) set their own to stay between about 175 and 210 words a minute.
+a line's own "tempo" overrides it. voice-mid.wav is voice-slow.wav a semitone and a half lower,
+for a calmer read (three semitones was too deep); the shared tempo is 1.25 and lines whose read
+comes out quick or slow set their own, to stay between about 175 and 200 words a minute.
 """
 import json
 import subprocess

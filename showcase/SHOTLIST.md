@@ -186,7 +186,8 @@ What the cut adds on top of the takes:
   and stays under the voice throughout.
 - **Speed**: Part 1 is never sped up, cut or zoomed (the push at its end aside). Both
   demos play every take at real speed and cut the waits (in the 9:16 one, H1 runs 10 % fast).
-- **The end card** (E2): the title holds for 4.9 s, the last 2.2 s of it over "Which Pixl should I make next?". No
+- **The end card** (E2): the title holds for about 9.4 s, the last 6.7 s of it over "Comment if you want one 👇"
+  (the take runs out and its last frame holds; the cut ends at 1:29). No
   repository link: it goes in the post.
 
 The intro is `showcase/takes/intro-frogg.mp4`: the phone clip turned upright, 1080 × 1920, 30 fps,
@@ -199,10 +200,11 @@ beside them). Without those files the cut falls back to Helvetica Neue and Menlo
 
 Narration: `showcase/narrate.py` (Chatterbox, an open text-to-speech model, run locally; nothing
 is sent anywhere). The voice is synthetic. `voice` in `plan.json` sets the read: the reference
-recording it copies (`voice-deep.wav`: `voice-slow.wav`, a slowed one that brings the read down
-from about 250 words a minute, lowered three semitones for a deeper, calmer voice), how lively
-it is, and `tempo`, a last change of pace without a change of pitch (1.25, and a line's own
-`tempo` for the short quick ones: the lines come out at 175 to 210 words a minute). L6 is split
+recording it copies (`voice-mid.wav`: `voice-slow.wav`, a slowed one that brings the read down
+from about 250 words a minute, lowered a semitone and a half for a calmer voice, still above
+the three-semitone one that was too deep), how lively it is, and `tempo`, a last change of pace
+without a change of pitch (1.25, and a line's own `tempo` where its read came out quick or slow:
+the lines come out at about 155 to 200 words a minute). L6 is split
 over the Memory shots (its first half on M1, "and always take you back to the source" over M2's
 answer into M3) so the narration doesn't go quiet there. A line can carry `say`
 (what is spoken when it differs from the caption: "Near" for NEAR, so that it is said as a word,
