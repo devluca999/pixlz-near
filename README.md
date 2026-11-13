@@ -1,225 +1,245 @@
 # Pixl Memory
 
-**Frogg, a pixel-art frog that sits on your Mac and edits your writing privately.** Select text in any app, click Frogg, and ask "polish this". Your text goes only to a model running inside a NEAR AI Cloud TEE (Intel TDX + NVIDIA confidential GPUs). Before any text leaves the Mac, Pixl Memory checks the hardware attestation. Every reply arrives with a verification result: which enclave produced it, whether it was fresh for this request, and whether its signature matches.
+Pixl Memory puts Frogg, a pixel-art frog, on your Mac. Frogg edits your writing with a private AI model. Select text in any app, click Frogg and choose **Polish this**. Your text goes only to a model running inside a NEAR AI Cloud TEE (Intel TDX + NVIDIA confidential GPUs). Your Mac checks the enclave's hardware attestation **before** the text leaves, and every reply comes back with a verdict: which enclave answered, whether the answer was made for this request, and whether its signature matches.
 
-Frogg also has **its own NEAR account with a small balance it spends on its own inference**. The app holds only Frogg's key, never yours, so Frogg's balance is the most it can ever spend.
+Frogg also has **its own NEAR account**. It pays for its own inference from a small balance its owner gives it. The app holds only Frogg's key, never yours, so that balance is the most Frogg can ever spend.
 
-Built for the **NEAR Hackathon** (Nov 2026). Tracks: **Privacy & Private AI** (primary), Agent Economy, AI Security & Defense.
+Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI** (primary), Agent Economy, AI Security & Defense.
 
-> Published publicly for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
+> Published for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
 
-**Why does Frogg have a wallet?** So it can pay, per request, for the private inference it does for you, out of a purse with a hard bottom. You set a weekly limit (or pause it) in the Wallet bubble; every payment has an on-chain receipt; the app only ever holds Frogg's key. Use cases, controls and what's next: [`docs/PRODUCT-NOTES.md`](docs/PRODUCT-NOTES.md).
+## At a glance
 
-**Light on your Mac.** Typical: **0.1% CPU idle** (0.2% asleep in his pond), **1–5% while moving**, about 60 MB of memory. Measured on an Apple-silicon MacBook Pro with `swift scripts/bench-energy.swift`, which watches the running app in 10-second windows, uses the app's own log to tell idle stretches from movement, and skips windows where you were using it. The budget (SPEC R6/D7: under 1% idle) fails the script if it's broken. Settings ▸ Energy shows the live numbers and a 10-minute sparkline.
+| | |
+|---|---|
+| What it is | A desktop pet for macOS that edits and answers privately, saves highlights with links back to the page, and travels to other devices |
+| NEAR pieces | NEAR AI Cloud private inference with attestation checked on the Mac; a NEAR testnet account per pet that pays per request |
+| Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
+| Network | NEAR **testnet only**; the config refuses mainnet |
+| Your keys | Never on the Mac. API keys come only from `.env` (git-ignored) |
+| Tests | 534 automated tests plus 6,558 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
+| Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
 
-![Settings ▸ Energy: CPU, a 10-minute pixel sparkline, memory and power](docs/screenshots/settings-energy.png)
+## The problem
+
+Writing assistants see everything you write: unsent emails, medical notes, contracts. "We don't train on your data" is a promise you can't check. Pixl Memory lets you check it. The model runs in an enclave whose code and hardware are attested, and your Mac verifies that before it sends anything, not after.
+
+## Try it in 5 minutes
+
+**1. Check NEAR AI Cloud's enclave yourself. No account or key needed.**
+
+```sh
+git clone https://github.com/devluca999/pixlz-near && cd pixlz-near
+cd memory && uv run pixl-memory attest
+```
+
+This runs 14 checks against the live NEAR AI Cloud: the Intel TDX quote and its TCB, your fresh nonce inside the signed quote, the signing key bound to the quote, the RTMR3 replay, the measured docker-compose, NVIDIA GPU attestation and the deployment log. It needs [uv](https://docs.astral.sh/uv/) (`brew install uv`), which installs Python 3.12 and every dependency.
+
+**2. See the attacks it blocks.**
+
+```sh
+uv run python attack_demo.py
+```
+
+21 attacks against the real code: forged, stale and debug enclaves; models outside a TEE; tampered or unattested replies; a compromised app holding Frogg's key; a malicious web page; a key leaked in a commit. All are blocked. One (a stolen key file) is limited to Frogg's own balance. The log is in [`docs/ATTACKS.md`](docs/ATTACKS.md).
+
+**3. Install the Mac app.**
+
+```sh
+cd .. && scripts/install.sh    # sets up the local service, builds Pixl Memory.app and opens it
+```
+
+Click the frog in the menu bar. Frogg springs out of the icon onto the window you're working in. Right-click the menu bar frog for Open at login, settings and Hide. The app starts its own memory service, so you won't need the terminal again. There's no `.dmg` download yet: that needs the service bundled and an Apple Developer ID, which come after judging.
+
+**4. Polish something.** Put your `NEAR_AI_API_KEY` (from cloud.near.ai) in `.env`, which the installer created from `.env.example`. Allow Accessibility when macOS asks. Select text in any app, click Frogg, and choose **Polish this**. The panel shows a word diff, the verdict and all 17 checks behind it. Drag the green-edged card into your text and it replaces your selection.
 
 ## Screenshots
 
 ![Frogg, Kiti, Mochi, Boo, Silky and Slugg, each with its menu open](docs/screenshots/pixlz-lineup.png)
-Six Pixls: Frogg (tree frog, the red-eyed kind), Kiti (friendly feline), Mochi (Shiba Inu, professional zoomer), Boo (sheety ghost), Silky (black widow, mostly harmless) and Slugg (definitely a slug). Each has its own accent, menu detail, trick, sounds and walk. Switch in Settings or under More ▸ Change Pixl; memory, wallet and position carry over. Rendered from the Claude Design pixel engine (C7–C15).
+Six Pixls: Frogg (a red-eyed tree frog), Kiti (a cat), Mochi (a Shiba Inu), Boo (a sheet ghost), Silky (a black widow, mostly harmless) and Slugg (a slug). Each has its own accent colour, menu detail, trick, sounds and way of moving. Switch in Settings or under More ▸ Change Pixl. Memory, wallet and position carry over.
 
 ![Every Pixl with its Default and two alternate skins](docs/screenshots/skins-grid.png)
-Alternate skins (C15), two per Pixl (three for Kiti), each with its own accent: Frogg Toad and Poison Dart, Kiti Orange Tabby, Siamese and Sphynx, Mochi Wolf and Black & Tan, Boo Veil (a lace veil with a lantern) and Glitch (a starry body that glitches), Silky Tarantula and Jumper, Slugg Dapper and Racer. Pick one under Settings ▸ Alternate skins; each Pixl remembers its own.
-
-![Ask, Memory, Wallet and Change Pixl cards, light](docs/screenshots/cards-light.png)
-![The same cards, dark](docs/screenshots/cards-dark.png)
-The cards on the C10 Solid material (Liquid Glass is the ghost's alone): header with grip and ×, fields with the Pixl's accent ring, receipts, the Pixl picker.
-
-| | | |
-|---|---|---|
-| ![Ask: open Spotify](docs/screenshots/ask-open-spotify.png) | ![Ask: a joke, with web search](docs/screenshots/ask-web-joke.png) | ![Ask: save this, with a backlink](docs/screenshots/ask-save-backlink.png) |
-| **"open Spotify"**: done on the Mac, no model, nothing sent. | **"tell me a joke"**: a private answer that searched the web, with its sources. | **"save this"**: saved to Memory with a link back to the passage. |
-
-![Ask: an answer with pictures, one opened](docs/screenshots/ask-pictures.png)
-Answers that list places or things show their pictures as small squares (from Wikipedia, looked up by the names only); click one to open it large.
+Each Pixl has two alternate skins (Kiti has three), picked under Settings ▸ Alternate skins.
 
 | | |
 |---|---|
 | ![Frogg perched on the active window with a verified bubble](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) |
-| Frogg stands on the title bar of the window you're working in. *(Illustration: the window is drawn; Frogg, the bubble and the panel are the app's real views.)* | **Polish this** on a real NEAR AI Cloud reply: word diff, verdict, and the green-edged card you drag into your text. |
+| Frogg stands on the title bar of the window you're working in. *(The window is drawn; Frogg, the bubble and the panel are the app's real views.)* | **Polish this** on a real NEAR AI Cloud reply: word diff, verdict, and the card you drag into your text. |
 | ![All 17 checks](docs/screenshots/polish-panel-checks.png) | ![Refused: the enclave failed verification](docs/screenshots/polish-refused.png) |
 | All 17 checks behind the verdict, from the same live request. | If the enclave fails verification, your text is never sent. |
 | ![Chrome: a saved highlight reopened](docs/screenshots/backlink-long-passage.png) | ![Chrome: the right "the frog" out of 35](docs/screenshots/backlink-the-frog.png) |
-| Chrome extension: a saved passage, reopened from its link, scrolled and highlighted. | The link picks the right "the frog" out of 35 on the page. |
-| ![Double-click or right-click: the option bubbles](docs/screenshots/bubbles-white-doc.png) | ![More: the mini list](docs/screenshots/more-list.png) |
-| ![Bubbles over a dark editor](docs/screenshots/bubbles-dark-editor.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
-| Double-click or right-click the Pixl: Polish (with a selection) or Ask, Memory, Wallet, More. | More: Ask, Memory, Wallet, Focus, Do a trick, Change Pixl, Settings, Hide. ⌃⌥P: Settings (C12): pet, alternate skins, size S–XL, Calm / Roam / Chaos, and collapsible Focus, Shortcuts, Privacy & Memory, Energy and Wallet. |
-| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Every Frogg frame](docs/screenshots/frogg-frames.png) (and [`cat`](docs/screenshots/cat-frames.png), [`shiba`](docs/screenshots/shiba-frames.png), [`ghost`](docs/screenshots/ghost-frames.png), [`widow`](docs/screenshots/widow-frames.png), [`slugg`](docs/screenshots/slugg-frames.png)) |
-| `/wallet/setup`: the owner approves Frogg's account in Meteor. | Frogg's frames (behavior slots, emotions, blink and his 12-step pond sleep), exported from the Claude Design engine (C7–C14) by `scripts/render-pixls.mjs`; Kiti adds walk 8 / trot 6 / climb 6, Mochi trot 6, Slugg crawl 8 and ceiling 6 with a separate shell layer. |
+| A saved passage, reopened from its link, scrolled to and highlighted. | The link finds the right "the frog" out of 35 on the page. |
+| ![Double-click or right-click: the option bubbles](docs/screenshots/bubbles-white-doc.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
+| Double-click or right-click the Pixl: Polish (with a selection) or Ask, Memory, Wallet, More. | ⌃⌥P opens Settings: pet, skins, size S to XL, Calm / Roam / Chaos, Focus, Shortcuts, Privacy & Memory, Energy, Wallet. |
+| ![Frogg's wallet setup page](docs/screenshots/wallet-setup.jpg) | ![Settings ▸ Energy](docs/screenshots/settings-energy.png) |
+| `/wallet/setup`: the owner approves Frogg's account in their own wallet. | Settings ▸ Energy: live CPU, a 10-minute sparkline, memory and power. |
 
-App screenshots are rendered offscreen from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
+| | | |
+|---|---|---|
+| ![Ask: open Spotify](docs/screenshots/ask-open-spotify.png) | ![Ask: a joke, with web search](docs/screenshots/ask-web-joke.png) | ![Ask: save this, with a backlink](docs/screenshots/ask-save-backlink.png) |
+| **"open Spotify"**: done on the Mac. No model, nothing sent. | **"tell me a joke"**: a private answer that searched the web, with its sources. | **"save this"**: saved to Memory with a link back to the passage. |
 
-## The problem
-
-Writing assistants see everything you write: unsent emails, medical notes, contracts. "We don't train on your data" is a promise you can't check. Pixl Memory lets you check: the model runs in an enclave whose code and hardware are attested, and your Mac verifies that **before** sending, not after.
-
-## Try it
-
-**Install the Mac app (one command):**
-
-```sh
-git clone … && cd pixlz-near
-scripts/install.sh        # sets up the service, builds and opens Pixl Memory.app
-```
-
-Then **click the frog in the menu bar** to call your Pixl: it springs out of the icon onto the window you're working in. Right-click the frog for the menu (Open at login, Pixl settings, Hide…). The app starts its own memory service; no terminal after this. *Not yet a download:* a standalone `.dmg` needs the service bundled and an Apple Developer ID for Gatekeeper, which come after judging.
-
-**The verification works today with no account:**
-
-```sh
-make -C memory                       # 85 tests, then starts the local service
-# or
-cd memory && uv run pixl-memory attest
-```
-
-Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs Python 3.12 and every dependency.
-
-| Do | See |
-|---|---|
-| `uv run pixl-memory attest` | 14 checks against the live NEAR AI Cloud: Intel TDX quote and TCB, your nonce inside the signed quote, signing key bound, RTMR3 replay, measured docker-compose, NVIDIA GPU attestation, deployment log |
-| `cp .env.example .env`, set `NEAR_AI_API_KEY`, then `uv run pixl-memory polish "teh frog sit on the windw"` | the polished text plus the verdict; the response signature recovers to the attested model key |
-| `uv run pixl-memory serve`, then `POST /polish` | JSON with suggestion, word diff, and the full verification |
-| Load `extension/` unpacked in Chrome (with the app installed it connects through native messaging, no token needed), select text → right-click **Save to Pixl Memory** (⌥⇧S) | the frog toolbar popup lists it; its link reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
-| `scripts/build-mac-app.sh --open`, allow Accessibility, select text in any app, click Frogg → **Polish this** | Frogg hops onto the active window; the panel shows the word diff, the verdict and all 17 checks; drag the green-edged card into your text (dropped on or right beside the text you selected, it takes that text's place) |
-| Double-click the Pixl → **Ask** (⌃⌥Space) and type **"open Spotify"**, **"go to github.com"**, **"play Daft Punk on Spotify"** | done on the Mac with no model: the app if it's installed, otherwise the site in a new browser tab |
-| On an article, Ask **"save this as frog research"** (select a passage first to save just that) | saved to Memory with a backlink: a text-fragment link to the passage through the extension, or the page's address read through Accessibility |
-| On an article, Ask **"save the part about their transparent skin"**, or in one go **"go to en.wikipedia.org/wiki/Glass_frog and save the part about their transparent skin"** | the passage about it is found on the Mac (no model) and saved with a link that opens the page scrolled to it, highlighted |
-| Ask **"what did I save about glass frogs?"** | your saves about it, ranked on the Mac, each with its backlink |
-| Ask **"famous Chicago landmarks"** | the answer, with a row of pictures of the places it names (click to enlarge) |
-| Double-click the Pixl → **Play**: Slugg's **Inevitable** (he crawls after your cursor along edges, and on a slime strand across open desktop; click him to bonk him into his shell) or Frogg's **Snap** (a drawn fly rides your cursor; dodge his tongue when his throat puffs) | 60 s rounds, best scores in the menu bar menu; typing or clicking another app ends a game at once. Script and tuning: [`docs/DEMO.md`](docs/DEMO.md) |
-| Ask **"tell me a joke"** or **"what's new with NEAR AI this week?"** | the model searches the web when it needs to (NEAR AI's `web_context_search`, $0.005 a search); the card lists the pages it found. Search answers are signed by NEAR AI's attested gateway, so the verdict says "partly verified" (every check passes; the gateway, not the model enclave, signs) |
-| Run Pixl on two Macs on the same Wi-Fi (or a second copy: `open -n --env PIXL_DEVICE_ID=demo --env "PIXL_DEVICE_NAME=Demo" ~/Applications/Pixl\ Memory.app`), allow Local Network, double-click the Pixl → **Send to Demo** | the other device asks "Catch …?"; on yes the Pixl leaps off this screen and springs out of the other one's menu bar. Ask "what screens are available?" or "jump to Demo" (answered on the Mac, no model) |
-| `cd memory && uv run python attack_demo.py` | 21 attacks against the real code: forged/stale/debug enclaves, models outside a TEE, tampered or unattested replies, a compromised app holding Frogg's key, a malicious web page, a leaked key in a commit. All blocked; one (stolen key file) limited to Frogg's own balance. Log: [`docs/ATTACKS.md`](docs/ATTACKS.md) |
-| `uv run pytest` | forged reports rejected: wrong nonce, swapped signer, tampered compose or event log, debug TD, failed GPU, unattested signer; "attestation fails → text is never sent" |
-
-Full details: [`memory/README.md`](memory/README.md).
-
-## Agents: watch and message your Claude Code sessions
-
-Agent mode (SPEC §16) lists the Claude Code sessions on this Mac, answers their permission requests, and now talks back: open **Chat** on a session to read its transcript and send it a message. Connect once: double-click the Pixl → **Agents** → **Connect Claude Code** (it adds Pixlz hooks to `~/.claude/settings.json`, with your yes; connected before this version? the list shows **Update the hooks**).
-
-| Do | See |
-|---|---|
-| Double-click the Pixl → **Agents**, pick a session (**Chat**) | a panel beside the Pixl: the session's transcript (auto-refreshing), what it's doing, and a field. Under the field: how your message will go |
-| While it works, type a message and press Return (**"Sends at its next step"**) | at its next tool call, Claude gets it as context ("Message from the user via Pixlz: …"); the message shows *delivered (at its next step)* |
-| When it finishes a turn, the Pixl asks **"<project>: done. Anything else?"** → **Reply** (or type in an open panel: **"Sends now"**) | your reply goes straight in and it carries on. No reply within the window (60 s by default; **Reply window** in the list), or **Dismiss**: it stops as usual |
-| Message a session that's closed or has been quiet for 2 min (**"Resumes the session"**) | Pixlz runs `claude -p --resume <id>` in its folder and streams the reply into the panel; its permission requests come to the Agents list for Allow / Deny. If it was heard from in the last 2 minutes, you confirm first ("may still be open in a terminal") |
-| Drag the panel's title bar away from the Pixl / back onto it; drag any edge or corner; double-click the title | tear it off into its own window / dock it again; resize (min 320 × 240); snap between compact and tall. Size and place are remembered per session |
-
-Only what you type in a chat panel can reach a session (nothing the Pixl's AI, memory or NEAR inference produces can). Pixlz never blocks a stop twice in a row without a new message from you, so it can't loop a session. **Transcripts never leave your Mac:** they're read from `~/.claude/projects/` (that folder only) for the panel, never sent anywhere, and never to NEAR AI. Hooks answer instantly; if Pixlz isn't running they exit at once and Claude Code carries on.
+More: [the cards in light](docs/screenshots/cards-light.png) and [dark](docs/screenshots/cards-dark.png), [answers with pictures](docs/screenshots/ask-pictures.png), [the More list](docs/screenshots/more-list.png), and every animation frame for [Frogg](docs/screenshots/frogg-frames.png), [Kiti](docs/screenshots/cat-frames.png), [Mochi](docs/screenshots/shiba-frames.png), [Boo](docs/screenshots/ghost-frames.png), [Silky](docs/screenshots/widow-frames.png) and [Slugg](docs/screenshots/slugg-frames.png). App screenshots are rendered from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
 
 ## How it works
 
 ```
- macOS overlay (Frogg)      Chrome extension
+ macOS app (the Pixl)        Chrome extension
    select → polish → diff     highlight → save → #:~:text= backlink
         \                     /
          127.0.0.1:7341  pixl-memory  (encrypted SQLite, token auth)
                 │  1. attest: nonce → Intel TDX + NVIDIA NRAS + signer binding
-                │  2. only then: completion (exact bytes kept)
-                │  3. signature over sha256(request):sha256(response) → attested key?
+                │  2. only then: the completion (exact bytes kept)
+                │  3. signature over sha256(request):sha256(response) → the attested key?
                 ▼
         NEAR AI Cloud  ── gateway TEE ── model TEE (z-ai/glm-5.3-flash)
                 │
-        Frogg's wallet  frogg.pixlz-petz-faucet.testnet  ── transfer(cost) ─▶ payee pixlz-petz.testnet (allowlisted)
+        Frogg's wallet  frogg.pixlz-petz-faucet.testnet  ── transfer(cost) ─▶ pixlz-petz.testnet (allowlisted)
 ```
 
-| Part | Status |
+1. **Attest first.** The local service sends a fresh nonce, then checks the Intel TDX quote, NVIDIA's GPU attestation and that the signing key belongs to the attested enclave. If any check fails, your text is never sent.
+2. **Then send.** The completion request goes out, and the exact bytes of the request and response are kept.
+3. **Check the reply.** The response signature must recover to the key the attestation vouched for.
+4. **Pay.** Frogg pays the request's real cost with a NEAR testnet transfer to one allowlisted account. The receipt (model, cost, verdict) stays in the local encrypted store. Only the amount and the transaction go on chain.
+
+## Everything you can try
+
+| Do | What happens |
 |---|---|
-| `memory/`: local service, verification, encrypted store, web search, CLI | **working**, 100 tests |
-| Frogg's wallet: `frogg.pixlz-petz-faucet.testnet`, funded by its owner account, pays `pixlz-petz.testnet` per request | **live on testnet**: every answer pays its cost on chain ([first payment](https://testnet.nearblocks.io/txns/GzuymmDA5kERz74Rj28GAs8KaSUqAiM8DtgvkBui9fzm)); 20 wallet tests against a simulated chain |
-| `macos/PixlMemory/`: overlay app. Frogg perches on the active window, hops when you switch windows, and startles then hops to the new perch when you swipe to another Space (an edge pop when an arc between two displays would leave the screen). Behavior: Calm, Roam or Chaos (each Pixl explores in its own style with real walk/trot/crawl loops: Kiti walks, Mochi trots, Slugg never hops: he does a two-step crawl (front first, the back catching up), climbs the screen's real edges and window sides, laps over the top upside down (now and then his shell lets go first and he tumbles onto it), wraps head first around corners and over window tops, and leaves a green slime trail that fades in 2 s; his shell lags and settles, opens like a vault for Memory and seals for Focus, Silky climbs walls and hangs on silk, Boo hovers and glides; never while you type, never over your caret; if it's sitting where you're about to type, it moves away). Ask does things: opens apps and sites, saves the page or the part about a topic with a backlink, finds what you saved, searches the web, shows pictures. Play: two mini-games (C16). Sleeps when you're away (Frogg in his pond), wakes by the rules in SPEC §6.2. Text in three channels: sounds in bubbles, status narration, plain-English notices. Click to poke; double-click, right-click or press-and-hold for the option bubbles (Polish when text is selected → diff → drag the result into your text; otherwise Ask; Memory; Wallet; More); drag to grab and toss; menu bar item; ⌃⌥P / ⌃⌥Space / ⌃⌥H; Focus timer; hides in fullscreen | built; 180 unit/UI tests (+11 UI, +139 in PixlzCore) plus an in-app click self-test (`scripts/build-mac-app.sh --selftest`); installs to `~/Applications`, `--debug` logs every click |
-| `extension/`: Chrome highlight → save → text-fragment backlink; bridge to the Mac app (native messaging): highlights recalled in Ask with backlinks, Polish → Replace inside web pages and rich editors | built, 15 tests + 11 bridge protocol tests (one runs the real host binary); run in Chrome (see the backlink screenshots above) |
+| `uv run pixl-memory polish "teh frog sit on the windw"` (after setting `NEAR_AI_API_KEY`) | The polished text plus the verdict. The response signature recovers to the attested model key |
+| `uv run pixl-memory serve`, then `POST /polish` | JSON with the suggestion, the word diff and the full verification |
+| Double-click the Pixl → **Ask** (⌃⌥Space): **"open Spotify"**, **"go to github.com"**, **"play Daft Punk on Spotify"** | Done on the Mac with no model: the app if it's installed, otherwise the site in a new tab |
+| Load `extension/` unpacked in Chrome, select text, right-click **Save to Pixl Memory** (⌥⇧S) | Saved with a link that reopens the page highlighted at that passage ([`extension/README.md`](extension/README.md)) |
+| On an article, Ask **"save the part about their transparent skin"** | The passage is found on the Mac (no model) and saved with a link that opens the page scrolled to it |
+| Ask **"what did I save about glass frogs?"** | Your saves on that topic, ranked on the Mac, each with its link |
+| Ask **"tell me a joke"** or **"what's new with NEAR AI this week?"** | The model searches the web when it needs to (NEAR AI's `web_context_search`, $0.005 a search) and lists its sources. These answers are signed by NEAR AI's attested gateway, not the model enclave, so the verdict says "partly verified" |
+| Ask **"famous Chicago landmarks"** | The answer with small pictures of the places it names. Click one to enlarge it |
+| Double-click the Pixl → **Play** | Two 60-second mini-games: Slugg's **Inevitable** (he crawls after your cursor) and Frogg's **Snap** (dodge his tongue). Typing or clicking another app ends a game at once ([`docs/DEMO.md`](docs/DEMO.md)) |
+| Double-click the Pixl → **More** → **Send to device** | The Pixl hops to another Mac or a Mosaico. See [Trips to other devices](#trips-to-other-devices) |
+| Double-click the Pixl → **Agents** | Watch and message your Claude Code sessions. See [Agent mode](#agent-mode-watch-and-message-your-claude-code-sessions) |
 
-Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
+The local service on its own is documented in [`memory/README.md`](memory/README.md).
 
-## Scope of this submission
+## Frogg's wallet
 
-**The Mac, done properly, and the Pixl's trips.** The submission is the Mac app, the Chrome extension and the local memory service, working end to end, plus travel: a Pixl hops from one Mac to another on the same network, and to an ESP-Mosaico display over Wi-Fi or Bluetooth LE and back (the Mosaico app and the trip protocol in C are in [`mosaico/`](mosaico/README.md); devices pair by comparing a code on both screens). Only one copy of the Pixl exists at a time. Everything else in the Pixlz plan is deliberately left for after judging.
+**Why a pet has a wallet:** Frogg pays for the private inference it does for you, one request at a time, from a purse with a hard bottom. You set a weekly limit or pause it in the Wallet bubble. Every payment has an on-chain receipt.
 
-**Skins are part of the draw.** Frogg is the launch pet. The demo ships six Pixls from the Pixlz Design System (Frogg, Kiti, Mochi, Boo with its body and menus in macOS Liquid Glass, Silky and Slugg), each with two alternate skins. Each has its own accent, bubble detail and signature move. Switching skins keeps your memory, wallet, position and settings. Skins in this submission are a plain picker, not tokens.
+**The design: a plain NEAR sub-account that the owner funds.** Live on testnet: the owner account `pixlz-petz-faucet.testnet` created `frogg.pixlz-petz-faucet.testnet`, and Frogg pays `pixlz-petz.testnet` ([first payment](https://testnet.nearblocks.io/txns/GzuymmDA5kERz74Rj28GAs8KaSUqAiM8DtgvkBui9fzm)).
 
-**Next, after the hackathon, in this order:**
-1. **On-chain skins.** Skins as NEAR NFTs (NEP-171) owned by your wallet and read by the app, so a pet you own follows your account.
-2. **iPhone companion.** Reuses the shared Swift core (`PixlzCore`): Frogg on a small stage, plus a widget.
-3. **Mac ↔ iPhone travel.** The pet hops between nearby devices, built on the trip protocol already in `PixlzCore` (baseline).
-4. **Windows app (WPF)**, built from `docs/SPEC.md`.
-5. **Cloud-relayed travel**, so the pet can move between Windows, Mac and iPhone across networks.
+- **The owner creates Frogg's account from their own wallet and sends it a small amount.** The app never asks for a recovery phrase or private key, and NEAR gives a parent account's owner no control over a sub-account after it's created. Pixl Memory has no path to your main account.
+- **The app holds only Frogg's key.** The most a stolen key can spend is the balance you gave Frogg. NEAR itself enforces that cap.
+- **Frogg pays per request with a plain transfer.** The amount is the request's real cost from NEAR AI's `/v1/billing/costs`, converted at a rate you set. The app refuses to pay any account but the allowlisted one. (NEAR AI credits can't be bought on chain today, so the payee is whoever holds the credits.)
+- **Before every payment** the app checks, in order: the per-request cap, the per-day cap, the payee allowlist and the reserve. A polish is refused up front once the daily cap is reached, so your text isn't sent if Frogg can't pay.
+- **A second cap you can add:** a USD spend limit on your NEAR AI API key in the cloud.near.ai dashboard.
 
-Each step reuses the one before it: the iPhone app gives travel a second endpoint, Apple-to-Apple travel proves the protocol before a second platform and a server are added, and the cloud relay comes last because it is the only step that needs accounts and a backend.
+Every Pixl can have its own wallet the same way (`pixl-memory wallet init --pet kiti`, then the owner creates `kiti.<owner>.testnet`).
 
-## Frogg's wallet: why your funds stay untouchable
+**How it's built** (`memory/src/pixl_memory/near.py`, `wallet.py`): Frogg's ed25519 key is generated on the Mac by `pixl-memory wallet init` and stored in `~/Library/Application Support/PixlMemory/frogg_key.json` with mode 0600. Transactions are signed in about 100 lines of Python, checked byte for byte against `near-api-js` in the tests.
 
-Every Pixl can have its own NEAR wallet: a sub-account the owner creates and funds, which is its spending cap. The demo video shows Frogg's (`frogg.pixlz-petz-faucet.testnet`); other pets use the same flow (`pixl-memory wallet init --pet kiti`, then the owner creates `kiti.<owner>.testnet` with that key). Each Pixl pays for its own thinking from its own account, with its own daily and weekly limits.
+**Owner setup** (testnet only):
 
-**Choice: a plain NEAR sub-account that the owner funds: `frogg.pixlz-petz.testnet`, under the owner's testnet account `pixlz-petz.testnet`.** We considered a NEAR Intents agent account (the Agent API) and rejected it for this app.
+1. `cd memory && uv run pixl-memory wallet init` creates Frogg's key and prints its public half.
+2. Create Frogg's account under yours with the NEAR CLI (your key stays in your keychain):
+   `near create-account frogg.<you>.testnet --use-account <you>.testnet --public-key <Frogg's public key> --initial-balance 1 --network-id testnet`
+   No testnet NEAR? `near create-account <you>.testnet --use-faucet --network-id testnet` makes a funded account.
+3. Set `FROGG_PARENT_ACCOUNT`, `FROGG_ACCOUNT` and `FROGG_PAYEE` in `.env`. `uv run pixl-memory wallet status` should end with READY.
 
-**How it works:**
-- **The owner creates `frogg.<owner>.testnet` from their own wallet and sends it a small amount** (live: `frogg.pixlz-petz-faucet.testnet`, made with the NEAR CLI because Meteor blocks full-access keys). The owner approves every transaction from their own wallet; the app never asks for a recovery phrase or private key. Your keys are never on the Mac, and NEAR gives a parent account no control over a sub-account after creation. Pixl Memory has no path to your main account.
-- **The app holds only Frogg's own key, for Frogg's account.** The most a stolen key can spend is the balance you chose to give Frogg. That balance is the hard cap, enforced by NEAR itself.
-- **Frogg pays per request with a plain NEAR transfer.** The recipient is the account that holds the NEAR AI credits (you, or whoever runs the service). There is no documented way to buy NEAR AI credits on-chain; they're bought in its dashboard. The amount is the request's real cost from `/v1/billing/costs`, converted at a rate you set. The app refuses to pay any other recipient.
-- **Your balance and receipts appear in Frogg's thought bubble.** On chain is only the amount and transaction. The receipt itself (model, cost, verification verdict) stays in the local encrypted store.
-- **A second cap you can add:** set a USD spend limit on your NEAR AI API key in the cloud.near.ai dashboard. NEAR AI enforces it per key.
+The `/wallet/setup` page does step 2 from a browser wallet, but Meteor refuses transactions that add a full-access key, which Frogg's account needs. That's why the live setup used the CLI.
 
-**Why not a NEAR Intents agent account** (checked 2026-11-08 against docs.near-intents.org and the `NEAR-Intents-Agent-API` SDK and skills):
+**Why not a NEAR Intents agent account?** We checked the Agent API on 2026-11-08 (docs.near-intents.org and the `NEAR-Intents-Agent-API` SDK).
 
 | | NEAR Intents Agent API | Funded sub-account |
 |---|---|---|
-| Network | **Mainnet only**, real funds ("experimental, mainnet-only beta") | **Testnet** first, free |
-| Credentials in the app | A partner API key, which the docs say must **never ship in an app**, so it needs our own backend; plus a grant token | One key, for Frogg's account only |
-| Setup | Owner-signed intents to create the account, set policy, issue a grant | One account-creation and one transfer, from your wallet |
-| Limits | Rich policy (destinations, budgets, schedules, freeze), enforced by the service | Balance = hard cap, enforced by the protocol; recipient allowlist in our code |
-| NEAR AI integration | None | None (same) |
-| Code for us | SDK (Node 24) + backend proxy + owner-signing flow | Sign and send one transfer |
+| Network | Mainnet only, real funds ("experimental, mainnet-only beta") | Testnet first, free |
+| Credentials in the app | A partner API key the docs say must never ship in an app, so it needs a backend; plus a grant token | One key, for Frogg's account only |
+| Limits | Rich server-side policy (destinations, budgets, schedules, freeze) | The balance is a hard cap enforced by the protocol; the payee allowlist is in our code |
+| Code | SDK (Node 24), a backend proxy and an owner-signing flow | Sign and send one transfer |
 
-Both keep your main funds untouchable. The sub-account does it with far less code, works on testnet, and needs no server.
-- The Agent API's server-side policy engine is the stronger tool for an agent that holds large balances. It is the upgrade path if Frogg ever does.
-- A smaller step is to deploy a tiny policy contract on Frogg's account and give the app only a function-call key for its `pay_inference` method. NEAR function-call keys can't transfer NEAR or add keys, so a stolen key could then only pay the fixed payee within per-call and daily limits. We list that as optional hardening, not part of the first build.
+Both keep your main funds out of reach. The sub-account does it with far less code, works on testnet and needs no server. The Agent API is the upgrade path if a Pixl ever holds a large balance. A smaller step, listed as optional hardening: a tiny policy contract on Frogg's account, with the app holding only a function-call key for `pay_inference`, so a stolen key could only pay the fixed payee within limits.
 
-**How it's built** (`memory/src/pixl_memory/near.py`, `wallet.py`):
-- **Signing.** Frogg's ed25519 key is generated on the Mac (`pixl-memory wallet init`) and stored in `~/Library/Application Support/PixlMemory/frogg_key.json` (0600). Transactions are signed in about 100 lines of Python, checked byte-for-byte against `near-api-js` in the tests.
-- **Before every payment,** in order: the per-request cap, the per-day cap, the payee allowlist and the reserve. Only then is anything signed. A polish is refused up front once the daily cap is reached, so your text isn't sent if Frogg can't pay.
-- **What's on chain is a plain NEAR transfer:** sender, receiver, amount and time. No text, model or verdict is attached. The full receipt is stored only in the local encrypted database.
+## Trips to other devices
 
-**Owner setup** (testnet only; the owner never shares a recovery phrase or key):
-1. `cd memory && uv run pixl-memory wallet init`. This creates Frogg's key and prints its public half.
-2. Create Frogg's account under yours, with that public key and a small amount. From the NEAR CLI (the owner's key stays in your keychain):
-   `near create-account frogg.<you>.testnet --use-account <you>.testnet --public-key <Frogg's public key> --initial-balance 1 --network-id testnet`
-   (No testnet NEAR? `near create-account <you>.testnet --use-faucet --network-id testnet` makes a funded account.)
-3. Set `FROGG_PARENT_ACCOUNT`, `FROGG_ACCOUNT` and `FROGG_PAYEE` in `.env`; `uv run pixl-memory wallet status` should end with READY.
+A Pixl can leave this Mac and go to another Mac on the same network, or to an [ESP-Mosaico](https://github.com/esp-mosaico) display over Wi-Fi or Bluetooth LE, and come back. Only one copy of the Pixl exists at a time: the trip protocol hands it over with a checksum and never loses or duplicates it.
 
-The `/wallet/setup` page does the same step from a browser wallet, but Meteor refuses any transaction that adds a full-access key, and Frogg needs one on its own account to pay. Our live setup used the CLI: the owner `pixlz-petz-faucet.testnet` (a faucet-funded account) created `frogg.pixlz-petz-faucet.testnet`; payments go to `pixlz-petz.testnet`, the owner's Meteor account.
+- **Mac to Mac.** Run Pixl on two Macs on the same Wi-Fi, or start a second copy on one Mac: `open -n --env PIXL_DEVICE_ID=demo --env "PIXL_DEVICE_NAME=Demo" ~/Applications/Pixl\ Memory.app`. Allow Local Network, then double-click the Pixl → More → **Send to device** → Demo. The other device asks "Catch …?". On yes, the Pixl leaps off this screen and springs out of the other one's menu bar. You can also Ask "what screens are available?" or "jump to Demo" (answered on the Mac, no model).
+- **Mac to Mosaico.** The Mosaico app is in [`mosaico/`](mosaico/README.md): the trip protocol in C (`pixl_trip/`) and the Mosaico app (`pixlz_dock/`). On a real Mosaico, Frogg has gone Mac → Mosaico → Mac, and the Mosaico's edits to his state passed the Mac's checksum. Without hardware, `mosaico/sim.sh` runs the Mosaico in a browser simulator.
+- **Who can take the Pixl.** A device you haven't trusted has to ask first, and only a trusted or paired device can call the Pixl away.
+- **Pairing.** A Mosaico pairs with a Mac by showing the same 6-digit code on both screens (X25519 with a commitment, then HKDF; details in [`pt_pair.h`](mosaico/pixl_trip/include/pixl_trip/pt_pair.h)). A paired Mosaico can Allow or Deny your Claude Code agents' requests, with signed decisions.
+- **Not done yet:** the trip link itself isn't encrypted. An encrypted channel using the pairing key is the next step.
 
-Testnet only: the config refuses mainnet RPCs and anything but `frogg.<owner>.testnet`.
+## Agent mode: watch and message your Claude Code sessions
+
+Agent mode lists the Claude Code sessions on this Mac, answers their permission requests, and lets you message them. Connect once: double-click the Pixl → **Agents** → **Connect Claude Code**. With your yes, it adds Pixlz hooks to `~/.claude/settings.json`.
+
+| Do | What happens |
+|---|---|
+| Agents → pick a session → **Chat** | A panel beside the Pixl with the session's transcript (it refreshes), what it's doing, and a message field |
+| Type a message while it works | Claude gets it at its next tool call, as "Message from the user via Pixlz: …" |
+| When a session finishes a turn, the Pixl asks "\<project\>: done. Anything else?" → **Reply** | Your reply goes straight in and it carries on. No reply within 60 s (adjustable), or Dismiss: it stops as usual |
+| Message a session that's closed or quiet for 2 minutes | Pixlz runs `claude -p --resume <id>` in its folder and streams the reply into the panel |
+| Drag the panel's title bar | Tear it off into its own window, or dock it back. Size and position are remembered per session |
+
+Only what you type in a chat panel can reach a session. Nothing the Pixl's AI, memory or NEAR inference produces can. Pixlz never blocks a stop twice in a row without a new message from you, so it can't loop a session. **Transcripts never leave your Mac.** They're read from `~/.claude/projects/` for the panel and never sent anywhere, including NEAR AI. If Pixlz isn't running, the hooks exit at once and Claude Code carries on.
+
+## What's built and how it's tested
+
+| Part | Status | Tests (all passing on 2026-11-13) |
+|---|---|---|
+| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 112: `cd memory && uv run pytest` |
+| Frogg's wallet on NEAR testnet | Live: every answer pays its cost on chain | Included above (against a simulated chain) |
+| `macos/PixlMemory/`: the Mac app | Built | 234: `swift test --package-path macos/PixlMemory`, plus an in-app click self-test: `scripts/build-mac-app.sh --selftest` |
+| `PixlzCore/`: shared Swift core (pet state, behaviour, physics, trip protocol) | Built | 173: `swift test --package-path PixlzCore` |
+| `extension/`: Chrome highlight → save → backlink, and the bridge to the Mac app | Built | 15: `cd extension && node --test` |
+| `mosaico/pixl_trip/`: the trip protocol and pairing in C | Built, run on a real Mosaico | 306 checks: `make -C mosaico/pixl_trip test` |
+| `mosaico/pixlz_dock/`: the Mosaico app | Built, run on a real Mosaico | 6,252 checks: `make -C mosaico/pixlz_dock/tests` |
+| `scripts/check-secrets.sh` | Runs on every commit when enabled | `sh scripts/check-secrets.sh --all` |
+
+**What the Mac app does.** Frogg perches on the active window, hops when you switch windows, and follows you to another Space. Each Pixl moves in its own way: Kiti walks, Mochi trots, Silky climbs walls and hangs on silk, Boo glides, and Slugg crawls along screen edges and window sides (he never hops) and leaves a slime trail that fades. Calm, Roam or Chaos sets how much they wander. They never move while you type and never sit over your text cursor. Pixls sleep when you're away (Frogg in his pond) and wake by the rules in [`docs/SPEC.md`](docs/SPEC.md) §6.2. Click to poke, double-click or right-click for the menu, drag to pick up and toss. Shortcuts: ⌃⌥P settings, ⌃⌥Space Ask, ⌃⌥H hide. They hide when an app goes full screen.
+
+**Light on your Mac.** Typically 0.1% CPU idle (0.2% asleep in the pond), 1 to 5% while moving, and about 60 MB of memory, measured on an Apple-silicon MacBook Pro with `swift scripts/bench-energy.swift`. The script fails if idle CPU goes over the 1% budget.
+
+## Scope of this submission
+
+**In:** the Mac app, the Chrome extension and the local memory service, working end to end; Frogg's testnet wallet; and trips from Mac to Mac and from Mac to a Mosaico and back.
+
+**Skins:** six Pixls with two alternate skins each, from the Pixlz design system. Switching keeps memory, wallet, position and settings. In this submission skins are a plain picker, not tokens.
+
+**Next, after the hackathon, in this order:**
+
+1. **On-chain skins.** Skins as NEAR NFTs (NEP-171) owned by your wallet, so a pet you own follows your account.
+2. **Encrypted trips.** The trip link encrypted with the pairing key.
+3. **iPhone companion.** Reuses `PixlzCore`: Frogg on a small stage, plus a widget. Not part of this submission.
+4. **Mac ↔ iPhone travel,** on the trip protocol already in `PixlzCore`.
+5. **Windows app,** built from [`docs/SPEC.md`](docs/SPEC.md).
+6. **Travel across networks,** so a pet can move between Windows, Mac and iPhone anywhere.
+
+Each step builds on the one before. Cross-network travel comes last because it's the only step that needs accounts and a backend.
 
 ## Keys and secrets
 
-This repo is public, so **API keys live only in `.env`**, which is git-ignored. Copy `.env.example` (empty values) to `.env` and fill in `NEAR_AI_API_KEY`. The service reads keys from that file only: not from code, arguments or the shell environment. It never prints them.
+API keys live only in `.env`, which git ignores. Copy `.env.example` (empty values) to `.env` and fill in `NEAR_AI_API_KEY`. The service reads keys from that file only: not from code, arguments or the shell environment, and it never prints them.
 
-`scripts/check-secrets.sh` blocks commits containing anything key-shaped or any `.env` file. Turn it on per clone with `git config core.hooksPath .githooks`. The test suite runs it over every tracked file.
+`scripts/check-secrets.sh` blocks commits containing anything shaped like a key, or any `.env` file. Turn it on per clone with `git config core.hooksPath .githooks`. The test suite also runs it over every tracked file.
 
-Frogg's own NEAR key isn't an API key. It's stored outside the repo, in `~/Library/Application Support/PixlMemory/` (mode 0600).
+Frogg's NEAR key isn't an API key. It's stored outside the repository, in `~/Library/Application Support/PixlMemory/` with mode 0600.
 
 ## Baseline vs hackathon work
 
-Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR integration on top of it.
+Pixlz is the owner's existing desktop-pet project. This entry adds the NEAR work on top of it.
 
-**This repository holds only what the hackathon entry needs to build, run and test.** It is extracted from the private Pixlz repository with its history kept, so every commit keeps its original date. Left out, because the entry doesn't need them: the Claude Design source (`design/`), the iOS and Windows plans, and the product research notes. The pixel art is already exported into `assets/` and embedded in the app, so nothing here depends on them; `scripts/render-pixls.mjs`, which re-exports the art, needs the design source and only runs in the private repository.
+This repository holds only what the entry needs to build, run and test. It's extracted from the private Pixlz repository with its history, so every commit keeps its original date. Left out: the Claude Design source (`design/`), the iOS and Windows plans, and product research notes. The pixel art is already exported into `assets/` and embedded in the app; `scripts/render-pixls.mjs`, which re-exports it, needs the design source and only runs in the private repository.
 
 | | Commits | Dates |
 |---|---|---|
-| **Baseline**, tag [`pre-hackathon`](https://github.com/devluca999/pixlz-near/tree/pre-hackathon) | every commit up to the tag | 2026-10-15 22:40 CT → 2026-10-16 02:48 CT, all before the 2026-10-19 announcement |
-| **Hackathon work**, tag `hackathon-submission` | everything after | started 2026-11-08 |
+| **Baseline**, tag [`pre-hackathon`](https://github.com/devluca999/pixlz-near/tree/pre-hackathon) | Every commit up to the tag | 2026-10-15 22:40 CT to 2026-10-16 02:48 CT, before the 2026-10-19 announcement |
+| **Hackathon work**, tag [`hackathon-submission`](https://github.com/devluca999/pixlz-near/tree/hackathon-submission) | Everything after | From 2026-11-08 |
 
-**Diff of all hackathon work:** https://github.com/devluca999/pixlz-near/compare/pre-hackathon...hackathon-submission
+**All hackathon work as one diff:** https://github.com/devluca999/pixlz-near/compare/pre-hackathon...hackathon-submission
 
-- **Baseline:** `PixlzCore/` (pet needs, behavior, world map, physics, PetState, Mac↔iPhone travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `assets/` (later re-exported during the hackathon).
-- **New in the hackathon:** `memory/`, `macos/PixlMemory/` (including the generated `FroggSpriteData.swift`), `extension/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, decision D15, and this README.
+- **Baseline:** `PixlzCore/` (pet needs, behaviour, world map, physics, pet state, the travel protocol), `docs/SPEC.md`, `docs/DECISIONS.md`, `assets/` (re-exported during the hackathon).
+- **New in the hackathon:** `memory/`, `macos/PixlMemory/`, `extension/`, `mosaico/`, `showcase/`, `scripts/`, `.githooks/`, `.env.example`, `docs/PLAN-pixl-memory.md`, and this README.
 
-Pixlz also plans a **Solana** layer. It is not part of this submission.
-
-**Our other, independent entry: Evernear** (shipment escrow).
+Pixlz also plans a Solana layer. It isn't part of this submission. Our other, independent entry is **Evernear** (shipment escrow).
 
 ## Libraries and AI use
 
@@ -227,63 +247,58 @@ Pixlz also plans a **Solana** layer. It is not part of this submission.
 
 | Library | Used for |
 |---|---|
-| [FastAPI](https://fastapi.tiangolo.com) + [Uvicorn](https://www.uvicorn.org), Pydantic | local HTTP API |
+| [FastAPI](https://fastapi.tiangolo.com) + [Uvicorn](https://www.uvicorn.org), Pydantic | The local HTTP API |
 | [httpx](https://www.python-httpx.org) | HTTP client |
 | [dcap-qvl](https://github.com/Phala-Network/dcap-qvl) (Phala) | Intel TDX quote verification |
 | [eth-account](https://github.com/ethereum/eth-account) | EIP-191 signature recovery |
-| [cryptography](https://cryptography.io) | AES-GCM at rest |
-| [python-dotenv](https://github.com/theskumar/python-dotenv) | reads API keys from `.env` |
-| pytest, hatchling | tests, build |
+| [cryptography](https://cryptography.io) | AES-GCM at rest; ed25519 for the wallet |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | Reads API keys from `.env` |
+| pytest, hatchling | Tests, build |
 
-**External services:**
-- NEAR AI Cloud: inference, attestation, signatures.
-- NVIDIA Remote Attestation Service: GPU evidence.
-- Phala PCCS: Intel collateral.
+Borsh and base58 for NEAR transactions are written in `near.py`; no NEAR library is used in Python. The `/wallet/setup` page loads [`@near-wallet-selector/core` and `meteor-wallet`](https://github.com/near/wallet-selector) 10.1.4 and `@near-js/transactions` / `@near-js/crypto` 2.5.1 from esm.sh.
 
-**Baseline:** Swift 6, Swift Package Manager, no third-party Swift packages.
+**External services:** NEAR AI Cloud (inference, attestation, signatures), NVIDIA Remote Attestation Service (GPU evidence), Phala PCCS (Intel collateral).
 
-**`extension/`:** no libraries, no build step (plain JavaScript modules; tests use Node's built-in `node --test`).
+**Swift (`macos/`, `PixlzCore/`):** Swift 6, AppKit, ApplicationServices (Accessibility, read-only), Swift Testing. No third-party packages. The pixel art is exported from the owner's private Claude Design engine and embedded as text, with no image files.
 
-**Wallet:** no new Python libraries: ed25519 comes from `cryptography`, and Borsh and base58 are written in `near.py`. The setup page loads [`@near-wallet-selector/core` and `meteor-wallet`](https://github.com/near/wallet-selector) 10.1.4 and `@near-js/transactions` / `@near-js/crypto` 2.5.1 from esm.sh. The encoding test vector was generated with `@near-js/transactions` 2.x.
+**`extension/`:** plain JavaScript modules, no libraries, no build step. Tests use Node's built-in `node --test`.
 
-**`macos/PixlMemory/`:** AppKit, ApplicationServices (Accessibility, read-only), Swift Testing, and the baseline `PixlzCore` (hop physics). No third-party packages. The Pixls' frames are exported from the owner's Claude Design engine (private, not in this repository) by `scripts/render-pixls.mjs` and embedded as text: no PNGs.
-
-The wallet code will list its libraries here when it lands.
+**`mosaico/`:** C with no dependencies outside the Mosaico SDK (ESP-IDF and Raylib Lite). X25519, SHA-256, HMAC and HKDF are written in `pixl_trip/` and checked against the RFC test vectors and Apple's CryptoKit.
 
 **AI-generated content:**
-- The hackathon code, tests and docs in this branch were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
-- The pixel art was designed in Claude Design and exported by a script; the design source stays in the private repository.
+- The hackathon code, tests and docs were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
+- The pixel art was designed in Claude Design and exported by a script.
 - The demo video's narration is a synthetic voice ([Chatterbox](https://github.com/resemble-ai/chatterbox), run locally by `showcase/narrate.py`). The cut, captions and the device render in its last scene were made by scripts in `showcase/`.
-- The test fixture `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response, captured 2026-11-08.
+- `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response, captured on 2026-11-08.
 
-## Showcase mode and the demo video
+## The demo video
 
-The demo video is recorded from the app itself. **Showcase mode** is a recording aid, only on with `--showcase` (or `PIXL_SHOWCASE=1`) and never in a normal run. It plays named scenes made of beats, each one a real feature triggered on cue: the fly, the wallet card, the attestation card, a paid private answer, a highlight saved to memory, the guard on a risky command.
+The demo video is recorded from the app itself. **Showcase mode** is a recording aid, on only with `--showcase` (or `PIXL_SHOWCASE=1`). It plays scenes made of beats, each a real feature triggered on cue. Random choices use a fixed seed so takes match, and a plain dark desk covers the desktop so nothing private is filmed. `showcase/record.sh` records a take, and `showcase/cut.py` assembles the 9:16 cut and the 16:9 judges' cut from `showcase/edit.json`. Scenes and narration: [`showcase/SHOTLIST.md`](showcase/SHOTLIST.md).
 
-- **Hotkeys:** ⌃⌥K next beat · ⌃⌥⇧K previous · ⌃⌥R restart the scene · Esc reset. Or hands-free: `PixlMemory showcase run <scene>`.
-- **Takes match.** Random choices use one fixed seed. A beat that waits on something live (inference, attestation, testnet) shows a spinner and moves on when it lands.
-- **Nothing private in a take.** A plain dark desk covers the desktop; scenes that need a page, a draft or a repo use the throwaway ones in `showcase/demo/`.
-- **Recording and cutting:** `showcase/record.sh <scene> <take> <seconds>` records a take; `showcase/cut.py` assembles the 9:16 cut and the 16:9 judges' cut from `showcase/edit.json`, with burned-in captions and the narration.
+The video's last scene shows a Mosaico, a Mac and an iPhone side by side. That scene is a render. Trips to another Mac and to the Mosaico are in this submission. The iPhone is labelled "coming soon": it's under **Next**.
 
-The scenes, the narration and the steps are in [`showcase/SHOTLIST.md`](showcase/SHOTLIST.md); the caption rules in [`showcase/CAPTIONS.md`](showcase/CAPTIONS.md).
+## For AI agents reading this repository
 
-The video's last scene shows a Mosaico display, a Mac and an iPhone side by side. That scene is a render. Trips to another Mac and to the Mosaico are in this submission (see [Scope of this submission](#scope-of-this-submission)); the iPhone in it is labelled "coming soon": the iPhone companion is under **Next**, not in this submission.
+- **Entry points:** `memory/src/pixl_memory/` (the service: `verify.py` and `tdx.py` check attestation, `nearai.py` calls NEAR AI, `near.py` and `wallet.py` pay), `macos/PixlMemory/Sources/PixlMemory/AppController.swift` (the app), `PixlzCore/Sources/` (shared logic), `extension/`, `mosaico/pixl_trip/src/`.
+- **Specs:** [`docs/SPEC.md`](docs/SPEC.md) is how a Pixl behaves on every platform; [`docs/DECISIONS.md`](docs/DECISIONS.md) records decisions by number (D1, D2, …), which code comments cite.
+- **Rules the code enforces:** testnet only; text is never sent before attestation passes; Frogg pays only the allowlisted payee; API keys come only from `.env`.
+- **Run every test:** the commands in [What's built and how it's tested](#whats-built-and-how-its-tested). None needs a key except `uv run pytest -m live`.
 
 ## Repository layout
 
 ```
-memory/      Hackathon: local service, NEAR AI private inference + verification
-macos/       macOS app; PixlMemory/ overlay is hackathon work
-extension/   Hackathon: Chrome extension (highlight → save → backlink)
-PixlzCore/   Baseline: shared Swift package (pet state, behavior, travel)
-showcase/    Hackathon: demo video (shot list, recorder, cut, narration, demo pages)
-docs/        SPEC.md, DECISIONS.md (baseline); PLAN-pixl-memory.md, screenshots (hackathon)
+memory/      Local service: NEAR AI private inference, verification, encrypted store, wallet
+macos/       The Mac app (macos/PixlMemory/)
+PixlzCore/   Shared Swift package: pet state, behaviour, physics, trip protocol (baseline)
+extension/   Chrome extension: highlight → save → backlink
+mosaico/     The ESP-Mosaico app and the trip protocol in C
+showcase/    Demo video: shot list, recorder, cut, narration, demo pages
+scripts/     Install, build, self-test, energy benchmark, secrets check
+docs/        SPEC, DECISIONS, the plan, attacks log, demo script, screenshots
 assets/      The Pixls' manifests and exported frames
 ```
-
-Baseline core tests: `swift test --package-path PixlzCore`.
 
 ## License
 
 Copyright © 2026 Luca M. All rights reserved. See [`LICENSE`](LICENSE).
-Published publicly for NEAR Hackathon judging. No license is granted.
+Published for NEAR Hackathon judging. No license is granted.

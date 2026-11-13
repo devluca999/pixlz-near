@@ -14,7 +14,7 @@ Or step by step:
 
 ```sh
 cd memory
-uv run pytest             # 41 offline tests (fixture: a real NEAR attestation report)
+uv run pytest             # the offline tests (fixture: a real NEAR attestation report)
 uv run pytest -m live     # against the real NEAR AI Cloud
 uv run pixl-memory attest # verify the TEE now; no API key needed
 cp ../.env.example ../.env  # then set NEAR_AI_API_KEY (cloud.near.ai → Credits → API Keys)
