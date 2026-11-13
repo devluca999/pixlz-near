@@ -1,10 +1,17 @@
 # Pixl Memory
 
+![Frogg, Kiti, Mochi, Boo, Silky and Slugg, each with its menu open](docs/screenshots/pixlz-lineup.png)
+
 Pixl Memory puts Frogg, a pixel-art frog, on your Mac. Frogg edits your writing with a private AI model. Select text in any app, click Frogg and choose **Polish this**. Your text goes only to a model running inside a NEAR AI Cloud TEE (Intel TDX + NVIDIA confidential GPUs). Your Mac checks the enclave's hardware attestation **before** the text leaves, and every reply comes back with a verdict: which enclave answered, whether the answer was made for this request, and whether its signature matches.
 
 Frogg also has **its own NEAR account**. It pays for its own inference from a small balance its owner gives it. The app holds only Frogg's key, never yours, so that balance is the most Frogg can ever spend.
 
 Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI** (primary), Agent Economy, AI Security & Defense.
+
+| | | |
+|---|---|---|
+| ![Frogg perched on a Mail window, bubble: Verified in TEE, 17/17](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) | ![Refused: the enclave failed verification, so the text was never sent](docs/screenshots/polish-refused.png) |
+| **1. Select text, click Frogg.** He sits on the window you're working in. | **2. A private edit, verified.** A real NEAR AI Cloud reply: word diff, 17 of 17 checks passed, a card to drag into your text. | **3. Or refused.** If the enclave fails verification, your text is never sent. |
 
 > Published for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
 
@@ -55,18 +62,15 @@ Click the frog in the menu bar. Frogg springs out of the icon onto the window yo
 
 ## Screenshots
 
-![Frogg, Kiti, Mochi, Boo, Silky and Slugg, each with its menu open](docs/screenshots/pixlz-lineup.png)
-Six Pixls: Frogg (a red-eyed tree frog), Kiti (a cat), Mochi (a Shiba Inu), Boo (a sheet ghost), Silky (a black widow, mostly harmless) and Slugg (a slug). Each has its own accent colour, menu detail, trick, sounds and way of moving. Switch in Settings or under More ▸ Change Pixl. Memory, wallet and position carry over.
+Six Pixls (pictured at the top): Frogg (a red-eyed tree frog), Kiti (a cat), Mochi (a Shiba Inu), Boo (a sheet ghost), Silky (a black widow, mostly harmless) and Slugg (a slug). Each has its own accent colour, menu detail, trick, sounds and way of moving. Switch in Settings or under More ▸ Change Pixl. Memory, wallet and position carry over.
 
 ![Every Pixl with its Default and two alternate skins](docs/screenshots/skins-grid.png)
 Each Pixl has two alternate skins (Kiti has three), picked under Settings ▸ Alternate skins.
 
 | | |
 |---|---|
-| ![Frogg perched on the active window with a verified bubble](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) |
-| Frogg stands on the title bar of the window you're working in. *(The window is drawn; Frogg, the bubble and the panel are the app's real views.)* | **Polish this** on a real NEAR AI Cloud reply: word diff, verdict, and the card you drag into your text. |
-| ![All 17 checks](docs/screenshots/polish-panel-checks.png) | ![Refused: the enclave failed verification](docs/screenshots/polish-refused.png) |
-| All 17 checks behind the verdict, from the same live request. | If the enclave fails verification, your text is never sent. |
+| ![All 17 checks](docs/screenshots/polish-panel-checks.png) | ![Ask: an answer with pictures](docs/screenshots/ask-pictures.png) |
+| All 17 checks behind the verdict at the top, from the same live request. (In the top-left picture the Mail window is drawn; Frogg, the bubble and the panels are the app's real views.) | Answers that name places or things show small pictures of them. Click one to enlarge it. |
 | ![Chrome: a saved highlight reopened](docs/screenshots/backlink-long-passage.png) | ![Chrome: the right "the frog" out of 35](docs/screenshots/backlink-the-frog.png) |
 | A saved passage, reopened from its link, scrolled to and highlighted. | The link finds the right "the frog" out of 35 on the page. |
 | ![Double-click or right-click: the option bubbles](docs/screenshots/bubbles-white-doc.png) | ![⌃⌥P: the mini menu](docs/screenshots/mini-menu.png) |
@@ -79,7 +83,7 @@ Each Pixl has two alternate skins (Kiti has three), picked under Settings ▸ Al
 | ![Ask: open Spotify](docs/screenshots/ask-open-spotify.png) | ![Ask: a joke, with web search](docs/screenshots/ask-web-joke.png) | ![Ask: save this, with a backlink](docs/screenshots/ask-save-backlink.png) |
 | **"open Spotify"**: done on the Mac. No model, nothing sent. | **"tell me a joke"**: a private answer that searched the web, with its sources. | **"save this"**: saved to Memory with a link back to the passage. |
 
-More: [the cards in light](docs/screenshots/cards-light.png) and [dark](docs/screenshots/cards-dark.png), [answers with pictures](docs/screenshots/ask-pictures.png), [the More list](docs/screenshots/more-list.png), and every animation frame for [Frogg](docs/screenshots/frogg-frames.png), [Kiti](docs/screenshots/cat-frames.png), [Mochi](docs/screenshots/shiba-frames.png), [Boo](docs/screenshots/ghost-frames.png), [Silky](docs/screenshots/widow-frames.png) and [Slugg](docs/screenshots/slugg-frames.png). App screenshots are rendered from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
+More: [the cards in light](docs/screenshots/cards-light.png) and [dark](docs/screenshots/cards-dark.png), [the More list](docs/screenshots/more-list.png), and every animation frame for [Frogg](docs/screenshots/frogg-frames.png), [Kiti](docs/screenshots/cat-frames.png), [Mochi](docs/screenshots/shiba-frames.png), [Boo](docs/screenshots/ghost-frames.png), [Silky](docs/screenshots/widow-frames.png) and [Slugg](docs/screenshots/slugg-frames.png). App screenshots are rendered from the app's own views (`swift run --package-path macos/PixlMemory pixl-snapshots <reply.json> docs/screenshots`). Browser screenshots are from Chrome.
 
 ## How it works
 
