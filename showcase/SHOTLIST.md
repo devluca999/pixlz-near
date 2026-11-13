@@ -17,8 +17,8 @@ running the voice model again.
 It opens like an ordinary reel and turns into the demo on the track's beat drop.
 
 - **Part 1** is `takes/intro-frogg.mp4` from its first frame to its last: 1.0×, its own sound, no
-  cuts, no grade. On top of it: one caption in the style of the Instagram app ("POV: 2026 startup
-  founders be like"), subtitles of what is said in the room (both voices, 2 to 4 words at a time,
+  cuts, no grade. On top of it: one caption in the style of the Instagram app ("pov: 2026 'b2b' saas
+  startup be like"), subtitles of what is said in the room (both voices, 2 to 4 words at a time,
   same style, lower middle), and the track very low underneath. No brand, no logo, no narration.
 - **The handoff.** Over the clip's last 0.9 s the picture pushes in on Frogg on the Mosaico
   display, following him (`intro-track.json` has his position in each frame), until he has the
@@ -87,7 +87,7 @@ Narration (`showcase/plan.json`), one voice, ten lines:
 | L6 | They remember what you highlight, and always take you back to the source. |
 | L6b | They help you write right where you are. |
 | L7 | They keep an eye on your coding agents. |
-| L8 | And they can be on any device, anywhere, anytime. |
+| L8 | And they can hop to your other devices. |
 | L9 | Pixlz. Powered by NEAR. |
 
 ## Recording a take

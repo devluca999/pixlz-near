@@ -12,7 +12,7 @@
     {"id": "L6", "vo": "They remember what you highlight, and always take you back to the source.", "captions": [["They remember what", "you highlight,"], ["and always take you"], ["back to the source."]], "scenes": ["M1", "M2", "M3"], "keywords": ["remember", "source"], "slot": "low", "label": "Memory", "times": [0.18, 2.13, 3.14]},
     {"id": "L6b", "tempo": 0.92, "vo": "They help you write right where you are.", "seed": 31, "captions": [["They help you write"], ["right where you are."]], "scenes": ["W1"], "keywords": ["write"], "slot": "low", "label": "Writing", "times": [0.29, 1.51]},
     {"id": "L7", "tempo": 1.0, "vo": "They keep an eye on your coding agents.", "captions": [["They keep an eye on"], ["your coding agents."]], "scenes": ["C1", "C2", "C3"], "keywords": ["coding agents"], "slot": "low", "label": "Agent watch", "times": [0.25, 1.44]},
-    {"id": "L8", "tempo": 1.4, "vo": "And they can be on any device, anywhere, anytime.", "captions": [["And they can be", "on any device,"], ["anywhere, anytime."]], "scenes": ["D1"], "keywords": ["any device"], "slot": "high", "label": "Any device (phone: coming soon)", "times": [0.12, 1.95]},
+    {"id": "L8", "tempo": 1.15, "vo": "And they can hop to your other devices.", "seed": 21, "captions": [["And they can hop"], ["to your other devices."]], "scenes": ["D1"], "keywords": ["other devices"], "slot": "high", "label": "Any device (phone: coming soon)", "times": [0.2, 1.56]},
     {"id": "L9", "tempo": 1.1, "vo": "Pixlz. Powered by NEAR.", "say": "Pixels. Powered by Near.", "seed": 7, "captions": [["Pixlz. Powered by NEAR."]], "scenes": ["E2"], "keywords": ["Powered by NEAR"], "slot": "low", "sfx_end": "ding"}
   ]
 }

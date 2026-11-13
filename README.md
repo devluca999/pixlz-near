@@ -136,7 +136,7 @@ Plan and design notes: [`docs/PLAN-pixl-memory.md`](docs/PLAN-pixl-memory.md).
 
 ## Scope of this submission
 
-**One device, done properly.** The submission is the Mac app, the Chrome extension and the local memory service, working end to end. Everything else in the Pixlz plan is deliberately left for after judging, so nothing here is half-built.
+**The Mac, done properly, and the Pixl's trips.** The submission is the Mac app, the Chrome extension and the local memory service, working end to end, plus travel: a Pixl hops from one Mac to another on the same network, and to an ESP-Mosaico display over Wi-Fi or Bluetooth LE and back (the Mosaico app and the trip protocol in C are in [`mosaico/`](mosaico/README.md); devices pair by comparing a code on both screens). Only one copy of the Pixl exists at a time. Everything else in the Pixlz plan is deliberately left for after judging.
 
 **Skins are part of the draw.** Frogg is the launch pet. The demo ships six Pixls from the Pixlz Design System (Frogg, Kiti, Mochi, Boo with its body and menus in macOS Liquid Glass, Silky and Slugg), each with two alternate skins. Each has its own accent, bubble detail and signature move. Switching skins keeps your memory, wallet, position and settings. Skins in this submission are a plain picker, not tokens.
 
@@ -267,7 +267,7 @@ The demo video is recorded from the app itself. **Showcase mode** is a recording
 
 The scenes, the narration and the steps are in [`showcase/SHOTLIST.md`](showcase/SHOTLIST.md); the caption rules in [`showcase/CAPTIONS.md`](showcase/CAPTIONS.md).
 
-The video's last scene shows a Mosaico display, a Mac and an iPhone side by side. That scene is a render, and the iPhone in it is labelled "coming soon": the iPhone companion is under **Next** in [Scope of this submission](#scope-of-this-submission), not in this submission.
+The video's last scene shows a Mosaico display, a Mac and an iPhone side by side. That scene is a render. Trips to another Mac and to the Mosaico are in this submission (see [Scope of this submission](#scope-of-this-submission)); the iPhone in it is labelled "coming soon": the iPhone companion is under **Next**, not in this submission.
 
 ## Repository layout
 
