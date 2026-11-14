@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import time
 
@@ -80,6 +81,35 @@ def model_att(r):
     return r["model_attestations"][0]
 
 
+def every(f):
+    """Apply an attack that takes one model attestation to every candidate in the report."""
+    def tamper(r):
+        for att in r["model_attestations"]:
+            f(att)
+    return tamper
+
+
+def dbg(att):
+    q = bytearray(bytes.fromhex(att["intel_quote"]))
+    q[48 + 120] |= 0x01
+    att["intel_quote"] = q.hex()
+
+
+def gpu_nonce(att):
+    p = json.loads(att["nvidia_payload"])
+    p["nonce"] = "11" * 32
+    att["nvidia_payload"] = json.dumps(p)
+
+
+def runtime(att):
+    ev = next(e for e in att["event_log"] if e.get("imr") == 3 and e["event"] == "app-id")
+    ev["event_payload"] = "ab" * 20
+
+
+def compose(att):
+    att["info"]["tcb_info"]["app_compose"] = att["info"]["tcb_info"]["app_compose"].replace("dstack", "evil", 1)
+
+
 def set_debug(r):
     att = model_att(r)
     q = bytearray(bytes.fromhex(att["intel_quote"]))
@@ -104,7 +134,9 @@ def second_signer(r):
     other = Account.create().address.lower()
     c = copy.deepcopy(model_att(r))
     q = bytearray(bytes.fromhex(c["intel_quote"]))
-    q[48 + 520: 48 + 552] = bytes.fromhex(other[2:]).ljust(32, b"\0")
+    fp = c.get("tls_cert_fingerprint")
+    bound = hashlib.sha256(bytes.fromhex(other[2:]) + bytes.fromhex(fp)).digest() if fp else bytes.fromhex(other[2:]).ljust(32, b"\0")
+    q[48 + 520: 48 + 552] = bound
     c["intel_quote"], c["signing_address"] = q.hex(), other
     r["model_attestations"].append(c)
 
@@ -149,28 +181,29 @@ CASES = {
                                                        response=httpx.Response(503, request=_nras_req())))),
     "nras_timeout": dict(gpu=Raising(httpx.ReadTimeout("slow", request=_nras_req()))),
     "gpu_verification_disabled": dict(gpu=None),
-    "gpu_evidence_not_json": dict(tamper=lambda r: model_att(r).__setitem__("nvidia_payload", "{not json")),
-    "gpu_evidence_missing": dict(tamper=lambda r: model_att(r).pop("nvidia_payload")),
+    "gpu_evidence_not_json": dict(tamper=every(lambda a: a.__setitem__("nvidia_payload", "{not json"))),
+    "gpu_evidence_missing": dict(tamper=every(lambda a: a.pop("nvidia_payload"))),
     "gpu_rejected_by_nvidia": dict(gpu=FakeGpuVerifier(ok=False)),
-    "gpu_different_nonce": dict(tamper=lambda r: gpu_payload(r, lambda p: p.__setitem__("nonce", "11" * 32))),
+    "gpu_different_nonce": dict(tamper=every(gpu_nonce)),
     "gpu_token_expired": dict(gpu=NrasLike(lambda o, g: g.__setitem__("exp", time.time() - 1))),
     "gpu_token_wrong_nonce": dict(gpu=NrasLike(lambda o, g: o.__setitem__("eat_nonce", "22" * 32))),
     "gpu_debug_enabled": dict(gpu=NrasLike(lambda o, g: g.__setitem__("dbgstat", "enabled"))),
-    "tdx_quote_garbage": dict(tamper=lambda r: model_att(r).__setitem__("intel_quote", "zz")),
-    "tdx_quote_truncated": dict(tamper=lambda r: model_att(r).__setitem__("intel_quote", model_att(r)["intel_quote"][:400])),
+    "tdx_quote_garbage": dict(tamper=every(lambda a: a.__setitem__("intel_quote", "zz"))),
+    "tdx_quote_truncated": dict(tamper=every(lambda a: a.__setitem__("intel_quote", a["intel_quote"][:400]))),
     "tdx_signature_chain_invalid": dict(quote=FakeQuoteVerifier(error=RuntimeError("bad Intel signature"))),
     "tcb_revoked": dict(quote=FakeQuoteVerifier(status="Revoked")),
-    "debug_enclave": dict(tamper=set_debug),
+    "debug_enclave": dict(tamper=every(dbg)),
     "missing_model_attestation": dict(tamper=lambda r: r.__setitem__("model_attestations", [])),
     "missing_gateway_attestation": dict(tamper=lambda r: r.pop("gateway_attestation")),
-    "forged_signer": dict(tamper=lambda r: model_att(r).__setitem__("signing_address", "0x" + "11" * 20)),
-    "incorrect_runtime_measurements": dict(tamper=tamper_runtime_event),
-    "modified_deployment_config": dict(tamper=lambda r: model_att(r)["info"]["tcb_info"].__setitem__(
-        "app_compose", model_att(r)["info"]["tcb_info"]["app_compose"].replace("dstack", "evil", 1))),
+    "forged_signer": dict(tamper=every(lambda a: a.__setitem__("signing_address", "0x" + "11" * 20))),
+    "incorrect_runtime_measurements": dict(tamper=every(runtime)),
+    "modified_deployment_config": dict(tamper=every(compose)),
     "stale_nonce": dict(fake=dict(attest_nonce_override="00" * 32)),
-    "wrong_model_identifier": dict(tamper=lambda r: model_att(r).__setitem__("model_name", "other/model")),
-    "unnamed_model_report": dict(tamper=lambda r: model_att(r).pop("model_name")),
+    "wrong_model_identifier": dict(tamper=every(lambda a: a.__setitem__("model_name", "other/model"))),
+    "unnamed_model_report": dict(tamper=every(lambda a: a.pop("model_name"))),
     "multiple_incompatible_signers": dict(tamper=second_signer),
+    "gateway_tls_fingerprint_missing": dict(tamper=lambda r: r["gateway_attestation"].pop("tls_cert_fingerprint")),
+    "gateway_tls_fingerprint_swapped": dict(tamper=lambda r: r["gateway_attestation"].__setitem__("tls_cert_fingerprint", "00" * 32)),
 }
 
 
@@ -181,6 +214,12 @@ def test_mandatory_failure_sends_nothing(tmp_path, captured, name, route):
     fake = FakeNear(captured, tamper=case.get("tamper"), **case.get("fake", {}))
     r, fake, wire, store = run(tmp_path, fake, quote=case.get("quote"), gpu=case.get("gpu", "ok"), route=route)
     assert_not_sent(r, fake, wire, store)
+
+
+def test_one_bad_candidate_among_good_ones_is_ignored(tmp_path, captured):
+    """NEAR serves several instances; a broken one is skipped, a verified one is used."""
+    r, fake, *_ = run(tmp_path, FakeNear(captured, tamper=lambda rep: dbg(rep["model_attestations"][0])))
+    assert r.status_code == 200 and r.json()["verification"]["trust"] == "enclave_signed"
 
 
 def test_replay_of_an_old_genuine_report_sends_nothing(tmp_path, captured):

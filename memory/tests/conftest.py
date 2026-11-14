@@ -1,9 +1,10 @@
-"""Shared fixtures: a real NEAR attestation report (captured 2026-11-08) and fakes
+"""Shared fixtures: a real NEAR attestation report (captured 2026-11-14 02:47 UTC, with the TLS fingerprint binding; 3 model instances) and fakes
 for the two network verifiers, so tests run offline."""
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -46,18 +47,26 @@ def captured(_captured):
     return copy.deepcopy(_captured)
 
 
-def rebind(report: dict, nonce: str, model_address: str | None = None, gateway_address: str | None = None) -> dict:
+FAKE_TLS_FP = "7e" * 32   # stands in for sha256(SPKI) of the gateway's TLS key
+
+
+def rebind(report: dict, nonce: str, model_address: str | None = None, gateway_address: str | None = None,
+           tls_fingerprint: str | None = FAKE_TLS_FP) -> dict:
     """Rewrite a captured report so its quotes carry `nonce` and the given signer
     addresses. Only useful with FakeQuoteVerifier (the Intel signature no longer
     covers the patched bytes), which lets tests drive the full flow with keys we own."""
     report = copy.deepcopy(report)
 
-    def patch(att: dict, address: str | None):
+    def patch(att: dict, address: str | None, tls: str | None = None):
         q = bytearray(bytes.fromhex(att["intel_quote"]))
         start = 48 + 520
         if address:
             q[start : start + 32] = bytes.fromhex(address.removeprefix("0x")).ljust(32, b"\0")
             att["signing_address"] = address
+        if tls:   # NEAR's include_tls_fingerprint binding: sha256(address ‖ sha256(SPKI))
+            addr = bytes.fromhex(att["signing_address"].removeprefix("0x"))
+            q[start : start + 32] = hashlib.sha256(addr + bytes.fromhex(tls)).digest()
+            att["tls_cert_fingerprint"] = tls
         q[start + 32 : start + 64] = bytes.fromhex(nonce)
         att["intel_quote"] = q.hex()
         att["request_nonce"] = nonce
@@ -76,7 +85,7 @@ def rebind(report: dict, nonce: str, model_address: str | None = None, gateway_a
             cm["nonce"] = nonce
             cm["report_data"] = bytes(cq[start : start + 64]).hex()
 
-    patch(report["gateway_attestation"], gateway_address)
+    patch(report["gateway_attestation"], gateway_address, tls_fingerprint)
     for m in report.get("model_attestations", []):
-        patch(m, model_address)
+        patch(m, model_address, m.get("tls_cert_fingerprint") and "6d" * 32)
     return report

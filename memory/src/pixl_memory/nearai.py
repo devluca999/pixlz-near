@@ -9,6 +9,7 @@ Order per request (docs.near.ai/cloud/verification):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import time
@@ -70,6 +71,38 @@ class AttestationFailed(NearAIError):
     def __init__(self, verification: Verification):
         super().__init__(verification.to_dict()["summary"])
         self.verification = verification
+
+
+class TlsPinMismatch(NearAIError):
+    """The server's TLS key is not the one bound in the gateway's attested quote: nothing was sent."""
+
+
+def spki_sha256(der_cert: bytes) -> str:
+    from cryptography import x509
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    pub = x509.load_der_x509_certificate(der_cert).public_key()
+    return hashlib.sha256(pub.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)).hexdigest()
+
+
+class TlsPin:
+    """httpcore trace hook: checks the TLS handshake of *this* request against the attested key and
+    refuses to write a single request byte unless that check happened and matched."""
+
+    def __init__(self, fingerprint: str):
+        self.fingerprint, self.ok = fingerprint.lower(), False
+
+    def __call__(self, event: str, info: dict[str, Any]) -> None:
+        if event == "connection.start_tls.complete":
+            stream = info.get("return_value")
+            ssl_object = stream.get_extra_info("ssl_object") if stream is not None else None
+            der = ssl_object.getpeercert(True) if ssl_object is not None else None
+            got = spki_sha256(der) if der else None
+            if got != self.fingerprint:
+                raise TlsPinMismatch(f"server TLS key {str(got)[:16]}… is not the attested gateway's {self.fingerprint[:16]}…")
+            self.ok = True
+        elif event.endswith("send_request_headers.started") and not self.ok:
+            raise TlsPinMismatch("the connection's TLS key was not checked against the attestation")
 
 
 class ResponseRejected(NearAIError):
@@ -146,9 +179,13 @@ class NearAIClient:
         gpu_verifier: GpuVerifier | None = None,
         signature_wait: float = 8.0,
         sleep: Callable[[float], None] = time.sleep,
+        pin_tls: bool | None = None,
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
+        # Pin the completion's TLS key to the attested gateway's, on a real network. Tests that inject a
+        # mock transport (no TLS at all) turn it off; the quote binding itself is still checked.
+        self.pin_tls = (http is None) if pin_tls is None else pin_tls
         self.http = http or httpx.Client(timeout=httpx.Timeout(120, connect=10))
         self.quote_verifier = quote_verifier or DcapQuoteVerifier()
         self.gpu_verifier = gpu_verifier if gpu_verifier is not None else NrasGpuVerifier(self.http)
@@ -200,7 +237,8 @@ class NearAIClient:
         nonce = nonce or secrets.token_hex(32)
         r = self._get(
             "/attestation/report",
-            params={"model": model, "provider": "near", "signing_algo": "ecdsa", "nonce": nonce},
+            params={"model": model, "provider": "near", "signing_algo": "ecdsa", "nonce": nonce,
+                    "include_tls_fingerprint": "true"},
             auth=bool(self.api_key),
         )
         if r.status_code != 200:
@@ -235,7 +273,12 @@ class NearAIClient:
         req_bytes = encode_body(body)
         headers = self._headers(auth=True) | {"Content-Type": "application/json"}
         try:
-            r = self.http.post(f"{self.base_url}/chat/completions", content=req_bytes, headers=headers)
+            if self.pin_tls:
+                r = self._pinned_post(f"{self.base_url}/chat/completions", req_bytes, headers, attestation.tls_fingerprint or "")
+            else:
+                r = self.http.post(f"{self.base_url}/chat/completions", content=req_bytes, headers=headers)
+        except TlsPinMismatch as e:
+            raise AttestationFailed(_refused(model, attestation.nonce, "gateway.tls_pin", "Connection is the attested gateway", str(e))) from e
         except httpx.HTTPError as e:
             raise _unreachable(e, "NEAR AI completion") from e
         if r.status_code == 402:
@@ -279,6 +322,20 @@ class NearAIClient:
             verification=verification,
             tool_results=tools,
         )
+
+    def _pinned_post(self, url: str, content: bytes, headers: dict[str, str], fingerprint: str) -> httpx.Response:
+        return self._pinned("POST", url, fingerprint, content=content, headers=headers)
+
+    def _pinned(self, method: str, url: str, fingerprint: str, **kw: Any) -> httpx.Response:
+        """A request on a brand-new connection, so its TLS handshake happens inside this request and is
+        checked by TlsPin before any byte of the headers or body is written."""
+        pin = TlsPin(fingerprint)
+        with httpx.Client(timeout=self.http.timeout) as fresh:
+            r = fresh.request(method, url, extensions={"trace": pin}, **kw)
+            r.read()
+        if not pin.ok:
+            raise TlsPinMismatch("TLS key was not checked")
+        return r
 
     def _fetch_signature(self, chat_id: str, model: str) -> dict[str, Any] | None:
         """Signatures can take a moment to appear; retry 404s for a bounded time."""

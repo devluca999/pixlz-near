@@ -100,3 +100,25 @@ def test_jwk_that_does_not_match_its_certificate_fails():
     other = ec.generate_private_key(ec.SECP384R1()).public_key().public_numbers()
     bad = nv.jwk | {"x": b64u(other.x.to_bytes(48, "big")), "y": b64u(other.y.to_bytes(48, "big"))}
     assert "certificate" in verify_es384_jwt(nv.sign({}), {"kid-1": bad})
+
+
+def test_a_key_minted_after_the_cache_is_fetched_once():
+    """NVIDIA rotates signing keys every few minutes; an unknown kid triggers one JWKS refetch."""
+    nv, fresh = Nvidia(), Nvidia()
+    fresh.jwk = fresh.jwk | {"kid": "kid-2"}
+    served = [[nv.jwk], [nv.jwk, fresh.jwk]]
+    fetches = []
+
+    def handler(req):
+        if req.url.path.endswith("jwks.json"):
+            fetches.append(1)
+            return httpx.Response(200, json={"keys": served[min(len(fetches) - 1, 1)]})
+        return httpx.Response(200, json=reply)
+
+    v = NrasGpuVerifier(httpx.Client(transport=httpx.MockTransport(handler)))
+    reply = nv.reply()
+    assert v.verify({"nonce": NONCE}).ok and len(fetches) == 1
+    exp = time.time() + 600
+    reply = [["JWT", fresh.sign({"x-nvidia-overall-att-result": True, "eat_nonce": NONCE, "exp": exp}, kid="kid-2")],
+             {"GPU-0": fresh.sign({"eat_nonce": NONCE, "secboot": True, "dbgstat": "disabled", "exp": exp}, kid="kid-2")}]
+    assert v.verify({"nonce": NONCE}).ok and len(fetches) == 2

@@ -84,10 +84,10 @@ def enclave_attacks(tmp: Path) -> None:
     cases = [
         ("Replay an old attestation report (stale nonce)", dict(attest_nonce_override="00" * 32), {}),
         ("Claim a signing key the enclave didn't attest",
-         dict(tamper=lambda r: r["model_attestations"][0].__setitem__("signing_address", "0x" + "11" * 20)), {}),
+         dict(tamper=lambda r: [m.__setitem__("signing_address", "0x" + "11" * 20) for m in r["model_attestations"]]), {}),
         ("Swap the measured docker-compose for a different one",
-         dict(tamper=lambda r: r["model_attestations"][0]["info"]["tcb_info"].__setitem__(
-             "app_compose", r["model_attestations"][0]["info"]["tcb_info"]["app_compose"].replace("dstack", "evil", 1))), {}),
+         dict(tamper=lambda r: [m["info"]["tcb_info"].__setitem__(
+             "app_compose", m["info"]["tcb_info"]["app_compose"].replace("dstack", "evil", 1)) for m in r["model_attestations"]]), {}),
         ("Serve from a debug-mode TD (host can read memory)", dict(tamper=_set_debug), {}),
         ("GPU not in confidential mode (NVIDIA attestation fails)", {}, dict(gpu_ok=False)),
         ("Remove the model's TEE evidence entirely",
@@ -102,10 +102,10 @@ def enclave_attacks(tmp: Path) -> None:
 
 
 def _set_debug(report: dict) -> None:
-    att = report["model_attestations"][0]
-    q = bytearray(bytes.fromhex(att["intel_quote"]))
-    q[48 + 120] |= 0x01  # TD_ATTRIBUTES.DEBUG
-    att["intel_quote"] = q.hex()
+    for att in report["model_attestations"]:   # every instance NEAR lists
+        q = bytearray(bytes.fromhex(att["intel_quote"]))
+        q[48 + 120] |= 0x01  # TD_ATTRIBUTES.DEBUG
+        att["intel_quote"] = q.hex()
 
 
 def model_and_reply_attacks(tmp: Path) -> None:
@@ -120,6 +120,21 @@ def model_and_reply_attacks(tmp: Path) -> None:
     record("Reply signed by a key that wasn't attested", "BLOCKED",
            r.status_code == 502 and "suggestion" not in r.json() and v.get("trust") == "rejected",
            f"HTTP {r.status_code}, reply discarded (not shown, saved or paid for). {failed_check(r.json())}")
+
+    # Someone who controls cloud-api.near.ai's DNS/TLS answers the completion with their own server.
+    from tests.test_tls_pin import Stream, make_cert
+    from pixl_memory.nearai import TlsPin, TlsPinMismatch
+    attacker_cert, _ = make_cert()
+    _, attested = make_cert()
+    pin = TlsPin(attested)
+    try:
+        pin("connection.start_tls.complete", {"return_value": Stream(attacker_cert)})
+        pin("http11.send_request_headers.started", {})
+        outcome = "headers would be written"
+    except TlsPinMismatch as e:
+        outcome = f"stopped in the TLS handshake, before any byte was written: {e}"
+    record("Swap in another TLS server for the completion (hijacked DNS/TLS)", "BLOCKED",
+           outcome.startswith("stopped"), outcome)
 
     class AlteredReply(FakeNear):
         def handler(self, request):

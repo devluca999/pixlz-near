@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 
@@ -7,6 +8,15 @@ from pixl_memory import tdx
 from pixl_memory.verify import Status, Verdict, verify_attestation
 
 from .conftest import MODEL, FakeGpuVerifier, FakeQuoteVerifier, rebind
+
+
+@pytest.fixture
+def captured(_captured):
+    """These tests probe one report at a time: keep the first of the instances NEAR listed.
+    (Several-instance behaviour is covered in test_preflight_matrix.py.)"""
+    c = copy.deepcopy(_captured)
+    c["report"]["model_attestations"] = c["report"]["model_attestations"][:1]
+    return c
 
 
 def by_id(v):

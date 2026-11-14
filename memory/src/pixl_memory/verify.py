@@ -39,7 +39,7 @@ class Status(StrEnum):
 # Every one of these must be present and PASS (or WARN: passed with a caveat) before a single
 # byte of the user's text leaves the Mac. Anything else (FAIL, SKIP, or simply missing) refuses.
 MANDATORY_CHECKS = (
-    "gateway.quote", "gateway.debug", "gateway.nonce", "gateway.signer", "gateway.rtmr3", "gateway.compose",
+    "gateway.tls", "gateway.quote", "gateway.debug", "gateway.nonce", "gateway.signer", "gateway.rtmr3", "gateway.compose",
     "model.quote", "model.debug", "model.nonce", "model.signer", "model.rtmr3", "model.compose", "model.gpu",
 )
 
@@ -77,6 +77,7 @@ class Verification:
     gateway_signing_address: str | None = None
     model_signing_address: str | None = None
     signature_kind: str | None = None
+    tls_fingerprint: str | None = None   # sha256(SPKI) of the gateway's TLS key, bound in its quote
     images: list[str] = field(default_factory=list)
     verified_at: float = field(default_factory=time.time)
 
@@ -104,6 +105,8 @@ class Verification:
                 if c.id not in MANDATORY_CHECKS and c.status in (Status.FAIL, Status.SKIP)]
         if not self.model_signing_address:
             out.append("no attested model signing key")
+        if not self.tls_fingerprint:
+            out.append("no attested gateway TLS key to pin")
         return out
 
     @property
@@ -210,8 +213,8 @@ class NrasGpuVerifier:
         self.http, self.url, self.jwks_url = http, url, jwks_url
         self._jwks: tuple[float, dict[str, Any]] | None = None
 
-    def keys(self) -> dict[str, Any]:
-        if self._jwks is None or time.monotonic() - self._jwks[0] > self.JWKS_TTL:
+    def keys(self, refresh: bool = False) -> dict[str, Any]:
+        if refresh or self._jwks is None or time.monotonic() - self._jwks[0] > self.JWKS_TTL:
             r = self.http.get(self.jwks_url, timeout=30)
             r.raise_for_status()
             self._jwks = (time.monotonic(), {k["kid"]: k for k in r.json().get("keys", []) if "kid" in k})
@@ -221,8 +224,12 @@ class NrasGpuVerifier:
         r = self.http.post(self.url, json=payload, timeout=60)
         r.raise_for_status()
         body = r.json()
+        tokens = _nras_tokens(body)
         keys = self.keys()
-        for token in _nras_tokens(body):
+        # NVIDIA mints new signing keys every few minutes: a key id we haven't seen means refetch once.
+        if any(_kid(t) not in keys for t in tokens):
+            keys = self.keys(refresh=True)
+        for token in tokens:
             if (why := verify_es384_jwt(token, keys)) is not None:
                 return GpuResult(False, f"NRAS token signature: {why}")
         res = check_nras_response(body, str(payload.get("nonce", "")), time.time())
@@ -240,6 +247,13 @@ def _nras_tokens(body: Any) -> list[str]:
             elif isinstance(item, dict):
                 out += [str(v) for v in item.values()]
     return out
+
+
+def _kid(token: str) -> str:
+    try:
+        return str(json.loads(_b64url(token.split(".")[0])).get("kid"))
+    except (ValueError, AttributeError):
+        return ""
 
 
 def _b64url(s: str) -> bytes:
@@ -394,13 +408,29 @@ def verify_report(
     # 4. The signing key is inside the signed report_data.
     algo = report.get("signing_algo", "ecdsa")
     addr = report.get("signing_address") or ""
+    tls_fp = report.get("tls_cert_fingerprint")
     try:
-        want = _addr_bytes(addr, algo).ljust(32, b"\x00")
+        raw_addr = _addr_bytes(addr, algo)
+        if tls_fp is not None:
+            # With include_tls_fingerprint, report_data[:32] = sha256(signing address ‖ sha256(TLS SPKI)).
+            fp = bytes.fromhex(str(tls_fp))
+            if len(fp) != 32:
+                raise ValueError("TLS fingerprint should be 32 bytes")
+            want = hashlib.sha256(raw_addr + fp).digest()
+        else:
+            want = raw_addr.ljust(32, b"\x00")
         signer_ok = fields.report_data[:32] == want
         detail = f"{addr} is bound in the quote" if signer_ok else f"{addr} is not the key in the quote"
     except ValueError as e:
         signer_ok, detail = False, str(e)
     checks.append(Check(p + "signer", f"{who} signing key bound", Status.PASS if signer_ok else Status.FAIL, detail))
+    if role == "gateway":
+        if tls_fp is None:
+            checks.append(Check(p + "tls", "Gateway TLS key bound", Status.FAIL, "no TLS fingerprint in the gateway report"))
+        else:
+            checks.append(Check(p + "tls", "Gateway TLS key bound", Status.PASS if signer_ok else Status.FAIL,
+                                f"TLS key sha256 {str(tls_fp)[:16]}… is in the signed quote; the request is pinned to it"
+                                if signer_ok else "TLS fingerprint is not the one in the quote"))
 
     # 5. RTMR3 replay: the runtime event log is what the quote measured.
     try:
@@ -503,9 +533,12 @@ def verify_attestation(
         response = {}
     gw = response.get("gateway_attestation")
     gw_addr = None
+    tls_fp = None
     if isinstance(gw, dict) and gw:
         c, gw_addr = verify_report(gw, nonce, "gateway", quote_verifier, None)
         checks += c
+        if gw_addr and any(x.id == "gateway.tls" and x.status is Status.PASS for x in c):
+            tls_fp = str(gw["tls_cert_fingerprint"]).lower()
     else:
         checks.append(Check("gateway.quote", "Gateway Intel TDX quote", Status.FAIL, "no gateway attestation"))
 
@@ -548,6 +581,7 @@ def verify_attestation(
         nonce=nonce,
         gateway_signing_address=gw_addr,
         model_signing_address=model_addr,
+        tls_fingerprint=tls_fp,
         images=images,
     )
 
@@ -616,6 +650,7 @@ def combine(attestation: Verification, sig_checks: list[Check], kind: str | None
         gateway_signing_address=attestation.gateway_signing_address,
         model_signing_address=attestation.model_signing_address,
         signature_kind=kind,
+        tls_fingerprint=attestation.tls_fingerprint,
         images=attestation.images,
         verified_at=time.time(),
     )
@@ -630,6 +665,7 @@ def verification_from_dict(d: dict[str, Any]) -> Verification:
         gateway_signing_address=d.get("gateway_signing_address"),
         model_signing_address=d.get("model_signing_address"),
         signature_kind=d.get("signature_kind"),
+        tls_fingerprint=d.get("tls_fingerprint"),
         images=d.get("images", []),
         verified_at=d.get("verified_at", 0.0),
     )

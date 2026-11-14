@@ -25,3 +25,15 @@ def test_live_polish_is_verified():
     assert comp.content.strip()
     assert v["verdict"] in ("verified", "partial"), v
     assert {x["id"]: x["status"] for x in v["checks"]}.get("signature.hashes") == "pass", v
+
+
+def test_live_tls_pin_matches_the_attested_gateway_and_rejects_another():
+    """Free: attests (no key), then opens pinned connections to /models. No text is sent."""
+    from pixl_memory.nearai import TlsPinMismatch
+
+    c = NearAIClient(None)
+    v = c.attest(DEFAULT_MODEL)
+    assert v.attestation_ok, v.blocking_reasons()
+    assert c._pinned("GET", f"{c.base_url}/models", v.tls_fingerprint).status_code == 200
+    with pytest.raises(TlsPinMismatch):
+        c._pinned("GET", f"{c.base_url}/models", "00" * 32)
