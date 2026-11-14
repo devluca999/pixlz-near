@@ -193,6 +193,8 @@ final class RuleView: NSView {
 public final class WalletCard: PixlCard {
     public var onOpenURL: ((URL) -> Void)?
     public var onSetup: (() -> Void)?
+    /// Open the send page (server.py `wallet_send`): the owner's own wallet signs a transfer to a friend or a Pixl.
+    public var onSend: (() -> Void)?
     /// The user picked a weekly limit (NEAR, as text).
     public var onSetLimit: ((String) -> Void)?
     /// Pause (true) or resume (false) all spending.
@@ -255,6 +257,9 @@ public final class WalletCard: PixlCard {
         b.append(PixelButton(title: paused ? "Resume" : "Pause", style: paused ? .primary : .secondary) { [weak self] in self?.onPause?(!paused) })
         if let e = info.explorer, let url = URL(string: e) {
             b.append(PixelButton(title: ready ? "Receipts ↗" : "Explorer ↗", style: .secondary) { [weak self] in self?.onOpenURL?(url) })
+        }
+        if ready {
+            b.append(PixelButton(title: "Send ↗", style: .secondary) { [weak self] in self?.onSend?() })
         }
         setFooter(b, hint: "testnet")
     }

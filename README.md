@@ -151,6 +151,8 @@ The local service on its own is documented in [`memory/README.md`](memory/README
 - **Before every payment** the app's own code (not a contract on chain) checks, in order: the per-request cap, the per-day cap, the payee allowlist and the reserve. A polish is refused up front once the daily cap is reached, so your text isn't sent if Frogg can't pay.
 - **A second cap you can add:** a USD spend limit on your NEAR AI API key in the cloud.near.ai dashboard.
 
+**Send NEAR to a friend, or top up a Pixl.** The Wallet card's **Send ↗** opens a local page (`/wallet/send`) where *your* wallet (Meteor) signs one plain transfer from your account to any `.testnet` account you type, or to one of your Pixls. The page checks the account id and that the account exists, and shows exactly what Meteor will ask you to approve. Pixl Memory never sees your keys and adds nothing to the transaction (`memory/src/pixl_memory/send_page.py`, test `test_send_page_asks_the_owners_wallet_for_one_plain_transfer`).
+
 Every Pixl can have its own wallet the same way (`pixl-memory wallet init --pet kiti`, then the owner creates `kiti.<owner>.testnet`).
 
 **How it's built** (`memory/src/pixl_memory/near.py`, `wallet.py`): Frogg's ed25519 key is generated on the Mac by `pixl-memory wallet init` and stored in `~/Library/Application Support/PixlMemory/frogg_key.json` with mode 0600. Transactions are signed in about 100 lines of Python, checked byte for byte against `near-api-js` in the tests.

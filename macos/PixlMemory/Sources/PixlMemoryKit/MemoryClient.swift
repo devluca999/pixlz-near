@@ -20,6 +20,11 @@ public struct MemoryClient: Sendable {
         return c.url!
     }
 
+    /// The send page (server.py `wallet_send`): the owner's wallet signs one transfer, to a friend or to top up a Pixl.
+    public static func walletSendURL(port: Int) -> URL {
+        URL(string: "http://127.0.0.1:\(port)/wallet/send")!
+    }
+
     /// A Pixl's wallet name from its skin id (the app's ids predate the names).
     public static func walletName(skinID: String) -> String {
         ["cat": "kiti", "shiba": "mochi", "ghost": "boo", "widow": "silky"][skinID] ?? skinID

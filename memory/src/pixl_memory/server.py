@@ -299,6 +299,27 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         return HTMLResponse(render(wallet.cfg, key.public_key if key else None),
                             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
+    @app.get("/wallet/send", response_class=HTMLResponse)
+    def wallet_send() -> HTMLResponse:
+        # Like /wallet/setup: no token, public names only, localhost only (host guard). The owner's
+        # wallet (Meteor) signs one Transfer from the owner's own account; this Mac never holds that key.
+        wallet = pet_wallet(None)
+        if not wallet or wallets is None:
+            return HTMLResponse("<p>Set PIXL_PARENT_ACCOUNT in .env, then restart.</p>", 503)
+        from .config import PET_NAMES
+        from .send_page import render as render_send
+
+        pets = []
+        for name in PET_NAMES:
+            try:
+                w = wallets.for_pet(name)
+                if w.key() is not None:
+                    pets.append(w.cfg.frogg)
+            except (WalletConfigError, OSError, ValueError):
+                continue
+        return HTMLResponse(render_send(wallet.cfg, pets),
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
     # -- drafts --
 
     @app.get("/drafts", dependencies=guarded)

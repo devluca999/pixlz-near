@@ -730,6 +730,10 @@ final class BubbleMenu {
             card.onClose = { [weak self] in self?.closeCard() }
             card.onOpenURL = { NSWorkspace.shared.open($0) }
             card.onSetup = { [weak self] in self?.app.openWallet() }
+            card.onSend = { [weak self] in
+                guard let self else { return }
+                NSWorkspace.shared.open(MemoryClient.walletSendURL(port: self.app.client.port))
+            }
             card.onSetLimit = { [weak self] v in self?.updateLimits(perWeek: v) }
             card.onPause = { [weak self] p in self?.updateLimits(paused: p) }
             card.addSettingsButton { [weak self] in self?.closeCard(); self?.app.toggleMiniMenu(open: .wallet) }

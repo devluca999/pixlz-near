@@ -265,3 +265,23 @@ def test_limits_endpoint_validates_and_reports(tmp_path, captured):
     assert tc.post("/wallet/limits", json={"paused": True}).json()["paused"] is True
     s = tc.get("/wallet").json()
     assert s["paused"] is True and "spent_week_near" in s and "week_resets" in s
+
+
+def test_send_page_asks_the_owners_wallet_for_one_plain_transfer(tmp_path, captured):
+    """Send to a friend / top up a Pixl: the owner's Meteor signs one Transfer; no key here, testnet only."""
+    import re
+
+    w, _ = ready(tmp_path)
+    tc, _ = make_app(tmp_path, FakeNear(captured), wallet=w)
+    page = tc.get("/wallet/send", headers={"Authorization": ""})
+    assert page.status_code == 200
+    html = page.text
+    assert PARENT in html and FROGG in html                     # owner signs; Frogg offered as a top-up target
+    assert w.key().secret_key not in html and json.loads(w.key_path.read_text())["private_key"] not in html
+    assert "actionCreators.transfer(amount)" in html and "addKey" not in html and "functionCall" not in html
+    assert 'network: "testnet"' in html and "signerId: C.owner" in html
+    assert tc.get("/wallet/send", headers={"Host": "evil.example"}).status_code == 421
+    from pixl_memory.send_page import ACCOUNT_RE
+    ok = re.compile(ACCOUNT_RE)
+    assert ok.match("friend.testnet") and ok.match("frogg.owner-1.testnet") and ok.match("0" * 64)
+    assert not ok.match("friend.near") and not ok.match("Friend.testnet") and not ok.match("x.testnet.evil.com")
