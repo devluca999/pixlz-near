@@ -178,7 +178,7 @@ The `/wallet/setup` page does step 2 from a browser wallet, but Meteor refuses t
 | Limits | Rich server-side policy (destinations, budgets, schedules, freeze) | The balance is a hard cap enforced by the protocol; the payee allowlist is in our code |
 | Code | SDK (Node 24), a backend proxy and an owner-signing flow | Sign and send one transfer |
 
-Both keep your main funds out of reach. The sub-account does it with far less code, works on testnet and needs no server. The Agent API is the upgrade path if a Pixl ever holds a large balance. A smaller step, listed as optional hardening: a tiny policy contract on Frogg's account, with the app holding only a function-call key for `pay_inference`, so a stolen key could only pay the fixed payee within limits.
+Both keep your main funds out of reach. The sub-account does it with far less code, works on testnet and needs no server. The Agent API is the upgrade path if a Pixl ever holds a large balance. A smaller step, listed as optional hardening: a tiny policy contract on Frogg's account, with the app holding only a function-call key for `pay_inference`, so a stolen key could only pay the fixed payee within limits. A prototype of that contract is in [`contracts/pixl-allowance`](contracts/pixl-allowance) (7 unit tests, builds to wasm); it is **not deployed** and the app doesn't use it yet.
 
 ## Trips to other devices
 
