@@ -96,7 +96,7 @@ Smaller judges' file for GitHub (if > 10 MB):
 ## 5. Pre-publish checklist
 
 **Claims match the code** (check each sentence of VO, captions and post text):
-- [ ] "14 mandatory checks": `MANDATORY_CHECKS` in `memory/src/pixl_memory/verify.py` (14 since `de02672`, which added `gateway.tls`). The `attest` CLI prints 15 lines (the 14 plus the deployment log). The app's panel counts more (it adds the signature checks). **Caption only a number that's visible in the frame.**
+- [ ] "14 mandatory checks": `MANDATORY_CHECKS` in `memory/src/pixl_memory/verify.py` (14 since `4cf84d2`, which added `gateway.tls`). The `attest` CLI prints 15 lines (the 14 plus the deployment log). The app's panel counts more (it adds the signature checks). **Caption only a number that's visible in the frame.**
 - [ ] Refusal is "fail, skip or missing → not sent (HTTP 409)". Reply failure is "discarded, text did reach the enclave (HTTP 502)".
 - [ ] No "pays for its own AI / thinking". The transfer is an accounting payment; inference is billed in NEAR AI credits. (Fix `plan.json` L5 and the shorts lines `pixlz-general` "wallet", `pixlz-crypto` "pays", `pixlz-not-a-chatbox` "pays" before re-using them.)
 - [ ] No "nobody else can see" (`plan.json` L3). Use "processed inside a verified enclave".
@@ -105,7 +105,7 @@ Smaller judges' file for GitHub (if > 10 MB):
 - [ ] "Remote model in a TEE", never "offline" / "on-device".
 - [ ] Trips: "local Wi-Fi, not encrypted yet" appears whenever a trip is a feature beat.
 - [ ] iPhone appears only as "planned / coming soon" (D1 render is labelled).
-- [ ] Counts are current: run the suites and update. The README says 125 memory tests and "21 attacks"; the commit `8247283` reports 222 passed; ATTACKS.md shows 22. Use the number from today's run.
+- [ ] Counts are current: run the suites and update. The README says 125 memory tests and "21 attacks"; the commit `ad24f06` reports 222 passed; ATTACKS.md shows 22. Use the number from today's run.
 - [ ] Dates on evidence are UTC as stamped (`2026-11-14 02:43Z` for the attest log).
 - [ ] No claim about NFTs, Solana, mainnet or Windows as shipped.
 
@@ -166,8 +166,8 @@ Every security-relevant change ships with a story. The NRAS fix is the template'
 
 **Filled for the NRAS fix:** Property: "text is never sent unless all 14 mandatory properties
 pass". Before: a GPU check skipped because NRAS was unreachable let text go to a TDX-attested
-enclave, shown as "Partly verified" (`bf53f98`). After: refused, nothing sent (`4c85d08`,
-`8247283`). Test: `cd memory && uv run pytest tests/test_preflight_matrix.py -q` → 104 passed;
+enclave, shown as "Partly verified" (`06e663c`). After: refused, nothing sent (`12b251d`,
+`ad24f06`). Test: `cd memory && uv run pytest tests/test_preflight_matrix.py -q` → 104 passed;
 `uv run python attack_demo.py` → 23/23. Simulated: both suites. Live: E02. Limits: proves the
 client's decision; it doesn't prove the hardware is secure. Shots: E02, E03, E04. Video: V3.
 Cut: `v3-leak` (new shorts cut) and `wide-v8`.

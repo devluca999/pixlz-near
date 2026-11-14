@@ -25,7 +25,7 @@ else can see what he's thinking") and L5 ("They pay for their own thinking"); th
 
 Captions (all episodes unless stated): the VO verbatim, 3–5 words at a time, keyword in green `#7CD93A`, inside the safe zone in PIPELINE.md §3; labels (SIMULATED, testnet, render, planned) stay on screen for the whole shot.
 
-**Check counts on recording day:** HEAD (`25cfcfa`) has 13 entries in `MANDATORY_CHECKS`. An uncommitted change in the working tree (from another session, not this brief) adds `gateway.tls`, which would make 14. Every "13" below means "the number in `MANDATORY_CHECKS` when you record".
+**Check counts on recording day:** HEAD (`2b1b2d8`) has 13 entries in `MANDATORY_CHECKS`. An uncommitted change in the working tree (from another session, not this brief) adds `gateway.tls`, which would make 14. Every "13" below means "the number in `MANDATORY_CHECKS` when you record".
 
 Platforms: **TT** TikTok, **IG** Reels, **X**, **YT** Shorts, **J** judges/README. All 9:16
 masters export a 4:5 crop too (`showcase/shorts/tools/render.sh` already makes both).
@@ -64,7 +64,7 @@ masters export a 4:5 crop too (`showcase/shorts/tools/render.sh` already makes b
 
 - **Hook:** "I found a way to make my private AI send text it shouldn't. Then I fixed it."
 - **Arc:** the attack (make NVIDIA's attestation service unreachable) → **before:** the check was marked "skipped", the verdict said "Partly verified", and the text was still sent → the fix (a skipped GPU check now blocks; then an allow-list of 14 mandatory properties) → **after:** a live refusal → 104 simulated cases and 23 attacks prove the decision logic → the honest label.
-- **Tech:** at commit `bf53f98`, `attestation_ok` refused only on FAIL, so SKIP passed. Fixed in `4c85d08` (a GPU SKIP blocks) and `8247283` (`MANDATORY_CHECKS`: every property must be present and must pass). **Limit:** before the fix, the text went to an enclave whose Intel TDX attestation passed but whose GPU couldn't be verified. It didn't go to an attacker. The test suites use a simulated NEAR AI Cloud.
+- **Tech:** at commit `06e663c`, `attestation_ok` refused only on FAIL, so SKIP passed. Fixed in `12b251d` (a GPU SKIP blocks) and `ad24f06` (`MANDATORY_CHECKS`: every property must be present and must pass). **Limit:** before the fix, the text went to an enclave whose Intel TDX attestation passed but whose GPU couldn't be verified. It didn't go to an attacker. The test suites use a simulated NEAR AI Cloud.
 - **Proof:** E04a (diff), E04b (old build says "Partly verified", exit 0), E02a/b (new build refuses, real network), E03 (`104 passed`, `23/23`).
 - **Available:** `docs/ATTACKS.md` row 7, `docs/screenshots/polish-refused.png` (app view, rendered).
 - **New shots:** E02, E03, E04.
@@ -272,7 +272,7 @@ VO, storyboard (seconds), on-screen text, thumbnail, length and platform, and CT
 
 1. **0:00–0:20 Problem.** README "The problem"; H10 desk.
 2. **0:20–0:55 Attestation.** E01 full, unbroken, then walk the 14 properties on the evidence file. State the trust roots (Intel, NVIDIA, NEAR AI's measured images).
-3. **0:55–1:40 Fail-closed.** E02a/b (real refusal) → E04a diff (`bf53f98` → `4c85d08`, `8247283`) → E04b old build "Partly verified" → E03 `104 passed`, `23/23` with the SIMULATED label.
+3. **0:55–1:40 Fail-closed.** E02a/b (real refusal) → E04a diff (`06e663c` → `12b251d`, `ad24f06`) → E04b old build "Partly verified" → E03 `104 passed`, `23/23` with the SIMULATED label.
 4. **1:40–2:10 Reply integrity.** The signature over sha256(request)+sha256(response) against the attested key; `polish-reply-rejected.png` (app view) + `ATTACKS.md` rows 9–10.
 5. **2:10–2:50 Wallet.** O06 → E05 → E06; rows 11–16; the limits are app-side; the transfer is accounting and inference is billed in NEAR AI credits; why a sub-account and not NEAR Intents (the README table).
 6. **2:50–3:20 Local hardening.** H09 (401/421), H08 (pre-commit), O05 (at rest ≠ TEE).

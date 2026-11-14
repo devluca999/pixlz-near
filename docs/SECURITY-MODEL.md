@@ -61,7 +61,7 @@ for ours. Only models `owned_by: nearai` (NEAR's own TEE fleet) are allowed at a
 
 ### Fixed today: a skipped GPU check let text out
 
-At `bf53f98` (the tagged submission), `Verification.attestation_ok` rejected only `fail`. When NRAS
+At `06e663c` (the tagged submission), `Verification.attestation_ok` rejected only `fail`. When NRAS
 was unreachable, or the GPU verifier was off, `model.gpu` was `skip` and **the text was sent**.
 Reproduced by mutation: putting the old rule back makes 13 tests in `tests/test_preflight_matrix.py`
 fail (NRAS down, NRAS 5xx, NRAS timeout and GPU verifier disabled, on Polish, Ask and web Ask, plus

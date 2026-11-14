@@ -106,13 +106,13 @@ PIPELINE.md). Concept IDs (V1…V22, J1, J2) refer to CONCEPTS.md.
 - Label: SIMULATED (§1). Concepts: V3, V12, J2. Dest: `wide-v8` after E02 (4–6 s); V3 35–42 s.
 
 **E04 · Before/after of the fix**
-- Action, part a (guaranteed): `git show 4c85d08 -- memory/src/pixl_memory/verify.py | sed -n '/def attestation_ok/,+8p'`.
+- Action, part a (guaranteed): `git show 12b251d -- memory/src/pixl_memory/verify.py | sed -n '/def attestation_ok/,+8p'`.
   This shows the old line, which refused only on FAIL, so a SKIP passed, next to the new line,
   where a GPU SKIP blocks. Then
   `grep -n "MANDATORY_CHECKS = (" -A3 memory/src/pixl_memory/verify.py`.
-- Action, part b (optional, REHEARSE, needs E02's hosts block): `git worktree add ../pixlz-before bf53f98 && (cd ../pixlz-before/memory && uv run pixl-memory attest; echo $?)`.
+- Action, part b (optional, REHEARSE, needs E02's hosts block): `git worktree add ../pixlz-before 06e663c && (cd ../pixlz-before/memory && uv run pixl-memory attest; echo $?)`.
   Expect `PARTIAL: Partly verified: could not check nvidia gpu attestation.` and exit `0`: at
-  bf53f98, `attestation_ok` was true, so the app would have sent text. Clean up with
+  06e663c, `attestation_ok` was true, so the app would have sent text. Clean up with
   `git worktree remove ../pixlz-before`. **Don't** run a paid polish in the old build.
 - Wording rule: before the fix, text went to a TDX-attested enclave **without GPU proof**, shown
   as "Partly verified". It didn't go to an attacker.
