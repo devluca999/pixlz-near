@@ -33,3 +33,12 @@ VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and b
 # (TLS key matched the gateway's attested SPKI), and NEAR AI answered 401 for the dummy key:
 #   pinned calls: [('POST', ['chat', 'completions'], 401)]
 # Not yet run: the signature step of a real paid completion.
+
+# Paid live runs on the new code (2026-11-14 ~03:15 UTC):
+# - pytest -m live (memory/tests/test_live.py): 3 passed (attest, TLS pin, paid polish)
+# - Real local service (restarted on this code), POST /polish "teh frog sit on the windw and wach the rain":
+#   "The frog sits on the window and watches the rain." verdict verified, trust enclave_signed, 18/18 checks,
+#   Frogg paid 0.000036 NEAR: https://testnet.nearblocks.io/txns/EupmPBz9oM8894RPSC2VvQsMPDbXE6YFohjFBmNFgARH
+# - POST /ask web=true "What is NEAR AI Cloud private inference, in one sentence?": searched, 5 sources,
+#   verdict partial, trust gateway_signed (web search replies are signed by the attested gateway), 18/18 checks,
+#   paid: https://testnet.nearblocks.io/txns/5ZVzm4Cbmf366ftAscHX8t84BzNfbCTRfB1cnvpzcenP
