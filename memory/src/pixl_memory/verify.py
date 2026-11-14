@@ -21,6 +21,7 @@ import httpx
 from . import tdx
 
 NRAS_URL = "https://nras.attestation.nvidia.com/v3/attest/gpu"
+NRAS_JWKS_URL = "https://nras.attestation.nvidia.com/.well-known/jwks.json"
 
 # Intel TCB statuses. dcap-qvl rejects bad signatures and revoked keys itself.
 TCB_PASS = {"UpToDate"}
@@ -200,15 +201,91 @@ class GpuVerifier(Protocol):
 
 
 class NrasGpuVerifier:
-    """Posts the GPU evidence unchanged to NVIDIA's Remote Attestation Service."""
+    """Posts the GPU evidence unchanged to NVIDIA's Remote Attestation Service, then checks the
+    ES384 signature of every token NRAS returns against NVIDIA's published signing keys."""
 
-    def __init__(self, http: httpx.Client, url: str = NRAS_URL):
-        self.http, self.url = http, url
+    JWKS_TTL = 3600.0
+
+    def __init__(self, http: httpx.Client, url: str = NRAS_URL, jwks_url: str = NRAS_JWKS_URL):
+        self.http, self.url, self.jwks_url = http, url, jwks_url
+        self._jwks: tuple[float, dict[str, Any]] | None = None
+
+    def keys(self) -> dict[str, Any]:
+        if self._jwks is None or time.monotonic() - self._jwks[0] > self.JWKS_TTL:
+            r = self.http.get(self.jwks_url, timeout=30)
+            r.raise_for_status()
+            self._jwks = (time.monotonic(), {k["kid"]: k for k in r.json().get("keys", []) if "kid" in k})
+        return self._jwks[1]
 
     def verify(self, payload: dict[str, Any]) -> GpuResult:
         r = self.http.post(self.url, json=payload, timeout=60)
         r.raise_for_status()
-        return check_nras_response(r.json(), str(payload.get("nonce", "")), time.time())
+        body = r.json()
+        keys = self.keys()
+        for token in _nras_tokens(body):
+            if (why := verify_es384_jwt(token, keys)) is not None:
+                return GpuResult(False, f"NRAS token signature: {why}")
+        res = check_nras_response(body, str(payload.get("nonce", "")), time.time())
+        if res.ok:
+            res = GpuResult(True, res.detail + ", NVIDIA token signatures valid")
+        return res
+
+
+def _nras_tokens(body: Any) -> list[str]:
+    out: list[str] = []
+    if isinstance(body, list):
+        for item in body:
+            if isinstance(item, list) and item[:1] == ["JWT"] and len(item) > 1:
+                out.append(str(item[1]))
+            elif isinstance(item, dict):
+                out += [str(v) for v in item.values()]
+    return out
+
+
+def _b64url(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def verify_es384_jwt(token: str, jwks: dict[str, Any]) -> str | None:
+    """None when `token` is an ES384 JWT signed by the key `kid` names in NVIDIA's JWKS, whose
+    x5c leaf certificate carries that same key and is signed by the x5c intermediate. Otherwise why not.
+    Trust anchor: the JWKS as served over TLS by nras.attestation.nvidia.com (NVIDIA's root CA is
+    not bundled with the JWKS, so it is not pinned here)."""
+    from cryptography import x509
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+
+    try:
+        h_b64, p_b64, s_b64 = token.split(".")
+        header = json.loads(_b64url(h_b64))
+    except ValueError:
+        return "not a JWT"
+    if header.get("alg") != "ES384":
+        return f"unexpected alg {header.get('alg')!r}"
+    jwk = jwks.get(str(header.get("kid")))
+    if not jwk:
+        return f"unknown signing key {str(header.get('kid'))[:40]}"
+    try:
+        nums = ec.EllipticCurvePublicNumbers(int.from_bytes(_b64url(jwk["x"]), "big"),
+                                             int.from_bytes(_b64url(jwk["y"]), "big"), ec.SECP384R1())
+        pub = nums.public_key()
+        chain = [x509.load_der_x509_certificate(base64.b64decode(c)) for c in jwk.get("x5c") or []]
+        if not chain or chain[0].public_key().public_numbers() != pub.public_numbers():
+            return "signing key does not match its certificate"
+        if len(chain) > 1:
+            chain[0].verify_directly_issued_by(chain[1])
+        sig = _b64url(s_b64)
+        if len(sig) != 96:
+            return "bad signature length"
+        pub.verify(encode_dss_signature(int.from_bytes(sig[:48], "big"), int.from_bytes(sig[48:], "big")),
+                   f"{h_b64}.{p_b64}".encode(), ec.ECDSA(hashes.SHA384()))
+    except InvalidSignature:
+        return "signature invalid"
+    except (ValueError, TypeError, KeyError) as e:
+        return f"unverifiable: {e}"
+    return None
 
 
 def check_nras_response(body: Any, nonce: str, now: float) -> GpuResult:

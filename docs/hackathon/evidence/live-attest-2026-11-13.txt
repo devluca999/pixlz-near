@@ -1,4 +1,4 @@
-# captured 2026-11-14T02:43Z with: cd memory && uv run pixl-memory attest  (no API key used, nothing sent, no spend)
+# captured 2026-11-14T02:45Z with: cd memory && uv run pixl-memory attest  (no API key used, nothing sent, no spend)
 Attesting z-ai/glm-5.3-flash on https://cloud-api.near.ai/v1 …
 
 VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and bound to this request's nonce.
@@ -15,7 +15,7 @@ VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and b
   ✔ Model signing key bound                0x3b753b4406613c5e70ae640508632b600424fa0c is bound in the quote
   ✔ Model event log replay                 10 runtime events reproduce RTMR3
   ✔ Model app config measured              compose sha256 c900dc7304663b73… matches MRCONFIGID
-  ✔ NVIDIA GPU attestation                 NVIDIA NRAS: 8 × GH100, secure boot on, debug off, all checks true
+  ✔ NVIDIA GPU attestation                 NVIDIA NRAS: 8 × GH100, secure boot on, debug off, all checks true, NVIDIA token signatures valid
   ✔ Model deployment log                   280 signed actions, last deploy prod/GLM-5.3-Flash-SGL-TP2x4-W4AFP8-V12Q8.yaml @ 7d62ec67
 
   model signer   0x3b753b4406613c5e70ae640508632b600424fa0c
