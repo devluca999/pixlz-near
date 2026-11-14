@@ -172,23 +172,44 @@ class UnknownAccount(RpcError):
     pass
 
 
+class TransferUnknown(RpcError):
+    """The transfer was sent but its outcome is unknown; it may still land on chain."""
+
+    def __init__(self, message: str, tx_hash: str, explorer: str):
+        super().__init__(message)
+        self.tx_hash, self.explorer = tx_hash, explorer
+
+
+def _definitely_rejected(msg: str) -> bool:
+    return any(k in msg for k in ("InvalidNonce", "InvalidTxError", "NotEnoughBalance", "INVALID_TRANSACTION",
+                                  "Expired", "InvalidSignature", "transfer failed on chain"))
+
+
 class Rpc:
     def __init__(self, url: str = DEFAULT_RPC, http: httpx.Client | None = None):
         self.url = url
         self.http = http or httpx.Client(timeout=30)
+        self._last_nonce: dict[tuple[str, str], int] = {}
 
     def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             r = self.http.post(self.url, json={"jsonrpc": "2.0", "id": "pixl", "method": method, "params": params})
         except httpx.HTTPError as e:
             raise RpcError(f"NEAR RPC unreachable: {e}") from e
-        body = r.json()
+        try:
+            body = r.json()
+        except ValueError:
+            raise RpcError(f"NEAR RPC sent an unreadable reply (HTTP {r.status_code})") from None
+        if not isinstance(body, dict):
+            raise RpcError("NEAR RPC sent an unexpected reply")
         if "error" in body:
             err = body["error"]
             cause = (err.get("cause") or {}).get("name", "")
             if cause == "UNKNOWN_ACCOUNT":
                 raise UnknownAccount(str(err.get("data") or cause))
             raise RpcError(f"{cause or err.get('name')}: {err.get('data') or err.get('message')}")
+        if "result" not in body:
+            raise RpcError("NEAR RPC reply has no result")
         return body["result"]
 
     def balance(self, account_id: str) -> int:
@@ -198,22 +219,39 @@ class Rpc:
 
     def access_key(self, account_id: str, public_key: str) -> dict[str, Any] | None:
         try:
-            return self.call("query", {"request_type": "view_access_key", "finality": "final",
-                                       "account_id": account_id, "public_key": public_key})
+            r = self.call("query", {"request_type": "view_access_key", "finality": "optimistic",
+                                    "account_id": account_id, "public_key": public_key})
         except RpcError as e:
             if "UNKNOWN_ACCESS_KEY" in str(e) or "does not exist" in str(e):
                 return None
             raise
+        if isinstance(r, dict) and "error" in r:   # some RPC versions report a missing key inside `result`
+            if "does not exist" in str(r["error"]):
+                return None
+            raise RpcError(str(r["error"]))
+        if not isinstance(r, dict) or "nonce" not in r or "block_hash" not in r:
+            raise RpcError("NEAR RPC returned an unexpected access key")
+        return r
 
     def transfer(self, key: KeyPair, signer_id: str, receiver_id: str, deposit: int) -> dict[str, Any]:
         ak = self.access_key(signer_id, key.public_key)
         if ak is None:
             raise RpcError(f"Frogg's key is not on {signer_id}")
-        tx = encode_transfer(signer_id, key.public_bytes, int(ak["nonce"]) + 1, receiver_id,
+        # A transfer sent a moment ago may not show in the key's nonce yet: never reuse one.
+        nonce = max(int(ak["nonce"]), self._last_nonce.get((signer_id, key.public_key), 0)) + 1
+        tx = encode_transfer(signer_id, key.public_bytes, nonce, receiver_id,
                              b58decode(ak["block_hash"]), deposit)
         signed, tx_hash = sign_transaction(tx, key)
-        r = self.call("send_tx", {"signed_tx_base64": base64.b64encode(signed).decode(),
-                                  "wait_until": "EXECUTED_OPTIMISTIC"})
+        self._last_nonce[(signer_id, key.public_key)] = nonce
+        try:
+            r = self.call("send_tx", {"signed_tx_base64": base64.b64encode(signed).decode(),
+                                      "wait_until": "EXECUTED_OPTIMISTIC"})
+        except RpcError as e:
+            # Once the signed transaction has left, an unreadable reply or a timeout doesn't mean
+            # it failed: it may still execute. Only an explicit rejection is a failure.
+            if _definitely_rejected(str(e)):
+                raise
+            raise TransferUnknown(str(e), tx_hash, f"{EXPLORER}/txns/{tx_hash}") from e
         status = r.get("status") or {}
         if isinstance(status, dict) and "Failure" in status:
             raise RpcError(f"transfer failed on chain: {json.dumps(status['Failure'])[:200]}")

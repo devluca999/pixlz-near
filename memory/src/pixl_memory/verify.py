@@ -68,8 +68,10 @@ class Verification:
 
     @property
     def attestation_ok(self) -> bool:
-        """True when no attestation check failed (signature checks excluded)."""
-        return not any(c.status is Status.FAIL for c in self.checks if not c.id.startswith("signature."))
+        """True when no attestation check failed (signature checks excluded) and the GPU
+        evidence was actually checked: a skipped GPU check never lets text out."""
+        return not any(c.status is Status.FAIL or (c.status is Status.SKIP and c.id.endswith("gpu"))
+                       for c in self.checks if not c.id.startswith("signature."))
 
 
 def compute_verdict(checks: list[Check], signature_kind: str | None, *, need_signature: bool) -> Verdict:
@@ -87,10 +89,15 @@ def summarize(v: Verification) -> str:
         bad = next(c for c in v.checks if c.status is Status.FAIL)
         return f"Not verified: {bad.label.lower()} failed. Treat this result as untrusted."
     if v.verdict is Verdict.PARTIAL:
-        if v.signature_kind == "gateway":
-            return "Partly verified: signed by NEAR's attested gateway, not by the model enclave itself."
         skipped = [c.label.lower() for c in v.checks if c.status is Status.SKIP]
-        return "Partly verified: could not check " + ", ".join(skipped) + "."
+        parts = []
+        if v.signature_kind == "gateway":
+            parts.append("signed by NEAR's attested gateway, not by the model enclave itself")
+        elif v.signature_kind != "provider_tee":
+            parts.append("the reply was not signed by the model enclave")
+        if skipped:
+            parts.append("could not check " + ", ".join(skipped))
+        return "Partly verified: " + "; ".join(parts) + "."
     if v.signature_kind == "provider_tee":
         return "Verified: the reply was signed inside an attested Intel TDX + NVIDIA GPU enclave running this model."
     return "Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and bound to this session's nonce."
@@ -292,15 +299,28 @@ def verify_report(
         else:
             try:
                 payload = json.loads(payload_s) if isinstance(payload_s, str) else payload_s
-                if str(payload.get("nonce", "")).lower() != nonce.lower():
-                    checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.FAIL, "GPU evidence is for a different nonce"))
-                elif gpu_verifier is None:
-                    checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.SKIP, "GPU verifier disabled"))
-                else:
-                    g = gpu_verifier.verify(payload)
-                    checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.PASS if g.ok else Status.FAIL, g.detail))
-            except Exception as e:
-                checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.SKIP, f"NRAS unreachable: {e}"))
+            except ValueError:
+                payload = None
+            if not isinstance(payload, dict):
+                checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.FAIL, "GPU evidence is not valid JSON"))
+            else:
+                try:
+                    if str(payload.get("nonce", "")).lower() != nonce.lower():
+                        checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.FAIL, "GPU evidence is for a different nonce"))
+                    elif gpu_verifier is None:
+                        checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.SKIP, "GPU verifier disabled"))
+                    else:
+                        g = gpu_verifier.verify(payload)
+                        checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.PASS if g.ok else Status.FAIL, g.detail))
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code < 500:   # NRAS looked at the evidence and rejected it
+                        checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.FAIL, f"NRAS rejected the GPU evidence (HTTP {e.response.status_code})"))
+                    else:
+                        checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.SKIP, f"NRAS unreachable: {e}"))
+                except (httpx.TransportError, httpx.TimeoutException) as e:
+                    checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.SKIP, f"NRAS unreachable: {e}"))
+                except Exception as e:   # a malformed NRAS reply or token
+                    checks.append(Check(p + "gpu", "NVIDIA GPU attestation", Status.FAIL, f"GPU evidence could not be checked: {e}"))
 
     # 8. Compose manager (model only, when present): the log of what was deployed in this TD.
     cm = report.get("compose_manager_attestation") if role == "model" else None
@@ -367,7 +387,8 @@ def verify_attestation(
             first = first or c
             if addr and not any(x.status is Status.FAIL for x in c):
                 verified.append((c, addr))
-                images = tdx.compose_images(((cand.get("info") or {}).get("tcb_info") or {}).get("app_compose", ""))
+                if len(verified) == 1:   # images describe the same candidate whose checks are reported
+                    images = tdx.compose_images(((cand.get("info") or {}).get("tcb_info") or {}).get("app_compose", ""))
         if len(verified) == 1:
             checks += verified[0][0]
             model_addr = verified[0][1]

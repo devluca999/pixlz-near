@@ -21,18 +21,33 @@ const WORD_CHAR = /[\p{L}\p{N}_]/u;
  * Drop a partial word at either end of the selection. Fragments only match at
  * word boundaries, so "ick brown fo" would never match "quick brown fox".
  * `before`/`after` are the characters just outside the selection.
+ * Returns the trimmed term plus the context around *it*: what was cut off the
+ * start joins `before`, what was cut off the end joins `after`, so a prefix or
+ * suffix built from them sits right next to the term.
  */
-export function trimPartialWords(text, before = "", after = "") {
-  let t = text;
+export function splitSelection(text, before = "", after = "") {
+  let t = text || "";
+  let head = "";
+  let tail = "";
   if (t && before && WORD_CHAR.test(before.slice(-1)) && WORD_CHAR.test(t[0])) {
-    t = t.replace(/^[\p{L}\p{N}_]+/u, "");
+    head = t.match(/^[\p{L}\p{N}_]+/u)[0];
+    t = t.slice(head.length);
   }
   if (t && after && WORD_CHAR.test(after[0]) && WORD_CHAR.test(t.slice(-1))) {
-    t = t.replace(/[\p{L}\p{N}_]+$/u, "");
+    tail = t.match(/[\p{L}\p{N}_]+$/u)[0];
+    t = t.slice(0, t.length - tail.length);
   }
   // Punctuation stranded at the edges (e.g. the "(" left after dropping "(aposemat")
   // adds nothing to the match and only makes it more fragile.
-  return normalize(t).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  const lead = t.match(/^[^\p{L}\p{N}]*/u)[0];
+  t = t.slice(lead.length);
+  const trail = t.match(/[^\p{L}\p{N}]*$/u)[0];
+  t = t.slice(0, t.length - trail.length);
+  return { text: normalize(t), before: before + head + lead, after: trail + tail + after };
+}
+
+export function trimPartialWords(text, before = "", after = "") {
+  return splitSelection(text, before, after).text;
 }
 
 function firstWords(s, n) {
@@ -52,6 +67,22 @@ export function stripDirective(url) {
   return base.endsWith("#") ? base.slice(0, -1) : base;
 }
 
+function terms(text) {
+  if (text.length > LONG_TEXT && text.split(" ").length > EDGE_WORDS * 2) {
+    return { start: firstWords(text, EDGE_WORDS), end: lastWords(text, EDGE_WORDS) };
+  }
+  return { start: text, end: null };
+}
+
+/**
+ * The start term buildDirective puts in the link for this selection (null if nothing
+ * linkable): count its occurrences on the page to fill `sel.occurrences`.
+ */
+export function startTerm(sel) {
+  const { text } = splitSelection(sel.text || "", sel.before || "", sel.after || "");
+  return text ? terms(text).start : null;
+}
+
 /**
  * Build the directive for a selection.
  *   sel.text       the selected text
@@ -61,17 +92,9 @@ export function stripDirective(url) {
  * Returns "text=…" or null when there is nothing linkable.
  */
 export function buildDirective(sel) {
-  const before = sel.before || "";
-  const after = sel.after || "";
-  const text = trimPartialWords(sel.text || "", before, after);
+  const { text, before, after } = splitSelection(sel.text || "", sel.before || "", sel.after || "");
   if (!text) return null;
-
-  let start = text;
-  let end = null;
-  if (text.length > LONG_TEXT && text.split(" ").length > EDGE_WORDS * 2) {
-    start = firstWords(text, EDGE_WORDS);
-    end = lastWords(text, EDGE_WORDS);
-  }
+  const { start, end } = terms(text);
 
   const parts = [];
   // Prefix/suffix only when the start term isn't unique: they must sit right next to

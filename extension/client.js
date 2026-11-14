@@ -14,7 +14,12 @@ export async function api(path, { method = "GET", body } = {}) {
   try {
     return await call(method, path, body);
   } catch (e) {
-    if (e.message !== "no native host") throw e;  // the host answered: its error is the real one
+    // Fall back to HTTP only if nothing reached the service, or the call is a read. A write sent
+    // before the host died may already have happened: resending could save it twice.
+    if (e.message === "native host closed" && method !== "GET") {
+      throw new Error("the Pixl Memory app closed mid-request: check whether it went through before retrying");
+    }
+    if (e.message !== "no native host" && e.message !== "native host closed") throw e;  // the host answered: its error is the real one
   }
   const { token, port } = await getSettings();
   if (!token) throw new Error("install the Pixl Memory app, or paste a token in the extension options");

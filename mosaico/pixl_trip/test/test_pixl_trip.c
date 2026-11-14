@@ -181,6 +181,14 @@ static void test_json(void)
     int64_t n = 0;
     CHECK(pt_json_find(j, strlen(j), "n", &v) && pt_json_int(v, &n) && n == -42);
     CHECK(pt_json_find(j, strlen(j), "t", &v) && pt_json_is_true(v));
+    // Out of range: rejected, never wrapped.
+    const char *big = "{\"max\":9223372036854775807,\"min\":-9223372036854775808,\"over\":9223372036854775808,"
+                      "\"under\":-9223372036854775809,\"huge\":99999999999999999999}";
+    CHECK(pt_json_find(big, strlen(big), "max", &v) && pt_json_int(v, &n) && n == INT64_MAX);
+    CHECK(pt_json_find(big, strlen(big), "min", &v) && pt_json_int(v, &n) && n == INT64_MIN);
+    CHECK(pt_json_find(big, strlen(big), "over", &v) && !pt_json_int(v, &n));
+    CHECK(pt_json_find(big, strlen(big), "under", &v) && !pt_json_int(v, &n));
+    CHECK(pt_json_find(big, strlen(big), "huge", &v) && !pt_json_int(v, &n));
     char s[32];
     CHECK(pt_json_find(j, strlen(j), "a.s", &v) && pt_json_string(v, s, sizeof s));
     CHECK_STR(s, "x\"y\xc3\xa9\xf0\x9f\x90\xb8");
@@ -470,7 +478,8 @@ static void test_recovery(void)
     pt_node_tick(m, T0 + PT_RECEIVER_TIMEOUT_MS, &o);
     CHECK(sent_field(out_at(&o, 0, PT_OUT_SEND), "type", type, sizeof type));
     CHECK_STR(type, "status");
-    n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}");
+    n = env(msg, sizeof msg, &MAC, &MOSAICO, "statusReply", 8,
+            "{\"held\":\"away\",\"holderId\":\"MOSAICO-0001\",\"inTrip\":false}");
     pt_node_received(m, &MAC, msg, n, T0, &o);
     CHECK(m->record.kind == PT_REC_OWNED && out_at(&o, 2, PT_OUT_PLAY_ENTRANCE));
     free(m);
@@ -714,7 +723,8 @@ static void test_away_holder(void)
     free(m);
 }
 
-// P3: give way to a newer copy, owned or away; the losing copy is not kept.
+// P3: give way to a newer copy, owned or away; the losing copy is kept as a tombstone only
+// this device can reclaim (status never restores it by itself).
 static void test_give_way(void)
 {
     pt_outs_t o;
@@ -726,8 +736,8 @@ static void test_give_way(void)
     recv_env(m, &MAC, "statusReply", 9,
              "{\"held\":\"away\",\"holderId\":\"MAC-0002\",\"holderName\":\"Other Mac\",\"inTrip\":false}", T1, &o);
     CHECK(m->record.kind == PT_REC_AWAY && m->record.epoch == 9);
-    CHECK(m->record.state_len == 0);   // never Bring-able
-    CHECK(!pt_node_can_reclaim(m));
+    CHECK(m->record.state_len > 0);   // a wrong give-way can be undone by hand
+    CHECK(pt_node_can_reclaim(m));
     CHECK_STR(m->record.away_id, other.id);
     CHECK_STR(m->record.away_name, other.name);
     CHECK(out_at(&o, 0, PT_OUT_SAVED));
@@ -740,12 +750,28 @@ static void test_give_way(void)
     CHECK(m->record.kind == PT_REC_OWNED);
     free(m);
 
-    // held owned, newer: the replying peer holds it; tombstone empty.
+    // held owned, newer: the replying peer holds it; the tombstone stays ours (owner = us), so a
+    // later "none" from that peer doesn't bring it back by itself.
     m = owning_mosaico();
     pt_node_connected(m, &MAC, T1, &o);
     recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
-    CHECK(m->record.kind == PT_REC_AWAY && m->record.state_len == 0);
+    CHECK(m->record.kind == PT_REC_AWAY && m->record.state_len > 0);
     CHECK_STR(m->record.away_id, MAC.id);
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 0, "{\"held\":\"none\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY);
+    CHECK(pt_node_reclaim(m, T1, &o) && m->record.kind == PT_REC_OWNED && m->record.epoch == 11);
+    free(m);
+
+    // Paired: only the paired Mac's status can make it give way; anyone else's is ignored.
+    m = owning_mosaico();
+    snprintf(m->call_from, sizeof m->call_from, "%s", MAC.id);
+    pt_node_connected(m, &other, T1, &o);
+    recv_env(m, &other, "statusReply", 50, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED && o.count == 0);
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_AWAY);
     free(m);
 
     // held owned, same epoch: the smaller device id wins ("MAC-0001" < "MOSAICO-0001").
@@ -831,19 +857,25 @@ static void test_pending_binds_sender(void)
     recv_env(m, &other, "abort", 8, "{\"reason\":\"x\"}", T0, &o);
     CHECK(m->record.kind == PT_REC_PENDING);
 
-    // The sender's "away" promotes only at the pending epoch.
+    // The sender's "away" promotes only at the pending epoch, and only when it names us.
     pt_node_connected(m, &MAC, T0, &o);
-    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);
+    recv_env(m, &MAC, "statusReply", 9, "{\"held\":\"away\",\"holderId\":\"MOSAICO-0001\",\"inTrip\":false}", T0,
+             &o);
     CHECK(m->record.kind == PT_REC_PENDING);
-    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"inTrip\":false}", T0, &o);   // no holder
+    CHECK(m->record.kind == PT_REC_PENDING);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"holderId\":\"X-0001\",\"inTrip\":false}", T0, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);   // it went somewhere else at that epoch
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"holderId\":\"MOSAICO-0001\",\"inTrip\":false}", T0,
+             &o);
     CHECK(m->record.kind == PT_REC_OWNED);
     free(m);
 
-    // The sender holds nothing: ours is the only copy.
+    // The sender holds nothing: that settles nothing (the copy stays pending, never a 2nd owner).
     m = pending_mosaico();
     pt_node_connected(m, &MAC, T0, &o);
     recv_env(m, &MAC, "statusReply", 0, "{\"held\":\"none\",\"inTrip\":false}", T0, &o);
-    CHECK(m->record.kind == PT_REC_OWNED);
+    CHECK(m->record.kind == PT_REC_PENDING && o.count == 0);
     free(m);
 
     // The sender still owns an older copy and isn't in a trip: discard ours.
@@ -901,6 +933,41 @@ static void test_trust(void)
     CHECK(o.count == 0 && !pt_node_in_trip(m));
     recv_env(m, &other, "call", 8, "{}", T1, &o);
     CHECK(sent_type(&o, 0, "offer") && pt_node_in_trip(m));
+    free(m);
+}
+
+// The Mac sent Frogg to the Mosaico, the ack and the abort were lost, then the Mac sent it to a
+// third device X (away at the same epoch the Mosaico holds pending). The Mac's "away" names X:
+// the Mosaico must not promote (two owners), and a "none" from anyone settles nothing.
+static void test_pending_three_devices(void)
+{
+    pt_outs_t o;
+    pt_node_t *m = pending_mosaico();   // pending at epoch 8, from MAC
+    pt_node_tick(m, T0 + PT_RECEIVER_TIMEOUT_MS, &o);   // asks MAC (status lost)
+    pt_node_connected(m, &MAC, T0 + 20000, &o);
+    recv_env(m, &MAC, "statusReply", 8, "{\"held\":\"away\",\"holderId\":\"X-0001\",\"holderName\":\"X\",\"inTrip\":false}",
+             T0 + 20000, &o);
+    CHECK(m->record.kind == PT_REC_PENDING);
+    CHECK(o.count == 0);
+    free(m);
+}
+
+// Epochs a counter could overflow on are dropped before anything adds to them.
+static void test_epoch_range(void)
+{
+    pt_outs_t o;
+    pt_node_t *m = owning_mosaico();
+    pt_node_connected(m, &MAC, T1, &o);
+    recv_env(m, &MAC, "statusReply", INT64_MAX, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED && o.count == 0);
+    recv_env(m, &MAC, "statusReply", -1, "{\"held\":\"owned\",\"inTrip\":false}", T1, &o);
+    CHECK(m->record.kind == PT_REC_OWNED && o.count == 0);
+    recv_env(m, &MAC, "status", PT_EPOCH_MAX + 1, "{}", T1, &o);
+    CHECK(o.count == 0);
+    free(m);
+    m = new_node(&MOSAICO);
+    recv_env(m, &MAC, "offer", INT64_MAX, "{\"species\":\"frogg\",\"name\":\"Frogg\"}", T1, &o);
+    CHECK(o.count == 0 && !pt_node_in_trip(m));
     free(m);
 }
 
@@ -1130,6 +1197,8 @@ int main(int argc, char **argv)
     test_sha256();
     test_framer();
     test_json();
+    test_pending_three_devices();
+    test_epoch_range();
     test_dates_and_hello();
     test_round_trip_with_pixlzcore();
     test_sender_failures();

@@ -217,7 +217,7 @@ func run() throws {
 
     let mini = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(
         service: "running", model: "z-ai/glm-5.3-flash", wallet: "frogg.pixlz-petz.testnet doesn't exist yet: open /wallet/setup and approve in Meteor",
-        lastVerdict: "Verified in TEE · 17/17"), look: paper)
+        lastVerdict: "Verified in TEE · 17/17", lastVerdictCode: "verified"), look: paper)
     mini.fit()
     let miniCard = SurfaceView.card(mini, look: paper)
     let miniBG = Canvas(NSSize(width: miniCard.frame.width + 48, height: miniCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
@@ -227,7 +227,7 @@ func run() throws {
 
     // Settings ▸ Energy, open, with ten minutes shaped like the measured app (scripts/bench-energy.swift):
     // ~0.13 % idle, a few outings
-    let energyView = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running", model: "z-ai/glm-5.3-flash", lastVerdict: "Verified in TEE · 17/17"),
+    let energyView = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running", model: "z-ai/glm-5.3-flash", lastVerdict: "Verified in TEE · 17/17", lastVerdictCode: "verified"),
                                   look: paper, open: .energy)
     var hist = EnergyHistory()
     for i in 0..<200 {

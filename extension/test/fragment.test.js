@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildDirective, buildFragmentUrl, countOccurrences, encodeTerm, stripDirective, trimPartialWords,
+  buildDirective, buildFragmentUrl, countOccurrences, encodeTerm, splitSelection, startTerm, stripDirective, trimPartialWords,
 } from "../fragment.js";
 import { FROGG, PALETTE, froggPixels } from "../icon.js";
 
@@ -65,4 +65,22 @@ test("icon is 16×16 and every pixel has a color", () => {
   const { width, data } = froggPixels(2);
   assert.equal(width, 32);
   assert.equal(data.length, 32 * 32 * 4);
+});
+
+test("prefix and suffix sit right next to the trimmed term, not the raw selection", () => {
+  // "ick brown fo" in "the quick brown fox jumps": term "brown", so prefix ends "quick", suffix starts "fox".
+  assert.deepEqual(splitSelection("ick brown fo", "see the qu", "x jumps over"),
+    { text: "brown", before: "see the quick ", after: " fox jumps over" });
+  assert.equal(buildDirective({ text: "ick brown fo", before: "see the qu", after: "x jumps over", occurrences: 2 }),
+    "text=see%20the%20quick-,brown,-fox%20jumps%20over");
+  // edge punctuation trimmed off goes to the context too
+  assert.equal(buildDirective({ text: "“Frogs are”", before: "he said ", after: " loudly", occurrences: 2 }),
+    "text=he%20said%20%E2%80%9C-,Frogs%20are,-%E2%80%9D%20loudly");
+});
+
+test("startTerm is the start term the link carries", () => {
+  assert.equal(startTerm({ text: "ick brown fo", before: "qu", after: "x" }), "brown");
+  const long = "Frogs absorb water and oxygen through their thin skin, which is why they are sensitive to pollution in ponds";
+  assert.equal(startTerm({ text: long }), "Frogs absorb water and");
+  assert.equal(startTerm({ text: "ick", before: "qu", after: "ly" }), null);
 });

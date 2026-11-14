@@ -460,6 +460,9 @@ final class AgentController {
         p.standardInput = FileHandle.nullDevice
         resumeLog[sid] = []
         resumeBuffer[sid] = Data()
+        // stderr drained as it comes (a full 64 KB pipe would block claude); only its tail is kept
+        let errTail = StderrTail()
+        err.fileHandleForReading.readabilityHandler = { h in errTail.append(h.availableData) }
         out.fileHandleForReading.readabilityHandler = { [weak self] h in
             let chunk = h.availableData
             DispatchQueue.main.async {
@@ -477,7 +480,9 @@ final class AgentController {
             }
         }
         p.terminationHandler = { [weak self] proc in
-            let errText = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            err.fileHandleForReading.readabilityHandler = nil
+            errTail.append(err.fileHandleForReading.readDataToEndOfFile())
+            let errText = errTail.text
             let status = proc.terminationStatus
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -502,6 +507,7 @@ final class AgentController {
             Debug.log("agents: resuming \(hub.sessions[sid]?.project ?? "?") with claude -p")
         } catch {
             out.fileHandleForReading.readabilityHandler = nil
+            err.fileHandleForReading.readabilityHandler = nil
             resumeLog[sid, default: []].append("⚠︎ Couldn't start claude: \(error.localizedDescription)")
         }
     }
@@ -576,4 +582,18 @@ final class AgentController {
         resuming.values.forEach { $0.terminate() }
         unlink(path)
     }
+}
+
+/// The last few KB of a child's stderr, filled from the pipe's reader thread.
+final class StderrTail: @unchecked Sendable {
+    static let limit = 16 * 1024
+    private let lock = NSLock()
+    private var data = Data()
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        data.append(chunk)
+        if data.count > Self.limit { data = Data(data.suffix(Self.limit)) }
+    }
+    var text: String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
 }

@@ -124,12 +124,12 @@ final class TravelController {
         }
         if MosaicoDictation.isDictation(body) {
             guard MosaicoFeed.devices().contains(peer.deviceId), let clip = dictation.receive(body) else { return }
-            // How loud it is (silence or clipping means the microphone, not the recognizer), and
-            // the last clip kept as a WAV next to the log for listening.
+            // How loud it is (silence or clipping means the microphone, not the recognizer). The
+            // audio is never kept on disk (an older build's last clip is removed).
             let peak = clip.samples.map { abs(Int($0)) }.max() ?? 0
             let rms = sqrt(clip.samples.reduce(0.0) { $0 + Double($1) * Double($1) } / Double(max(1, clip.samples.count)))
             Debug.log("travel: dictation from \(peer.deviceName): \(clip.samples.count / 16) ms, peak \(peak), rms \(Int(rms))")
-            if Debug.enabled { Dictation.saveWAV(clip.samples, to: Debug.url.deletingLastPathComponent().appending(path: "last-dictation.wav")) }
+            try? FileManager.default.removeItem(at: Debug.url.deletingLastPathComponent().appending(path: "last-dictation.wav"))
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 var out: Data
@@ -165,7 +165,7 @@ final class TravelController {
             } else {
                 state = "failed"
             }
-            Debug.log("travel: \(peer.deviceName) replied \"\(r.text.prefix(40))\" (\(state))")
+            Debug.log("travel: \(peer.deviceName) replied (\(r.text.count) chars, \(state))")   // never the words
             // Tell the Mosaico what became of it, so its banner is true.
             if let out = try? JSONSerialization.data(withJSONObject: ["replyResult": ["id": r.id, "state": state]]) {
                 runner?.transport.sendFrame(out, to: peer)

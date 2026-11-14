@@ -129,6 +129,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var fullscreenHidden = false
     var paused = false
     var busy = false
+    /// A polish is on its way (one at a time; it borrows `busy` only when nothing else holds it).
+    var polishing = false
     var spaceTransition = false
     /// Bumped on every show or hide of Frogg; a fade's completion only hides him if no show came since.
     var visGen = 0
@@ -137,6 +139,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var focusUntil: Date?
     var lastNudge = Date.distantPast
     var lastVerdict: String?
+    /// The last reply's verdict field: "verified", "partial" or "failed".
+    var lastVerdictCode: String?
     var cachedStatus: ServiceStatus?
     var monitors: [Any] = []
 
@@ -1295,23 +1299,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Debug.log("polish chosen index=\(index)")
         if CommandLine.arguments.contains("--selftest") { chosenInSelfTest = index; return }  // never send text in a self-test
         guard let sel = pendingSelection, instructions.indices.contains(index) else { return }
+        guard !polishing else { Debug.log("polish: one is already on its way"); return }
         let ins = instructions[index]
+        if game.isOn { game.interrupt("polish") }   // work ends a game at once
         polishedText = sel.text
         polishedBrowser = selectionFromWeb || AX.isChromium(NSWorkspace.shared.runningApplications.first { $0.processIdentifier == selectionPID })
         polishedElement = selectionElement
-        busy = true
+        polishing = true
+        let tookBusy = !busy   // a roam or a take holding the Pixl keeps it; we never clear theirs
+        if tookBusy { busy = true }
         resultPanel?.orderOut(nil)
         show("emotion_curious", for: 600)
         notify(.checkingEnclave)
         let stage = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { if self?.busy == true { self?.notify(.thinking) } }
+            MainActor.assumeIsolated { if self?.polishing == true { self?.notify(.thinking) } }
         }
         Task { @MainActor in
-            defer { busy = false; stage.invalidate() }
+            defer { polishing = false; if tookBusy { busy = false }; stage.invalidate() }
             do {
                 let r = try await client.polish(sel.text, instruction: ins.prompt)
                 let v = r.verification
                 lastVerdict = "\(v.badge) · \(v.passed)/\(v.checks.count)"
+                lastVerdictCode = v.verdict
                 show(v.verdict == "verified" ? "emotion_proud" : v.verdict == "partial" ? "emotion_curious" : "emotion_annoyed", for: 4)
                 let verdict = v.verdict == "verified" ? "✔ Verified in TEE · \(v.passed)/\(v.checks.count)" : v.badge
                 notify(.polished(r.receipt.map { verdict + ". " + $0.bubble } ?? verdict), voice: r.verification.verdict == "verified" ? .happy : .curious)
@@ -1463,6 +1472,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 let r = try await client.ask(question, name: settings.name, personality: ui.personality)
                 lastVerdict = "\(r.verification.badge) · \(r.verification.passed)/\(r.verification.checks.count)"
+                lastVerdictCode = r.verification.verdict
                 show(r.verification.verdict == "verified" ? "emotion_proud" : "emotion_curious", for: 3)
                 if let rc = r.receipt, rc.status == "paid", let amt = rc.amountNear { coinPop(amt) }
                 completion(.success(r))
@@ -1541,7 +1551,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         default: break
         }
         if roam.outing, let o = roam.outingName { return .outing(o) }
-        if busy { return .thinking }
+        if busy || polishing { return .thinking }
         if focusUntil != nil { return .focus }
         if sleep.stage == .resting { return .resting }
         return .idle(statusIndex)
@@ -1590,7 +1600,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Notices: anything functional, in plain English with an icon, optionally led by one sound.
     func notify(_ n: Notice, voice: SoundEvent? = nil, urgent: Bool = false) {
         let line = voice.map { voicePicker.pick($0, ui: ui) }
-        Debug.log("notice \(n.kind.rawValue): \"\(n.text.prefix(60))\"")
+        Debug.log("notice \(n.kind.rawValue) (\(n.text.count) chars)")   // notices can quote your text: never logged
         // The Pixl can't show it (hidden, or an app is fullscreen): errors and urgent ones still
         // reach you, as a macOS notification.
         if (userHidden || fullscreenHidden), urgent || n.kind == .error {
@@ -1781,6 +1791,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Open at once with what we last knew; fresh service/wallet status fills in after.
         var status = cachedStatus ?? ServiceStatus(service: "checking…")
         status.lastVerdict = lastVerdict
+        status.lastVerdictCode = lastVerdictCode
         let view = MiniMenuView(settings: settings, status: status, look: menu.cardLook, statusLine: statusLine, open: open)
         view.fit()
         let card = SurfaceView.card(view, look: menu.cardLook)
@@ -1824,6 +1835,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             var fresh = await self.client.status()
             fresh.lastVerdict = self.lastVerdict
+            fresh.lastVerdictCode = self.lastVerdictCode
             self.cachedStatus = fresh
             guard let view, let panel, let card, panel.isVisible else { return }
             let top = panel.frame.maxY
@@ -2186,7 +2198,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func openWallet() {
-        NSWorkspace.shared.open(URL(string: "http://127.0.0.1:\(client.port)/wallet/setup")!)
+        // the current Pixl's own wallet page (each Pixl pays from its own account)
+        NSWorkspace.shared.open(MemoryClient.walletSetupURL(port: client.port, pet: MemoryClient.pet))
     }
 
     @objc func openAccessibility() {

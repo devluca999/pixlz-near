@@ -38,11 +38,52 @@ import Testing
         hub.receive(HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Write"), at: t0)
         #expect(hub.requests.isEmpty)
 
-        // Denied in the terminal: the next tool call settles it.
+        // Denied in the terminal (left to it, not held here): the next tool call settles it.
         hub.receive(HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm x"]), at: t0)
         #expect(hub.sessions["a"]?.state == .needsYou)
         hub.receive(HookEvent(name: "PreToolUse", sessionID: "a", toolName: "Read", toolInput: ["file_path": "/p/b"]), at: t0)
         #expect(hub.requests.isEmpty && hub.sessions["a"]?.state == .working)
+    }
+
+    @Test func anotherToolCallNeverDropsAHeldRequest() {
+        var hub = AgentHub()
+        var ask = HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm -rf build"])
+        ask.toolUseID = "tu-1"
+        let id = hub.receive(ask, at: t0)!
+        hub.markHeld(id)
+        // a parallel call starts and finishes: not this request
+        var pre = HookEvent(name: "PreToolUse", sessionID: "a", toolName: "Read", toolInput: ["file_path": "/p/x"])
+        pre.toolUseID = "tu-2"
+        hub.receive(pre, at: t0)
+        var post = HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Read", toolInput: ["file_path": "/p/x"])
+        post.toolUseID = "tu-2"
+        hub.receive(post, at: t0)
+        #expect(hub.requests.map(\.id) == [id] && hub.sessions["a"]?.state == .needsYou)
+        // its own call ran (answered in the terminal): now it goes
+        var mine = HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm -rf build"])
+        mine.toolUseID = "tu-1"
+        hub.receive(mine, at: t0)
+        #expect(hub.requests.isEmpty)
+    }
+
+    @Test func withoutIDsOnlyTheSameCommandClearsIt() {
+        var hub = AgentHub()
+        let id = hub.receive(HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm x"]), at: t0)!
+        hub.markHeld(id)
+        hub.receive(HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Bash", toolInput: ["command": "ls"]), at: t0)
+        #expect(hub.requests.count == 1)
+        hub.receive(HookEvent(name: "PostToolUse", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm x"]), at: t0)
+        #expect(hub.requests.isEmpty)
+        // the turn ending settles whatever is left
+        let again = hub.receive(HookEvent(name: "PermissionRequest", sessionID: "a", toolName: "Bash", toolInput: ["command": "rm y"]), at: t0)!
+        hub.markHeld(again)
+        hub.receive(HookEvent(name: "Stop", sessionID: "a"), at: t0)
+        #expect(hub.requests.isEmpty)
+    }
+
+    @Test func toolUseIDIsRead() {
+        let e = HookEvent(json: Data(#"{"hook_event_name":"PostToolUse","session_id":"s","tool_use_id":"toolu_1"}"#.utf8))
+        #expect(e?.toolUseID == "toolu_1")
     }
 
     @Test func oldRequestsAndQuietSessionsExpire() {

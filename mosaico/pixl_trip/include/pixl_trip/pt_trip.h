@@ -27,6 +27,8 @@ extern "C" {
 /// A statusReply counts only from a peer we sent `status` to this recently.
 #define PT_STATUS_TRUST_MS 60000
 #define PT_ASKED_MAX 4
+/// Envelopes with an epoch outside 0…PT_EPOCH_MAX are dropped (2^53: exact in JSON everywhere).
+#define PT_EPOCH_MAX (INT64_C(1) << 53)
 
 typedef struct {
     char id[PT_ID_MAX];
@@ -93,7 +95,8 @@ typedef struct {
     int known_count;
     pt_random_fn random;
     void *random_ctx;
-    /// Who may `call` the Pixl away from here: "" = any peer, else only this device id (the paired Mac).
+    /// Who may `call` the Pixl away from here, and whose status may make the copy here give way:
+    /// "" = any peer, else only this device id (the paired Mac).
     char call_from[PT_ID_MAX];
 
     // In memory only; lost on a crash.

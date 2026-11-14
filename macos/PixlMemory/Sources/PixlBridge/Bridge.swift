@@ -194,7 +194,8 @@ public enum HostRouting {
                                                   error: "route not allowed through the native host"))
             }
             return .callService(method: method.uppercased(), path: path, body: m.body, id: m.id)
-        case BridgeMessage.Kind.selection, BridgeMessage.Kind.replaced, BridgeMessage.Kind.hello:
+        case BridgeMessage.Kind.selection, BridgeMessage.Kind.replaced, BridgeMessage.Kind.saved, BridgeMessage.Kind.page,
+             BridgeMessage.Kind.hello:
             guard appConnected else {
                 return .toExtension(BridgeMessage(id: m.id, type: BridgeMessage.Kind.status, ok: false, error: "Pixl Memory app isn't running"))
             }
@@ -205,9 +206,13 @@ public enum HostRouting {
         }
     }
 
-    /// A message from the app: only selection requests go on to the extension.
+    /// What the app may ask of the extension: the selection, a replace, "save this", the page's text.
+    public static let appRequests: Set<String> = [BridgeMessage.Kind.getSelection, BridgeMessage.Kind.replace,
+                                                  BridgeMessage.Kind.savePage, BridgeMessage.Kind.pageText]
+
+    /// A message from the app: only those requests go on to the extension.
     public static func fromApp(_ m: BridgeMessage) -> Action? {
-        [BridgeMessage.Kind.getSelection, BridgeMessage.Kind.replace].contains(m.type) ? .toExtension(m) : nil
+        appRequests.contains(m.type) ? .toExtension(m) : nil
     }
 }
 

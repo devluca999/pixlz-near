@@ -9,7 +9,8 @@ import PixlzCore
 ///
 /// What travels is only the Pixl's PetState (name, species, needs, stats): never memory,
 /// highlights or wallet keys. First contact from an unknown device is confirmed by the user
-/// in the app; code pairing with an encrypted channel (Pairing.deriveKey) is next.
+/// in the app. Device ids here are self-declared and frames are not authenticated: only trusted
+/// or code-paired (MosaicoPairing, D20) devices may call the Pixl or make it give way.
 public final class BonjourTransport: @unchecked Sendable {
     public static let serviceType = "_pixlz._tcp"
 

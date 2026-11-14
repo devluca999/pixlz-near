@@ -95,6 +95,19 @@ struct RoutingTests {
         #expect(HostRouting.fromApp(BridgeMessage(type: "api", method: "DELETE", path: "/highlights/x")) == nil)
         #expect(HostRouting.fromApp(BridgeMessage(type: "api_result")) == nil)
     }
+
+    @Test func saveThisAndPageTextGoBothWays() {
+        let save = BridgeMessage(id: "app-3", type: "save_page", text: "my note")
+        let text = BridgeMessage(id: "app-4", type: "page_text")
+        #expect(HostRouting.fromApp(save) == .toExtension(save))
+        #expect(HostRouting.fromApp(text) == .toExtension(text))
+        let saved = BridgeMessage(id: "app-3", type: "saved", ok: true)
+        let page = BridgeMessage(id: "app-4", type: "page", ok: true, text: "a\n\nb")
+        #expect(HostRouting.fromExtension(saved, appConnected: true) == .toApp(saved))
+        #expect(HostRouting.fromExtension(page, appConnected: true) == .toApp(page))
+        guard case .toExtension(let noApp) = HostRouting.fromExtension(page, appConnected: false) else { Issue.record("expected status"); return }
+        #expect(noApp.type == "status" && noApp.ok == false)
+    }
 }
 
 struct ManifestTests {

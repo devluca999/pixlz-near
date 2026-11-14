@@ -24,7 +24,7 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
 | Network | NEAR **testnet only**; the config refuses mainnet |
 | Your keys | Never on the Mac. API keys come only from `.env` (git-ignored) |
-| Tests | 534 automated tests plus 6,558 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
+| Tests | 576 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
 | Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
 
 ## The problem
@@ -169,7 +169,7 @@ A Pixl can leave this Mac and go to another Mac on the same network, or to an [E
 - **Mac to Mosaico.** The Mosaico app is in [`mosaico/`](mosaico/README.md): the trip protocol in C (`pixl_trip/`) and the Mosaico app (`pixlz_dock/`). On a real Mosaico, Frogg has gone Mac → Mosaico → Mac, and the Mosaico's edits to his state passed the Mac's checksum. Without hardware, `mosaico/sim.sh` runs the Mosaico in a browser simulator.
 - **Who can take the Pixl.** A device you haven't trusted has to ask first, and only a trusted or paired device can call the Pixl away.
 - **Pairing.** A Mosaico pairs with a Mac by showing the same 6-digit code on both screens (X25519 with a commitment, then HKDF; details in [`pt_pair.h`](mosaico/pixl_trip/include/pixl_trip/pt_pair.h)). A paired Mosaico can Allow or Deny your Claude Code agents' requests, with signed decisions.
-- **Not done yet:** the trip link itself isn't encrypted. An encrypted channel using the pairing key is the next step.
+- **Not done yet:** the trip link itself isn't encrypted or signed, so a device on your network can claim another device's name. A stranger can't make your Pixl leave (only a trusted or paired device can, and a copy you can reclaim always stays behind), but signing every frame with the pairing key is the next step.
 
 ## Agent mode: watch and message your Claude Code sessions
 
@@ -189,12 +189,12 @@ Only what you type in a chat panel can reach a session. Nothing the Pixl's AI, m
 
 | Part | Status | Tests (all passing on 2026-11-13) |
 |---|---|---|
-| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 112: `cd memory && uv run pytest` |
+| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 125: `cd memory && uv run pytest` |
 | Frogg's wallet on NEAR testnet | Live: every answer pays its cost on chain | Included above (against a simulated chain) |
-| `macos/PixlMemory/`: the Mac app | Built | 234: `swift test --package-path macos/PixlMemory`, plus an in-app click self-test: `scripts/build-mac-app.sh --selftest` |
-| `PixlzCore/`: shared Swift core (pet state, behaviour, physics, trip protocol) | Built | 173: `swift test --package-path PixlzCore` |
-| `extension/`: Chrome highlight → save → backlink, and the bridge to the Mac app | Built | 15: `cd extension && node --test` |
-| `mosaico/pixl_trip/`: the trip protocol and pairing in C | Built, run on a real Mosaico | 306 checks: `make -C mosaico/pixl_trip test` |
+| `macos/PixlMemory/`: the Mac app | Built | 246: `swift test --package-path macos/PixlMemory`, plus an in-app click self-test: `scripts/build-mac-app.sh --selftest` |
+| `PixlzCore/`: shared Swift core (pet state, behaviour, physics, trip protocol) | Built | 180: `swift test --package-path PixlzCore` |
+| `extension/`: Chrome highlight → save → backlink, and the bridge to the Mac app | Built | 25: `cd extension && node --test` |
+| `mosaico/pixl_trip/`: the trip protocol and pairing in C | Built, run on a real Mosaico | 323 checks: `make -C mosaico/pixl_trip test` |
 | `mosaico/pixlz_dock/`: the Mosaico app | Built, run on a real Mosaico | 6,252 checks: `make -C mosaico/pixlz_dock/tests` |
 | `scripts/check-secrets.sh` | Runs on every commit when enabled | `sh scripts/check-secrets.sh --all` |
 

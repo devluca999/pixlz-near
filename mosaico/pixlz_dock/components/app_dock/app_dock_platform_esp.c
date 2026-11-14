@@ -45,6 +45,7 @@ static const char *TAG = "pixlz";
 #define RECORD_MAGIC_V1 0x50584C31u /* "PXL1": no holder id */
 #define RECORD_MAGIC 0x50584C32u /* "PXL2" */
 #define CLOCK_VALID_AFTER 1735689600 /* 2025-01-01: anything earlier means SNTP hasn't run */
+#define CLOCK_VALID_BEFORE 4102444800LL /* 2100-01-01: a hello further out is nonsense, not taken */
 
 /* PXL1, as older firmware saved it: still loaded, never written. */
 typedef struct {
@@ -319,7 +320,7 @@ bool dock_platform_clock_ok(void)
 
 void dock_platform_offer_clock(int64_t unix_ms)
 {
-    if (time(NULL) > CLOCK_VALID_AFTER || unix_ms / 1000 <= CLOCK_VALID_AFTER) {
+    if (time(NULL) > CLOCK_VALID_AFTER || unix_ms / 1000 <= CLOCK_VALID_AFTER || unix_ms / 1000 >= CLOCK_VALID_BEFORE) {
         return; /* SNTP (or an earlier Mac) already set it, or the offer is nonsense */
     }
     struct timeval tv = {.tv_sec = (time_t)(unix_ms / 1000), .tv_usec = (suseconds_t)(unix_ms % 1000) * 1000};

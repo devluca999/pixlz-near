@@ -138,6 +138,26 @@ struct BonjourTripTests {
         let d = MosaicoFeed.agentDecision(Data(#"{"agentDecision":{"id":"req-1","behavior":"deny"}}"#.utf8))
         #expect(d?.id == "req-1" && d?.behavior == "deny")
         #expect(MosaicoFeed.agentDecision(Data(#"{"feed":{}}"#.utf8)) == nil)
+        // a detail cut to 140 can't be answered on the Mosaico: it would sign less than will run
+        #expect(sessions[0]["answerable"] as? Bool == false)
+    }
+
+    // Only a request the Mosaico shows in full is answerable there; anything cut or changed for
+    // its font (non-ASCII, backticks, newlines) is answered on the Mac.
+    @Test func onlyRequestsShownInFullAreAnswerableOnTheMosaico() throws {
+        func answerable(_ summary: String, _ detail: String) throws -> Bool? {
+            let body = MosaicoFeed.agentsBody([MosaicoFeed.AgentRow(id: "s", project: "p", doing: "d", request: "r",
+                                                                    summary: summary, detail: detail, answerable: true)], alerts: false)
+            let o = try #require((try JSONSerialization.jsonObject(with: body) as? [String: Any])?["agents"] as? [String: Any])
+            return (o["sessions"] as? [[String: Any]])?.first?["answerable"] as? Bool
+        }
+        #expect(try answerable("Bash", "npm test") == true)
+        #expect(try answerable("Bash", String(repeating: "a", count: 140)) == true)
+        #expect(try answerable("Bash", String(repeating: "a", count: 141)) == false)
+        #expect(try answerable("Bash", "echo `whoami`") == false)
+        #expect(try answerable("Bash", "ls\nrm -rf ~") == false)
+        #expect(try answerable("Bash", "echo café") == false)
+        #expect(try answerable(String(repeating: "s", count: 61), "ls") == false)
     }
 }
 

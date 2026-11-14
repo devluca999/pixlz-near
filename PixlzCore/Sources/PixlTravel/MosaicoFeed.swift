@@ -55,6 +55,19 @@ public enum MosaicoFeed {
         }
     }
     public static let maxAgents = 6
+    /// How much of a waiting request the Mosaico shows, and signs its decision over (D20).
+    public static let summaryLimit = 60, detailLimit = 140
+
+    /// Whether `text` reaches the Mosaico exactly as it is: nothing cut, dropped, folded or swapped.
+    public static func showsInFull(_ text: String, _ limit: Int) -> Bool { ascii(text, limit) == text }
+
+    /// Whether a request may be answered from a Mosaico: only when what it shows (and signs) is the
+    /// whole request. A command that's cut short or not plain ASCII could hide what would really
+    /// run, so it's answered on the Mac instead (sent as not answerable: "Answer it in the
+    /// terminal"). The Mac's decision check should refuse an "allow" for such a request too.
+    public static func answerableOnDevice(summary: String, detail: String) -> Bool {
+        showsInFull(summary, summaryLimit) && showsInFull(detail, detailLimit)
+    }
 
     /// `{"agents":{"alerts":bool,"sessions":[{id,project,doing,req,summary,detail,answerable}]}}`,
     /// waiting sessions first; trimmed until it fits `maxBytes`.
@@ -69,9 +82,9 @@ public enum MosaicoFeed {
                     if let q = a.queued { o["queued"] = ascii(q, 90) }
                     if let req = a.request {
                         o["req"] = ascii(req, 15)
-                        o["summary"] = ascii(a.summary, 60)
-                        o["detail"] = ascii(a.detail, 140)
-                        o["answerable"] = a.answerable
+                        o["summary"] = ascii(a.summary, summaryLimit)
+                        o["detail"] = ascii(a.detail, detailLimit)
+                        o["answerable"] = a.answerable && answerableOnDevice(summary: a.summary, detail: a.detail)
                     }
                     return o
                 },

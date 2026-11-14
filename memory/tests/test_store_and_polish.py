@@ -76,6 +76,7 @@ def test_prompt_puts_text_in_tags():
 def test_db_files_are_owner_only(tmp_path):
     s = Store(tmp_path)
     s.add_highlight("x")
+    assert (tmp_path / "memory.db").exists()
     for name in ["memory.db", "memory.db-wal", "memory.db-shm"]:
         p = tmp_path / name
         if p.exists():

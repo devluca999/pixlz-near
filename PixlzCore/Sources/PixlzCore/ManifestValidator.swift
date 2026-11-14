@@ -78,10 +78,12 @@ public enum ManifestValidator {
         }
         // A standing Pixl's hitbox must end at its feet, or it could never perch on the focused window (SPEC §6.4).
         if hb.y + hb.h > m.anchor.y { fail("hitbox must end at or above anchor.y") }
-        if m.physics.gravity <= 0 && m.movement != .float { fail("gravity must be positive") }
+        // Every species hops between displays (a float one too), and a hop needs both > 0 (HopPlan).
+        if !(m.physics.gravity > 0) { fail("gravity must be positive") }
         for (name, range) in [("hopApex", m.physics.hopApex), ("hopDistance", m.physics.hopDistance)] {
             if range.count != 2 || range[0] > range[1] || range[0] < 0 { fail("\(name) must be [min, max]") }
         }
+        if m.physics.hopApex.count == 2, !(m.physics.hopApex[0] > 0) { fail("hopApex minimum must be positive") }
         if m.movement == .walk && m.physics.walkSpeed <= 0 { fail("walk species needs walkSpeed > 0") }
         for slot in Slot.allCases {
             guard let spec = m.slots[slot] else { fail("missing slot \(slot.rawValue)"); continue }

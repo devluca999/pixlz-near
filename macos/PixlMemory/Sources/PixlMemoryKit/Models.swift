@@ -75,6 +75,7 @@ public struct Receipt: Codable, Sendable, Equatable {
         case "paid":
             let left = balanceAfterNear.map { " · \($0) Ⓝ left" } ?? ""
             return "Paid \(amountNear ?? "?") Ⓝ\(left)"
+        case "pending": return "Payment sent \(amountNear ?? "?") Ⓝ, confirming…"
         case "refused": return "Didn't pay: \(reason ?? "cap reached")"
         default: return "Payment failed"
         }
@@ -106,6 +107,8 @@ public enum MemoryError: Error, Equatable, Sendable {
     case outOfAllowance(String)
     case upstream(String)
     case offline(String)
+    /// The service refused the request itself (no wallet set up, a limit it won't take).
+    case rejected(String)
 
     public var bubble: String {
         switch self {
@@ -116,9 +119,10 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .noCredits: "NEAR AI is out of credits"
         case .notPrivate: "That model isn't in a TEE. Refused."
         case .attestationFailed: "Enclave failed checks. Not sent."
-        case .outOfAllowance: "I'm out of allowance for today"
+        case .outOfAllowance(let why): Self.allowanceBubble(why)
         case .upstream: "NEAR AI hiccup. Try again?"
         case .offline: "No internet. Saving still works."
+        case .rejected: "The service said no to that"
         }
     }
 
@@ -127,11 +131,22 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .serviceDown: "The Pixl Memory service isn't running on 127.0.0.1:7341."
         case .noToken: "~/Library/Application Support/PixlMemory/token doesn't exist yet."
         case .badToken: "The service rejected the token."
-        case .noApiKey(let m), .noCredits(let m), .notPrivate(let m), .upstream(let m): m
+        case .noApiKey(let m), .noCredits(let m), .notPrivate(let m), .upstream(let m), .rejected(let m): m
         case .offline(let m): m + " Nothing was sent. Highlights, notes, memory search and trips between your devices on this Wi-Fi still work."
+        case .outOfAllowance(let m) where m.lowercased().contains("paused"): m + " Your text was not sent."
         case .outOfAllowance(let m): m + " Your text was not sent. Top up your Pixl's wallet or wait until the limit resets."
         case .attestationFailed(let m, _): m + " Your text was not sent."
         }
+    }
+
+    /// The bubble for the wallet's reason (wallet.py `can_pay`): paused, this week's, today's, or one request's cap.
+    static func allowanceBubble(_ why: String) -> String {
+        let w = why.lowercased()
+        if w.contains("paused") { return "My spending is paused" }
+        if w.contains("week") { return "I'm out of allowance this week" }
+        if w.contains("per-request") || w.contains("per request") { return "That's over my per-request cap" }
+        if w.contains("today") || w.contains("daily") { return "I'm out of allowance for today" }
+        return "I'm out of allowance"
     }
 }
 

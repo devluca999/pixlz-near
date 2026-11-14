@@ -13,13 +13,17 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import threading
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from .config import WalletConfig
-from .near import KeyPair, Rpc, RpcError, UnknownAccount, load_key, near_to_yocto, save_key, yocto_to_near
+from .near import KeyPair, Rpc, RpcError, TransferUnknown, UnknownAccount, load_key, near_to_yocto, save_key, yocto_to_near
 from .store import Store
+
+_PAY_LOCK = threading.Lock()   # one payment at a time across every Pixl (they share the owner's caps)
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,8 @@ class Policy:
     def price(self, cost_nano_usd: int | None) -> tuple[int, str]:
         """yoctoNEAR to pay for one request, and how it was priced."""
         if cost_nano_usd and cost_nano_usd > 0:
-            yocto = math.ceil(cost_nano_usd * self.near_per_usd * 10**15)  # nano-USD × NEAR/USD × 1e24 / 1e9
+            # nano-USD × NEAR/USD × 1e24 / 1e9, in exact decimals (floats lose yocto precision)
+            yocto = math.ceil(Decimal(cost_nano_usd) * Decimal(str(self.near_per_usd)) * 10**15)
             return max(yocto, 1), "cost"
         return self.flat_price, "flat"
 
@@ -182,7 +187,11 @@ class Wallet:
             return s | {"ready": False, "setup": f"NEAR RPC: {e}"}
         s["balance_near"] = yocto_to_near(balance)
         s["spendable_near"] = yocto_to_near(max(0, balance - self.policy.reserve))
-        if self.rpc.access_key(self.cfg.frogg, key.public_key) is None:
+        try:
+            has_key = self.rpc.access_key(self.cfg.frogg, key.public_key) is not None
+        except RpcError as e:
+            return s | {"ready": False, "setup": f"NEAR RPC: {e}"}
+        if not has_key:
             return s | {"ready": False, "setup": f"{self.cfg.name}'s key isn't on {self.cfg.frogg} yet"}
         return s | {"ready": True, "setup": None}
 
@@ -205,7 +214,12 @@ class Wallet:
     # -- paying --
 
     def pay(self, cost_nano_usd: int | None, about: dict[str, Any]) -> dict[str, Any]:
-        """Pay the payee for one request. Returns a receipt; never raises for a refusal."""
+        """Pay the payee for one request. Returns a receipt; never raises for a refusal.
+        Payments run one at a time, so concurrent requests can't all pass the same cap check."""
+        with _PAY_LOCK:
+            return self._pay(cost_nano_usd, about)
+
+    def _pay(self, cost_nano_usd: int | None, about: dict[str, Any]) -> dict[str, Any]:
         amount, priced_by = self.policy.price(cost_nano_usd)
         receipt: dict[str, Any] = {
             "from": self.cfg.frogg, "to": self.policy.payee, "network": self.cfg.network,
@@ -231,6 +245,11 @@ class Wallet:
         assert key is not None
         try:
             sent = self.rpc.transfer(key, self.cfg.frogg, self.policy.payee, amount)
+        except TransferUnknown as e:
+            # It may still land, so it counts against the caps until proven otherwise.
+            receipt |= {"status": "pending", "reason": f"sent, outcome unknown: {e}", "tx_hash": e.tx_hash, "explorer": e.explorer}
+            self.store.add_payment(today(), amount, "pending", e.tx_hash, receipt, account=self.cfg.frogg)
+            return receipt
         except RpcError as e:
             receipt |= {"status": "failed", "reason": str(e)}
             self.store.add_payment(today(), 0, "failed", None, receipt, account=self.cfg.frogg)

@@ -5,7 +5,20 @@ import Foundation
 public struct MemoryClient: Sendable {
     /// Which Pixl is asking (and paying, from its own `<pet>.<owner>` account). The app keeps it
     /// current with the Pixl on screen; nil means Frogg.
-    public nonisolated(unsafe) static var pet: String?
+    /// Read from any task (each request reads it once); writes and reads go through a lock.
+    public static var pet: String? {
+        get { petLock.lock(); defer { petLock.unlock() }; return _pet }
+        set { petLock.lock(); defer { petLock.unlock() }; _pet = newValue }
+    }
+    private static let petLock = NSLock()
+    private nonisolated(unsafe) static var _pet: String?
+
+    /// The wallet setup page for a Pixl (server.py `wallet_setup(pet=)`); nil pet means Frogg.
+    public static func walletSetupURL(port: Int, pet: String?) -> URL {
+        var c = URLComponents(string: "http://127.0.0.1:\(port)/wallet/setup")!
+        if let pet, !pet.isEmpty { c.queryItems = [URLQueryItem(name: "pet", value: pet)] }
+        return c.url!
+    }
 
     /// A Pixl's wallet name from its skin id (the app's ids predate the names).
     public static func walletName(skinID: String) -> String {
@@ -13,6 +26,9 @@ public struct MemoryClient: Sendable {
     }
 
     var petQuery: String { Self.pet.map { "pet=\($0)" } ?? "" }
+
+    /// The most highlights the service lists in one go (server.py `list_highlights` clamps to it).
+    public static let highlightsMax = 500
 
     public var port: Int
     public var tokenURL: URL
@@ -69,7 +85,10 @@ public struct MemoryClient: Sendable {
             st.balance = w.balance_near
             st.spentWeek = w.spent_week_near
         }
-        st.highlights = await highlights(limit: 1000).count
+        // the service lists at most 500 (and has no count): a full page reads "500+"
+        let n = await highlights(limit: Self.highlightsMax).count
+        st.highlights = n
+        st.highlightsAtLeast = n >= Self.highlightsMax
         return st
     }
 
@@ -156,18 +175,25 @@ public struct MemoryClient: Sendable {
         throw error(data: data, status: status)
     }
 
+    /// By the error's code (`error`), not just the status: 409 is an enclave that failed its
+    /// checks only when it says so (`no_wallet` is 409 too). FastAPI's own errors carry `detail`.
     public static func error(data: Data, status: Int) -> MemoryError {
         struct Err: Decodable { let error: String?; let message: String?; let verification: Verification? }
         let e = try? JSONDecoder().decode(Err.self, from: data)
-        let msg = e?.message ?? "HTTP \(status)"
+        let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let msg = e?.message ?? (o?["detail"] as? String) ?? "HTTP \(status)"
         switch (status, e?.error) {
         case (401, _): return .badToken
-        case (409, _): return .attestationFailed(msg, e?.verification)
-        case (412, _): return .noApiKey(msg)
-        case (402, "frogg_out_of_allowance"): return .outOfAllowance(msg)
+        case (_, "attestation_failed"): return .attestationFailed(msg, e?.verification)
+        case (409, nil) where e?.verification != nil: return .attestationFailed(msg, e?.verification)
+        case (_, "no_wallet"), (_, "bad_limit"): return .rejected(msg)
+        case (_, "no_api_key"), (412, _): return .noApiKey(msg)
+        case (_, "frogg_out_of_allowance"): return .outOfAllowance(msg)
+        case (_, "no_credits"): return .noCredits(msg)
+        case (_, "not_private"): return .notPrivate(msg)
+        case (_, "offline"): return .offline(msg)
         case (402, _): return .noCredits(msg)
-        case (400, "not_private"): return .notPrivate(msg)
-        case (503, "offline"): return .offline(msg)
+        case (400..<500, _): return .rejected(msg)
         default: return .upstream(msg)
         }
     }

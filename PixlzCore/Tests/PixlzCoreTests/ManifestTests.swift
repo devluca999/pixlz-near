@@ -70,6 +70,17 @@ private func tempDir() -> URL {
         #expect(messages.contains("hitbox outside canvas"))
     }
 
+    // A hop needs gravity > 0 and a positive apex, float species too (HopPlan would trap otherwise).
+    @Test func floatSpeciesStillNeedsAHoppablePhysics() throws {
+        var m = try PixlManifest.load(from: repoAssets.appendingPathComponent("ghost/pixl.json"))
+        #expect(m.movement == .float && ManifestValidator.validate(m) == [])
+        m.physics.gravity = 0
+        m.physics.hopApex = [0, 30]
+        let messages = ManifestValidator.validate(m).map(\.message)
+        #expect(messages.contains("gravity must be positive"))
+        #expect(messages.contains("hopApex minimum must be positive"))
+    }
+
     @Test func completeSyntheticSpeciesPasses() throws {
         let dir = tempDir()
         _ = try makeSpecies(in: dir)

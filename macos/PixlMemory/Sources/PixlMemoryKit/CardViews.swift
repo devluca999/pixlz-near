@@ -199,7 +199,7 @@ public final class WalletCard: PixlCard {
     public var onPause: ((Bool) -> Void)?
 
     public init(info: WalletInfo?, payments: [Receipt], look: SurfaceView.Look) {
-        super.init(title: "Wallet · \(PixlData.manifest.name)", icon: "wallet", look: look)
+        super.init(title: "Wallet · \(PixlSkins.name)", icon: "wallet", look: look)
         guard let info else {
             stack.addArrangedSubview(text("The Pixl Memory service isn't running.", muted: true))
             setFooter([], hint: "start it: make -C memory serve")
@@ -215,7 +215,7 @@ public final class WalletCard: PixlCard {
         if let account = info.account { stack.addArrangedSubview(text(account, size: 10, muted: true, mono: true)) }
         if !ready { stack.addArrangedSubview(text(info.setup ?? "Not set up yet.", size: 12)) }
         if info.paused == true {
-            stack.addArrangedSubview(text("Spending is paused. \(PixlData.manifest.name) won't pay for anything until you resume.", size: 12, weight: .semibold))
+            stack.addArrangedSubview(text("Spending is paused. \(PixlSkins.name) won't pay for anything until you resume.", size: 12, weight: .semibold))
         }
         // this week: spent against the user's weekly limit
         if let c = info.caps, let week = c.perWeekNear {
@@ -241,9 +241,10 @@ public final class WalletCard: PixlCard {
         }
         for p in payments.prefix(4) {
             stack.addArrangedSubview(rule())
-            let paid = p.status == "paid"
-            let row = ReceiptRow(icon: paid ? "polish" : "hide", title: paid ? "Private inference" : "\(p.status.capitalized): \(p.reason ?? "")",
-                                 amount: paid ? "−\(p.amountNear ?? "?")" : "", look: look, width: inner) { [weak self] in
+            let paid = p.status == "paid", pending = p.status == "pending"
+            let title = paid ? "Private inference" : pending ? "Payment sent, confirming…" : "\(p.status.capitalized): \(p.reason ?? "")"
+            let row = ReceiptRow(icon: paid || pending ? "polish" : "hide", title: title,
+                                 amount: paid || pending ? "−\(p.amountNear ?? "?")" : "", look: look, width: inner) { [weak self] in
                 if let e = p.explorer, let u = URL(string: e) { self?.onOpenURL?(u) }
             }
             stack.addArrangedSubview(row)
@@ -256,6 +257,35 @@ public final class WalletCard: PixlCard {
             b.append(PixelButton(title: ready ? "Receipts ↗" : "Explorer ↗", style: .secondary) { [weak self] in self?.onOpenURL?(url) })
         }
         setFooter(b, hint: "testnet")
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// The guard's whole request: every character of the command (or file, URL) it asks to run,
+/// wrapped and scrolling, with Allow / Deny. Allow is a click, never a key, so a long command
+/// can't be allowed without the chance to read it.
+@MainActor
+public final class CommandCard: PixlCard {
+    public var onAllow: (() -> Void)?
+    public var onDeny: (() -> Void)?
+
+    public init(project: String, summary: String, detail: String, canAnswer: Bool, look: SurfaceView.Look) {
+        super.init(title: "\(project) wants to", icon: "warn", look: look)
+        stack.addArrangedSubview(text(summary, weight: .semibold))
+        if !detail.isEmpty {
+            let d = text(detail, size: 11, mono: true)
+            d.isSelectable = true
+            d.setAccessibilityLabel("Full command: \(detail)")
+            stack.addArrangedSubview(d)
+            stack.addArrangedSubview(text("\(detail.count) characters, shown in full", size: 10, muted: true))
+        }
+        if canAnswer {
+            setFooter([PixelButton(title: "Allow", style: .primary) { [weak self] in self?.onAllow?() },
+                       PixelButton(title: "Deny", style: .secondary) { [weak self] in self?.onDeny?() }])
+        } else {
+            setFooter([], hint: "answer it in the terminal")
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -502,9 +532,9 @@ public final class AskCard: PixlCard {
     var sources: [NSView] = []
 
     public init(placeholder: String, look: SurfaceView.Look) {
-        input = PixlField(placeholder: placeholder, icon: "ask", look: look, label: "Question for \(PixlData.manifest.name)")
+        input = PixlField(placeholder: placeholder, icon: "ask", look: look, label: "Question for \(PixlSkins.name)")
         answer = NSTextField(wrappingLabelWithString: "")
-        super.init(title: "Ask \(PixlData.manifest.name)", icon: "ask", look: look)
+        super.init(title: "Ask \(PixlSkins.name)", icon: "ask", look: look)
         input.widthAnchor.constraint(equalToConstant: inner).isActive = true
         input.onReturn = { [weak self] in self?.submit() }
         input.onEscape = { [weak self] in self?.onClose?() }

@@ -1,5 +1,5 @@
 // Pixl Memory: save the selection with a text-fragment backlink to the local service.
-import { buildFragmentUrl, countOccurrences } from "./fragment.js";
+import { buildFragmentUrl, countOccurrences, startTerm } from "./fragment.js";
 import { api } from "./client.js";
 import { froggImageData } from "./icon.js";
 import { connect, onAppRequest } from "./native.js";
@@ -109,13 +109,10 @@ export async function saveFrom(tab, fallbackText, { wholePage = false, note = nu
 
   let fragmentUrl = null;
   if (!pageOnly && sel?.linkable && /^https?:/.test(tab.url || "")) {
-    const firstWords = text.split(/\s+/).slice(0, 4).join(" ");
-    fragmentUrl = buildFragmentUrl(tab.url, {
-      text: sel.text,
-      before: sel.before,
-      after: sel.after,
-      occurrences: countOccurrences(sel.pageText, firstWords),
-    });
+    // Disambiguate on the selection alone (not the note), using the exact start term the link carries.
+    const target = { text: sel.text, before: sel.before, after: sel.after };
+    const term = startTerm(target);
+    fragmentUrl = buildFragmentUrl(tab.url, { ...target, occurrences: term ? countOccurrences(sel.pageText, term) : 1 });
   }
 
   try {
@@ -157,7 +154,24 @@ async function inActiveTab(func, args = []) {
 }
 
 onAppRequest("get_selection", () => inActiveTab(pageSelection));
-onAppRequest("replace_selection", (msg) => inActiveTab(pageReplace, [msg.original ?? "", msg.text ?? ""]));
+/**
+ * Replaces the selection only in the focused frame (the top frame if none reports focus, e.g.
+ * while the Mac app is in front), so an unfocused frame's field is never edited. ok only when a
+ * frame actually replaced the text.
+ */
+export async function replaceSelection(original, text) {
+  const tab = await activeTab();
+  if (!tab?.id || !/^(https?|file):/.test(tab.url || "")) return { ok: false, error: "no web page in front" };
+  const probes = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => document.hasFocus() });
+  const focused = probes.filter((r) => r.result === true).map((r) => r.frameId);
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, frameIds: focused.length ? focused : [0] }, func: pageReplace, args: [original, text],
+  });
+  const answers = results.map((r) => r.result);
+  const hit = answers.find((r) => r && r.ok === true);
+  return { ...(hit || answers.find(Boolean) || { ok: false, error: "nothing selected" }), url: tab.url, title: tab.title };
+}
+onAppRequest("replace_selection", (msg) => replaceSelection(msg.original ?? "", msg.text ?? ""));
 /**
  * Runs inside the page: its readable text as blocks (headings, paragraphs, list items) in reading
  * order, so the Pixl can find "the part about …". Self-contained (serialized by executeScript).

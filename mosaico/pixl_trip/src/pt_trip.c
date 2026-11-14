@@ -507,6 +507,7 @@ static bool parse_env(const pt_node_t *n, const pt_device_t *peer, const char *b
     if (!pt_json_find(body, len, "type", &v) || !pt_json_string(v, e->type, sizeof e->type)) return false;
     if (!pt_json_find(body, len, "petId", &v) || !pt_json_string(v, e->pet_id, sizeof e->pet_id)) return false;
     if (!pt_json_find(body, len, "epoch", &v) || !pt_json_int(v, &e->epoch)) return false;
+    if (e->epoch < 0 || e->epoch > PT_EPOCH_MAX) return false;   // epoch ± 2 below must never overflow
     if (!pt_json_find(body, len, "payload", &e->payload)) {
         e->payload.p = "{}";
         e->payload.len = 2;
@@ -595,7 +596,16 @@ static void discard_pending(pt_node_t *n, const pt_device_t *sender, pt_outs_t *
     saved(out);
 }
 
-// Another copy is newer: this one steps aside and keeps no safety copy, so it can't come back (P3).
+// Whose status may make the copy here step aside: the paired Mac only (anyone while unpaired).
+// Peer ids are self-declared, so this is what stops any device on the network from taking it.
+static bool may_give_way_to(const pt_node_t *n, const pt_device_t *peer)
+{
+    return !n->call_from[0] || strcmp(n->call_from, peer->id) == 0;
+}
+
+// Another copy is newer: this one steps aside. It keeps its state as the tombstone (still owned
+// by this device, so status never restores it by itself), so a wrong give-way can be undone with
+// reclaim instead of losing the Pixl.
 static void give_way(pt_node_t *n, const env_t *e, const pt_device_t *peer, const char *held, int64_t now_ms,
                      pt_outs_t *out)
 {
@@ -613,7 +623,7 @@ static void give_way(pt_node_t *n, const env_t *e, const pt_device_t *peer, cons
     }
     pt_session_kind_t was = n->session.kind;
     n->session.kind = PT_SES_NONE;
-    set_record(n, PT_REC_AWAY, r->pet_id, e->epoch, &holder, NULL, 0);
+    set_record(n, PT_REC_AWAY, r->pet_id, e->epoch, &holder, r->state, r->state_len);
     saved(out);
     if (was == PT_SES_OFFERED || was == PT_SES_TRANSFERRED) {
         send_reason(n, out, &n->session.peer, "abort", n->session.pet_id, n->session.epoch, "gaveWay", now_ms);
@@ -634,17 +644,17 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
     switch (r->kind) {
     case PT_REC_PENDING:
         if (!is_sender(n, peer)) return;   // only its sender knows (P5)
-        if (strcmp(held, "away") == 0 && pe == r->epoch) {
+        char holder[PT_ID_MAX] = "";
+        if (strcmp(held, "away") == 0 && pe == r->epoch && payload_str(e, "holderId", holder, sizeof holder) &&
+            strcmp(holder, n->me.id) == 0) {
+            // the sender committed to us (not to another device at the same epoch)
             promote(n, r->epoch, r->pet_id, peer, now_ms, out);
         } else if (strcmp(held, "owned") == 0 && pe < r->epoch && !peer_in_trip) {
             if (n->session.kind == PT_SES_RECEIVING && same_peer(&n->session.peer, peer)) n->session.kind = PT_SES_NONE;
             discard_pending(n, peer, out);
-        } else if (strcmp(held, "none") == 0) {
-            // the sender has nothing: ours is the only copy
-            set_record(n, PT_REC_OWNED, r->pet_id, r->epoch, NULL, r->state, r->state_len);
-            saved(out);
-            push(out, PT_OUT_PLAY_ENTRANCE, peer);
         }
+        // held "none" settles nothing: its id is self-declared, and promoting on it could make a
+        // second owner. The copy stays pending (kept, never shown) until the sender answers.
         break;
 
     case PT_REC_AWAY: {
@@ -675,7 +685,7 @@ static void reconcile(pt_node_t *n, const env_t *e, const pt_device_t *peer, int
         bool owned = strcmp(held, "owned") == 0, away = strcmp(held, "away") == 0;
         bool peer_wins = ((owned || away) && pe > r->epoch) ||
                          (owned && pe == r->epoch && strcmp(peer->id, n->me.id) < 0);
-        if (peer_wins) give_way(n, e, peer, held, now_ms, out);
+        if (peer_wins && may_give_way_to(n, peer)) give_way(n, e, peer, held, now_ms, out);
         break;
     }
 

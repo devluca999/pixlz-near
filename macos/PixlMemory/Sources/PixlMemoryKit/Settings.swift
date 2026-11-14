@@ -21,6 +21,9 @@ public struct PixlSettings: Codable, Equatable, Sendable {
     public var sleepiness: String?
     /// "Let me wake them by hovering" (off by default).
     public var hoverWakes: Bool?
+    /// "Pictures for answers": look up the names a private answer lists on Wikipedia. That
+    /// sends those names (in plain text) to en.wikipedia.org, so it's off unless you turn it on.
+    public var answerPictures: Bool?
     public var roams: Bool {
         get { behavior == "roam" || behavior == "chaos" }
         set { behavior = newValue ? "roam" : "calm" }
@@ -75,13 +78,20 @@ public struct ServiceStatus: Sendable, Equatable {
     public var wallet: String?
     public var walletReady: Bool
     public var lastVerdict: String?
+    /// The last reply's verdict field ("verified", "partial", "failed"): what "verified" is judged by.
+    public var lastVerdictCode: String?
     /// Saved highlights on this Mac, and the wallet's balance and this week's spend (Settings).
     public var highlights: Int?
+    /// `highlights` is only a lower bound (the service's list was full).
+    public var highlightsAtLeast = false
+    /// "12", or "500+" when the list was full.
+    public var highlightsText: String? { highlights.map { highlightsAtLeast ? "\($0)+" : "\($0)" } }
     public var balance: String?
     public var spentWeek: String?
 
     public init(service: String, model: String? = nil, wallet: String? = nil, walletReady: Bool = false, lastVerdict: String? = nil,
-                highlights: Int? = nil, balance: String? = nil, spentWeek: String? = nil) {
+                highlights: Int? = nil, balance: String? = nil, spentWeek: String? = nil, lastVerdictCode: String? = nil) {
+        self.lastVerdictCode = lastVerdictCode
         self.service = service; self.model = model; self.wallet = wallet; self.walletReady = walletReady; self.lastVerdict = lastVerdict
         self.highlights = highlights; self.balance = balance; self.spentWeek = spentWeek
     }

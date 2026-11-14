@@ -25,7 +25,7 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
     private var closeButton: NSView?
     private var nameField: NSTextField!
     private var appsField: NSTextField!
-    private var verifiedLabel: NSTextField!
+    private(set) var verifiedLabel: NSTextField!
     private var privacyRow: DisclosureRow!
     private var walletRow: DisclosureRow!
     private var privacyBody: NSStackView!
@@ -248,7 +248,8 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
 
     /// Fills in service, privacy and wallet details in place (Settings opens before they're known).
     public func update(status: ServiceStatus) {
-        let verified = status.lastVerdict?.lowercased().contains("verified") == true && status.lastVerdict?.lowercased().contains("not") == false
+        // the verdict field, never the badge's words ("Partly verified" is not verified)
+        let verified = status.lastVerdictCode == "verified"
         verifiedLabel.stringValue = status.service == "running" ? (verified ? "■ Private · verified (NEAR AI TEE)" : "■ Private · checks the enclave before sending")
                                                                : "■ Memory service: \(status.service)"
         verifiedLabel.textColor = status.service == "running" ? Theme.verified : Theme.partial
@@ -257,11 +258,17 @@ public final class MiniMenuView: NSView, NSTextFieldDelegate {
         let model = status.model ?? "z-ai/glm-5.3-flash"
         for (k, v) in [("Model", "\(model) · NEAR AI Cloud"), ("Runs in", "Confidential TEE (Intel TDX + NVIDIA GPU)"),
                        ("Last reply", status.lastVerdict ?? "Not yet this session"),
-                       ("Saved highlights", status.highlights.map { "\($0), kept encrypted on this Mac" } ?? "Kept encrypted on this Mac")] {
+                       ("Saved highlights", status.highlightsText.map { "\($0), kept encrypted on this Mac" } ?? "Kept encrypted on this Mac")] {
             privacyBody.addArrangedSubview(row([label(k, .systemFont(ofSize: 12), t.text2, width: 110), label(v, .systemFont(ofSize: 12, weight: .medium), t.text, width: inner - 150)], width: inner - 24, spacing: 6))
         }
+        let pics = PixelToggle("Pictures for answers (sends listed names to Wikipedia)", on: settings.answerPictures == true, look: look, width: inner - 24)
+        pics.onPress = { [weak self, weak pics] in
+            let on = pics?.isOn ?? false
+            self?.edit { $0.answerPictures = on }
+        }
+        privacyBody.addArrangedSubview(pics)
         privacyBody.addArrangedSubview(PixelButton(title: "Open memory", primary: false) { [weak self] in self?.onOpenMemory?() })
-        privacyRow.setSummary(status.service == "running" ? (verified ? "Verified" : "On") + (status.highlights.map { " · \($0) highlights" } ?? "") : status.service)
+        privacyRow.setSummary(status.service == "running" ? (verified ? "Verified" : "On") + (status.highlightsText.map { " · \($0) highlights" } ?? "") : status.service)
         // Wallet
         walletBody.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if status.walletReady {

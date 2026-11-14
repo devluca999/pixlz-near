@@ -208,6 +208,10 @@ def test_pricing_rounds_up_and_never_pays_zero():
     p = Policy(PARENT, N("0.01"), N("0.1"), N("0.5"), N("0.05"), 0.4, N("0.0005"))
     assert p.price(1) == (400_000_000_000_000, "cost")  # 1 nano-USD → 4e14 yocto
     assert p.price(0) == (N("0.0005"), "flat")
+    assert p.price(123_456_789) == (49_382_715_600_000_000_000_000, "cost")  # exact, no float drift
+    tiny = Policy(PARENT, N("0.01"), N("0.1"), N("0.5"), N("0.05"), 3e-16, N("0.0005"))
+    assert tiny.price(1) == (1, "cost")   # 0.3 yocto rounds up, never to zero
+    assert tiny.price(7) == (3, "cost")   # 2.1 yocto rounds up to 3
 
 
 # --- through the HTTP API ---------------------------------------------------------------------

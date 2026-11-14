@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 import secrets
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .nearai import DEFAULT_BASE_URL, DEFAULT_MODEL
 from .store import load_or_create_secret
@@ -90,7 +92,7 @@ class WalletConfig:
                            ("PIXL_NEAR_PER_USD", "near_per_usd")]:
             v = got[env] or WALLET_DEFAULTS[env]
             try:
-                if float(v) < 0:
+                if not math.isfinite(float(v)) or float(v) < 0:
                     raise ValueError
             except ValueError:
                 raise WalletConfigError(f"{env} must be a non-negative number, got {v!r}") from None
@@ -100,7 +102,8 @@ class WalletConfig:
         if float(extra["max_per_day_near"]) > float(extra["max_per_week_near"]):
             raise WalletConfigError("FROGG_MAX_PER_DAY_NEAR can't exceed FROGG_MAX_PER_WEEK_NEAR")
         rpc = got["NEAR_RPC_URL"] or WALLET_DEFAULTS["NEAR_RPC_URL"]
-        if not rpc.startswith("https://") or "mainnet" in rpc:
+        host = urlparse(rpc).hostname or ""
+        if not rpc.startswith("https://") or "mainnet" in rpc or "testnet" not in host:
             raise WalletConfigError(f"NEAR_RPC_URL must be an https testnet endpoint, got {rpc!r}")
         from dataclasses import replace
 

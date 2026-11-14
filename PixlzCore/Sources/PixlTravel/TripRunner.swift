@@ -163,6 +163,11 @@ public final class TripRunner {
     public func untrust(_ deviceId: String) { trusted.remove(deviceId) }
 
     func feed(_ input: TravelNode.Input) {
+        // Only a trusted or paired device's status can make the copy here give way (ids are
+        // self-declared: anyone else on the network could otherwise talk it away).
+        var mayGiveWayTo = trusted
+        if case .received(_, let p) = input, isPaired?(p.deviceId) == true { mayGiveWayTo.insert(p.deviceId) }
+        node.mayGiveWayTo = mayGiveWayTo
         let before = node
         let outs = node.handle(input, at: Date())
         let ok = perform(outs, before: before)
@@ -195,8 +200,9 @@ public final class TripRunner {
                 onRecord?(rec)
             case .send(let env, let to): deliver(env, to: to)
             case .playExit(let to):
-                // a trip keeps a safety copy; a copy that gave way keeps none
-                if case .away(_, _, _, _, nil)? = lastSaved, let onGaveWay { onGaveWay(to) } else { onExit?(to) }
+                // a trip's safety copy is the receiver's; a copy that gave way keeps its own (or none)
+                if case .away(_, _, _, _, let t)? = lastSaved, t == nil || t?.owner.deviceId == node.me.deviceId,
+                   let onGaveWay { onGaveWay(to) } else { onExit?(to) }
             case .playEntrance: if let s = owned { onEntrance?(s) }
             case .shrug(let why): onShrug?(why)
             }

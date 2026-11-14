@@ -13,6 +13,9 @@ public struct TravelNode: Sendable {
     public static let receiverTimeout: TimeInterval = 10
     /// A `statusReply` is accepted only from a device we sent `status` to this recently.
     public static let askWindow: TimeInterval = 60
+    /// Envelopes with an epoch outside 0…maxEpoch are dropped, so `epoch + 2` never overflows
+    /// (2^53, the same bound as the Mosaico's PT_EPOCH_MAX).
+    public static let maxEpoch = 1 << 53
 
     public enum Input: Sendable {
         /// "Send to <device>" or the portal hole.
@@ -64,6 +67,12 @@ public struct TravelNode: Sendable {
     /// iOS: the app is in the foreground. The Mac can always host.
     public var canHost = true
     public var knownSpecies: Set<String> = ["frogg"]
+    /// Device ids whose status reply may make the copy here give way to a newer one. Peer ids
+    /// are self-declared, so only devices the user trusted or paired belong here. Nil = any
+    /// device (the bare protocol; TripRunner always sets it).
+    public var mayGiveWayTo: Set<String>?
+    /// The owner we last sent `call` to, and when: its `decline` (e.g. "locked") is surfaced.
+    private var called: (deviceId: String, at: Date)?
     private(set) var session: Session?
     /// When we last sent `status` to each device (by id): only those may answer.
     private var asked: [String: Date] = [:]
@@ -101,6 +110,8 @@ public struct TravelNode: Sendable {
     public mutating func abandon(reload: StoredPet?, reason: String, at now: Date) -> [Output] {
         var out: [Output] = []
         switch session {
+        case .sending(_, .committed, _):
+            break   // the receiver may own it already: an abort could make it drop the only copy
         case .sending(let p, let phase, _):
             let id: UUID?, e: Int
             switch phase {
@@ -153,9 +164,11 @@ public struct TravelNode: Sendable {
         case .send(let peer): return startTrip(to: peer, at: now)
         case .call(let owner):
             guard let r = record, !r.isOwned else { return [] }
+            called = (owner.deviceId, now)
             return [.send(envelope(.call, to: owner, petId: r.petId, epoch: r.epoch, at: now), to: owner)]
         case .received(let env, let peer):
-            guard env.v == Envelope.version, env.to == me.deviceId, env.from == peer.deviceId else { return [] }
+            guard env.v == Envelope.version, env.to == me.deviceId, env.from == peer.deviceId,
+                  env.epoch >= 0, env.epoch <= Self.maxEpoch else { return [] }
             return receive(env, from: peer, at: now)
         case .connected(let peer):
             guard let r = record else { return [] }
@@ -212,6 +225,12 @@ public struct TravelNode: Sendable {
             return [.send(envelope(.transfer, to: peer, petId: s.petId, epoch: next.epoch, payload: Payload(state: next), at: now), to: peer)]
 
         case .decline:
+            // The owner turned down our `call` (e.g. "locked"): say so, nothing else changes.
+            if session == nil, let c = called, c.deviceId == peer.deviceId, now >= c.at,
+               now.timeIntervalSince(c.at) <= Self.askWindow, let r = record, !r.isOwned, r.petId == env.petId {
+                called = nil
+                return [.shrug(reason: env.payload.reason ?? DeclineReason.userDeclined.rawValue)]
+            }
             guard case .sending(let p, .offered(let e), _) = session, same(p, peer), env.epoch == e else { return [] }
             let reason = env.payload.reason ?? DeclineReason.userDeclined.rawValue
             var out = abortTrip(peer, petId: env.petId, epoch: e, reason: reason, at: now)
@@ -357,17 +376,15 @@ public struct TravelNode: Sendable {
             // only the device it came from can settle it
             if let from, !same(from, peer) { return [] }
             switch held {
-            case .away where peerEpoch == st.epoch:
+            case .away where peerEpoch == st.epoch && env.payload.holderId == me.deviceId:
+                // the sender committed to us (not to another device at the same epoch)
                 return promote(epoch: st.epoch, petId: st.petId, from: peer, at: now)
             case .owned where peerEpoch < st.epoch && !peerInTrip:
                 if case .receiving(let p, _, _, _) = session, same(p, peer) { session = nil }
                 return discardPending(st, from: peer)
-            case .none:
-                // The sender has nothing: ours is the only copy.
-                if case .receiving(let p, _, _, _) = session, same(p, peer) { session = nil }
-                record = .owned(st)
-                return [.saved(record!), .playEntrance]
             default:
+                // "none" settles nothing: the sender's id is self-declared, and promoting on it
+                // could make a second owner. The copy stays pending until the sender answers.
                 return []
             }
 
@@ -395,16 +412,33 @@ public struct TravelNode: Sendable {
             let newer = (held == .owned || held == .away) && peerEpoch > s.epoch
             let tie = held == .owned && peerEpoch == s.epoch && peer.deviceId < me.deviceId
             guard newer || tie else { return [] }
+            if let allowed = mayGiveWayTo, !allowed.contains(peer.deviceId) { return [] }
             // where it is: the device the peer says it went to, or the peer itself
             var holder = peer
             if held == .away, let hid = env.payload.holderId, !hid.isEmpty {
                 holder = DeviceRef(deviceId: hid, deviceName: env.payload.holderName ?? hid)
             }
             guard !same(holder, me) else { return [] }
-            // the copy that lost is stale: no tombstone, so it can never be brought back
-            record = .away(petId: s.petId, epoch: peerEpoch, ownerName: holder.deviceName, ownerId: holder.deviceId, tombstone: nil)
+            // The copy that lost stays as a tombstone this device still owns: status never restores
+            // it by itself (its owner isn't the holder), but a wrong give-way can be reclaimed by hand.
+            var kept = s
+            kept.savedAt = now
+            record = .away(petId: s.petId, epoch: peerEpoch, ownerName: holder.deviceName, ownerId: holder.deviceId, tombstone: kept)
+            var out: [Output] = [.saved(record!)]
+            // a trip in progress ends: tell its peer (as the Mosaico does)
+            if case .sending(let p, let phase, _) = session {
+                switch phase {
+                case .offered(let e):
+                    out.append(.send(envelope(.abort, to: p, petId: s.petId, epoch: e, payload: Payload(reason: "gaveWay"), at: now), to: p))
+                case .transferred(let next, _):
+                    out.append(.send(envelope(.abort, to: p, petId: next.petId, epoch: next.epoch, payload: Payload(reason: "gaveWay"), at: now), to: p))
+                case .committed:
+                    break
+                }
+            }
             session = nil
-            return [.saved(record!), .playExit(to: holder)]   // it's there, not here: leave the screen
+            out.append(.playExit(to: holder))   // it's there, not here: leave the screen
+            return out
         }
     }
 

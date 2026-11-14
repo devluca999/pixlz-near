@@ -33,6 +33,36 @@ public final class ListMenuView: NSView {
         return min(max(ceil(need), 220), 320)
     }
     static let rowHeight: CGFloat = 34
+    /// The widest a row title can be and still show whole in the widest (320 pt) list.
+    public static let maxTitleWidth: CGFloat = 236
+
+    /// `text` broken into row titles that each fit `width` (13 pt semibold), losing nothing:
+    /// each source line's pieces joined back give the line. Breaks after a space when one is
+    /// near the end, else mid-word (long paths, base64). Empty lines are skipped.
+    public static func wrap(_ text: String, width: CGFloat = maxTitleWidth) -> [String] {
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        func fits(_ s: Substring) -> Bool { (String(s) as NSString).size(withAttributes: [.font: font]).width <= width }
+        var out: [String] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            var rest = Substring(line)
+            while !rest.isEmpty {
+                if fits(rest) { out.append(String(rest)); break }
+                // the longest prefix that fits (at least one character)
+                var lo = 1, hi = rest.count
+                while lo < hi {
+                    let mid = (lo + hi + 1) / 2
+                    if fits(rest.prefix(mid)) { lo = mid } else { hi = mid - 1 }
+                }
+                var cut = rest.index(rest.startIndex, offsetBy: lo)
+                if let sp = rest[..<cut].lastIndex(of: " "), rest.distance(from: rest.startIndex, to: sp) >= lo / 2 {
+                    cut = rest.index(after: sp)
+                }
+                out.append(String(rest[..<cut]))
+                rest = rest[cut...]
+            }
+        }
+        return out
+    }
 
     public init(rows: [Row], look: SurfaceView.Look) {
         self.rows = rows

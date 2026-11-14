@@ -15,6 +15,13 @@ import Testing
         return events
     }
 
+    @Test func aDotRightOnTheCatNeverMakesNaN() {
+        var g = LaserChase(cat: CGPoint(x: 700, y: 500), at: 0, bounds: screen)
+        let events = run(&g, from: 0, seconds: 1) { _ in CGPoint(x: 700, y: 500) }
+        #expect(!g.cat.x.isNaN && !g.cat.y.isNaN && !g.velocity.dx.isNaN && !g.velocity.dy.isNaN)
+        #expect(events.contains(.caught(1)))
+    }
+
     @Test func aStillDotGetsCaughtQuickly() {
         var g = LaserChase(cat: CGPoint(x: 100, y: 800), at: 0, bounds: screen)
         let events = run(&g, from: 0, seconds: 2) { _ in CGPoint(x: 700, y: 500) }

@@ -15,6 +15,7 @@ public struct HookEvent: Sendable, Equatable {
     public var transcriptPath: String? // transcript_path (every event)
     public var stopHookActive: Bool    // stop_hook_active (Stop): already continuing because a Stop hook blocked
     public var lastAssistantMessage: String?  // last_assistant_message (Stop): its final reply this turn
+    public var toolUseID: String?      // tool_use_id (PreToolUse, PostToolUse, PermissionRequest, when Claude Code sends it)
 
     public init(name: String, sessionID: String, cwd: String = "", prompt: String? = nil, toolName: String? = nil,
                 toolInput: [String: String] = [:], message: String? = nil, transcriptPath: String? = nil, stopHookActive: Bool = false) {
@@ -22,6 +23,7 @@ public struct HookEvent: Sendable, Equatable {
         self.toolName = toolName; self.toolInput = toolInput; self.message = message
         self.transcriptPath = transcriptPath; self.stopHookActive = stopHookActive
         self.lastAssistantMessage = nil
+        self.toolUseID = nil
     }
 
     /// From the raw stdin JSON. Nil when it isn't a hook event Pixlz understands.
@@ -39,6 +41,7 @@ public struct HookEvent: Sendable, Equatable {
                   transcriptPath: (o["transcript_path"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                   stopHookActive: o["stop_hook_active"] as? Bool ?? false)
         lastAssistantMessage = (o["last_assistant_message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        toolUseID = (o["tool_use_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -71,6 +74,8 @@ public struct AgentRequest: Sendable, Equatable, Identifiable {
     public var received: Date
     /// Pixlz holds the hook, so Allow / Deny here answers it. Not held: answer in the terminal.
     public var held = false
+    /// The tool call it asks about (`tool_use_id`), when Claude Code sent one.
+    public var toolUseID: String? = nil
 }
 
 public enum AgentDecision: String, Sendable { case allow, deny }
@@ -127,16 +132,17 @@ public struct AgentHub: Sendable {
             s.prompt = e.prompt.map(Self.firstLine)
             s.doing = "Thinking"
             s.state = .working
-            answeredElsewhere(e.sessionID)
+            answeredElsewhere(e.sessionID)   // a new prompt: the turn that asked is over
         case "PreToolUse":
-            // A new tool call means the last question in this session was settled.
-            answeredElsewhere(e.sessionID)
+            // Another tool call: a question left to the terminal was settled there. One Pixlz
+            // holds stays (parallel tool calls): only its own outcome or the turn's end clears it.
+            answeredElsewhere(e.sessionID, keepHeld: true)
             s.doing = Self.describe(tool: e.toolName ?? "", input: e.toolInput, present: true)
-            s.state = .working
+            s.state = requests.contains { $0.sessionID == e.sessionID } ? .needsYou : .working
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
-            // It ran: whatever it asked about was answered (here or in the terminal).
-            answeredElsewhere(e.sessionID)
-            s.state = .working
+            // That call ran (or was refused): its question was answered (here or in the terminal).
+            answered(e)
+            s.state = requests.contains { $0.sessionID == e.sessionID } ? .needsYou : .working
         case "Stop":
             answeredElsewhere(e.sessionID)
             if let r = e.lastAssistantMessage { s.lastReply = r }
@@ -149,7 +155,7 @@ public struct AgentHub: Sendable {
             requests.append(AgentRequest(id: id, sessionID: e.sessionID, project: s.project, tool: tool,
                                          detail: Self.detail(tool: tool, input: e.toolInput),
                                          summary: Self.describe(tool: tool, input: e.toolInput, present: false),
-                                         received: now))
+                                         received: now, toolUseID: e.toolUseID))
             s.doing = "Needs you: " + Self.describe(tool: tool, input: e.toolInput, present: false)
             s.state = .needsYou
             newRequest = id
@@ -198,9 +204,26 @@ public struct AgentHub: Sendable {
         return old
     }
 
-    private mutating func answeredElsewhere(_ sessionID: String) {
-        requests.removeAll { $0.sessionID == sessionID }
-        if var s = sessions[sessionID], s.state == .needsYou { s.state = .working; sessions[sessionID] = s }
+    private mutating func answeredElsewhere(_ sessionID: String, keepHeld: Bool = false) {
+        requests.removeAll { $0.sessionID == sessionID && !(keepHeld && $0.held) }
+        if var s = sessions[sessionID], s.state == .needsYou, !requests.contains(where: { $0.sessionID == sessionID }) {
+            s.state = .working; sessions[sessionID] = s
+        }
+    }
+
+    /// The request(s) for this one tool call leave: by `tool_use_id` when both have it, else the
+    /// same tool on the same command / file (or any of that tool when the event names no input).
+    private mutating func answered(_ e: HookEvent) {
+        let tool = e.toolName ?? ""
+        let detail = Self.detail(tool: tool, input: e.toolInput)
+        requests.removeAll { r in
+            guard r.sessionID == e.sessionID else { return false }
+            if let a = r.toolUseID, let b = e.toolUseID { return a == b }
+            return r.tool == tool && (detail.isEmpty || r.detail == detail)
+        }
+        if var s = sessions[e.sessionID], s.state == .needsYou, !requests.contains(where: { $0.sessionID == e.sessionID }) {
+            s.state = .working; sessions[e.sessionID] = s
+        }
     }
 
     private mutating func settle(_ sessionID: String) {
@@ -238,7 +261,7 @@ public struct AgentHub: Sendable {
         }
     }
 
-    /// The exact thing being approved, shown in full on the card.
+    /// The exact thing being approved, shown in full on the card (wrapped; long ones open whole).
     public static func detail(tool: String, input: [String: String]) -> String {
         switch tool {
         case "Bash": return input["command"] ?? ""

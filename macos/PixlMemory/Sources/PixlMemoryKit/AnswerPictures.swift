@@ -13,7 +13,15 @@ public struct AnswerPicture: Sendable, Equatable {
 
 /// Pictures for an answer that lists things ("Chicago landmarks" → Willis Tower, Cloud Gate, …).
 /// Only the names the answer lists are looked up, on Wikipedia; the question isn't sent.
+/// Opt-in (Settings › Privacy & Memory › Pictures for answers): see `shouldFetch`.
 public enum AnswerPictures {
+    /// Whether to look up pictures for this answer at all. Only when you turned it on in
+    /// Settings (it sends the names an answer lists to Wikipedia), and never for an answer
+    /// drawn from your saved highlights (their names are yours, not the web's).
+    public static func shouldFetch(for r: AskResult, enabled: Bool) -> Bool {
+        enabled && (r.highlights ?? []).isEmpty
+    }
+
     /// The things an answer lists: its bold names, else the lead of each list item
     /// ("- Navy Pier: a lakefront …" → "Navy Pier"). At least two, or nothing: one bold word
     /// in a paragraph isn't a list of things to picture.

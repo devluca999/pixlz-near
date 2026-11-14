@@ -47,3 +47,13 @@ test("the old right-click save still needs a selection", async () => {
   selection = null;
   assert.deepEqual(await saveFrom(TAB, null), { ok: false, error: "nothing selected" });
 });
+
+test("disambiguation counts the selection's start term, not the note's words", async () => {
+  selection = { text: "the frog", before: "On Monday we saw ", after: " on a lily pad.",
+                pageText: "On Monday we saw the frog on a lily pad. On Tuesday the frog left.", linkable: true };
+  posted.length = 0;
+  const r = await saveFrom(TAB, null, { wholePage: true, note: "remember this" });
+  assert.equal(r.ok, true);
+  assert.equal(posted[0].body.text, "remember this\n\nthe frog");
+  assert.match(r.link, /#:~:text=Monday%20we%20saw-,the%20frog,-on%20a%20lily$/);
+});

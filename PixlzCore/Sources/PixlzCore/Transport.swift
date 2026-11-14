@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 // SPEC §10.3. The platform layer implements `PetTransport` (LocalBonjourTransport on Apple, D9);
@@ -123,26 +122,5 @@ public enum Framing {
             }
             return out
         }
-    }
-}
-
-/// Pairing (SPEC §10.3): the Mac shows a 6-digit code, the user types it on the iPhone, and both
-/// derive the same TLS pre-shared key. The platform layer stores it in the Keychain.
-public enum Pairing {
-    public static func makeCode<R: RandomNumberGenerator>(using rng: inout R) -> String {
-        String(format: "%06d", Int.random(in: 0...999_999, using: &rng))
-    }
-
-    public static func makeCode() -> String {
-        var rng = SystemRandomNumberGenerator()
-        return makeCode(using: &rng)
-    }
-
-    /// HKDF-SHA256 over the code, salted with both device IDs (sorted, so both sides agree).
-    public static func deriveKey(code: String, deviceA: String, deviceB: String) -> SymmetricKey {
-        let salt = [deviceA, deviceB].sorted().joined(separator: "|")
-        return HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: Data(code.utf8)),
-            salt: Data(salt.utf8), info: Data("pixlz-pairing-v1".utf8), outputByteCount: 32)
     }
 }

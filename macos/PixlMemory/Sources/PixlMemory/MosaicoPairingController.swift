@@ -183,6 +183,11 @@ final class MosaicoPairingController {
         }
         paired.last = ok.n
         Self.save(peer.deviceId, paired)
+        // The device only saw a shortened or cleaned-up copy of this command: it can't allow it.
+        if ok.behavior == "allow" && !MosaicoFeed.answerableOnDevice(summary: req.summary, detail: req.detail) {
+            Debug.log("pairing: \(peer.deviceName) tried to allow a command it couldn't show in full; ignored")
+            return nil
+        }
         return (ok.id, ok.behavior)
     }
 

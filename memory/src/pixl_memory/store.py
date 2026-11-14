@@ -277,7 +277,7 @@ class Store:
         """Paid yoctoNEAR on days first_day…last_day inclusive (ISO dates sort as text), by one
         Pixl's account when given."""
         clause, args = self._account_clause(account, frogg_legacy)
-        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day>=? AND day<=? AND status='paid'" + clause,
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day>=? AND day<=? AND status IN ('paid','pending')" + clause,
                                 (first_day, last_day, *args)).fetchall()
         return sum(int(r[0]) for r in rows)
 
@@ -296,7 +296,7 @@ class Store:
 
     def spent_on(self, day: str, account: str | None = None, frogg_legacy: bool = False) -> int:
         clause, args = self._account_clause(account, frogg_legacy)
-        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status='paid'" + clause,
+        rows = self._db.execute("SELECT amount_yocto FROM payments WHERE day=? AND status IN ('paid','pending')" + clause,
                                 (day, *args)).fetchall()
         return sum(int(r[0]) for r in rows)
 

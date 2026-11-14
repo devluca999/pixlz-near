@@ -289,10 +289,15 @@ final class BubbleMenu {
         }
     }
 
-    /// `onDismiss`: the list was left without a choice (Esc or a click away).
-    func showList(_ rows: [ListMenuView.Row], near slotID: String?, onSelect: @escaping @MainActor (ListMenuView.Row) -> Void,
+    /// `onDismiss`: the list was left without a choice (Esc, a click away, or another list
+    /// taking its place: a consent prompt replaced is answered No, never left hanging).
+    /// `key: false` shows it without taking the keyboard (a click on it does).
+    func showList(_ rows: [ListMenuView.Row], near slotID: String?, key: Bool = true, onSelect: @escaping @MainActor (ListMenuView.Row) -> Void,
                   onDismiss: (@MainActor () -> Void)? = nil) {
+        let replaced = listDismiss
+        listDismiss = nil
         closeList()
+        replaced?()
         let l = ListMenuView(rows: rows, look: cardLook)
         l.onSelect = onSelect
         l.onCancel = { [weak self] in self?.dismissList(); self?.close(reason: "esc") }
@@ -314,7 +319,7 @@ final class BubbleMenu {
         if r.maxY > app.froggScreen.maxY - 8 { r.origin.y = anchor.minY - l.frame.height - 8 }
         p.setFrameOrigin(Placement.fit(r, in: app.froggScreen).origin)
         p.alphaValue = 0
-        p.makeKeyAndOrderFront(nil)
+        if key { p.makeKeyAndOrderFront(nil) } else { p.orderFrontRegardless() }
         p.makeFirstResponder(l)
         NSAnimationContext.runAnimationGroup { ctx in  // 220 ms grow-in (C8 mmIn), on the system's display-synced animator
             ctx.duration = 0.22
@@ -448,20 +453,29 @@ final class BubbleMenu {
         }
     }
 
-    /// One request: the exact command or file, Allow / Deny, snooze.
+    /// Most command lines the request list shows; a longer one opens whole in a card first.
+    static let requestLines = 8
+
+    /// One request: the exact command or file, Allow / Deny, snooze. The command is shown whole
+    /// (wrapped over rows); when it's too long for the list, Allow is only on the card that shows
+    /// all of it, so Return-Return can never allow something you couldn't see.
     func showRequest(_ id: String) {
         let agents = app.agents
         guard let r = agents.hub.requests.first(where: { $0.id == id }) else { showAgents(near: nil); return }
-        let detail = r.detail.count > 160 ? String(r.detail.prefix(159)) + "…" : r.detail
         var rows = [ListMenuView.Row(id: "what", title: "\(r.project) wants to: \(r.summary)", icon: "warn", enabled: false)]
-        if !detail.isEmpty, detail != r.summary {
-            rows += detail.split(separator: "\n", omittingEmptySubsequences: true).prefix(4).enumerated().map { i, l in
-                ListMenuView.Row(id: "detail.\(i)", title: String(l), icon: nil, enabled: false)
-            }
+        let lines = r.detail != r.summary ? ListMenuView.wrap(r.detail) : []
+        let whole = lines.count <= Self.requestLines
+        rows += lines.prefix(whole ? lines.count : Self.requestLines - 2).enumerated().map { i, l in
+            ListMenuView.Row(id: "detail.\(i)", title: l, icon: nil, enabled: false)
+        }
+        if !whole {
+            rows.append(ListMenuView.Row(id: "cut", title: "… \(lines.count - (Self.requestLines - 2)) more lines not shown",
+                                         icon: nil, enabled: false))
+            rows.append(ListMenuView.Row(id: "full", title: "Review the whole command", icon: "info", trailing: "↵"))
         }
         if agents.canAnswer(id) {
-            rows += [ListMenuView.Row(id: "allow", title: "Allow", icon: "check", trailing: "↵"),
-                     ListMenuView.Row(id: "deny", title: "Deny", icon: nil)]
+            if whole { rows.append(ListMenuView.Row(id: "allow", title: "Allow", icon: "check", trailing: "↵")) }
+            rows.append(ListMenuView.Row(id: "deny", title: "Deny", icon: nil))
         } else {
             rows.append(ListMenuView.Row(id: "terminal", title: "Answer it in the terminal (turn on Answer from Pixlz to answer here)",
                                          icon: "info", enabled: false))
@@ -472,6 +486,7 @@ final class BubbleMenu {
             switch row.id {
             case "allow": self.closeList(); agents.decide(id, .allow)
             case "deny": self.closeList(); agents.decide(id, .deny)
+            case "full": self.closeList(); self.showRequestCard(id)
             case "snooze": agents.snooze(); self.closeList()
             default: break
             }
@@ -484,6 +499,25 @@ final class BubbleMenu {
         }
     }
 
+    /// The whole request on a card (scrolls when long); Allow / Deny are clicks.
+    func showRequestCard(_ id: String) {
+        let agents = app.agents
+        guard let r = agents.hub.requests.first(where: { $0.id == id }) else { showAgents(near: nil); return }
+        let card = CommandCard(project: r.project, summary: r.summary, detail: r.detail, canAnswer: agents.canAnswer(id), look: cardLook)
+        card.fit()
+        card.onClose = { [weak self] in self?.closeCard() }
+        card.onAllow = { [weak self] in self?.closeCard(); agents.decide(id, .allow) }
+        card.onDeny = { [weak self] in self?.closeCard(); agents.decide(id, .deny) }
+        showCard(card, name: "request")
+        let gen = cardGen
+        agents.onChange = { [weak self] in
+            // answered in the terminal, or timed out: the card goes
+            guard let self, self.cardGen == gen, self.cardPanel != nil,
+                  !agents.hub.requests.contains(where: { $0.id == id }) else { return }
+            self.closeCard()
+        }
+    }
+
     /// Closes the list as left without a choice: runs its `onDismiss` once.
     func dismissList() {
         let d = listDismiss
@@ -491,6 +525,9 @@ final class BubbleMenu {
         closeList()
         d?()
     }
+
+    /// A list is open that waits for a yes or no (a consent or pairing prompt).
+    var listAwaitsAnswer: Bool { listPanel != nil && listDismiss != nil }
 
     func closeList() {
         listDismiss = nil
@@ -595,7 +632,9 @@ final class BubbleMenu {
                 case .success(let r):
                     card.show(r)
                     self.app.travel.noteAnswer(question: q, answer: r.answer)
-                    // an answer that lists places or things: their pictures, looked up by name on Wikipedia
+                    // an answer that lists places or things: their pictures, looked up by name on Wikipedia,
+                    // only if you turned that on (the names leave the Mac), never for your own highlights
+                    guard AnswerPictures.shouldFetch(for: r, enabled: self.app.settings.answerPictures == true) else { break }
                     Task { @MainActor [weak self, weak card] in
                         let pics = await AnswerPictures.find(for: r.answer)
                         Debug.log("ask: \(pics.count) pictures")

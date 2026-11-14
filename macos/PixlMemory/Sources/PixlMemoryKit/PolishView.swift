@@ -88,8 +88,11 @@ public final class PolishView: NSView {
                 let line = rc.status == "paid"
                     ? "\(PixlSkins.name) paid \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?") from its own testnet wallet"
                         + (rc.balanceAfterNear.map { " · \($0) Ⓝ left" } ?? "")
+                    : rc.status == "pending"
+                    ? "\(PixlSkins.name) sent \(rc.amountNear ?? "?") Ⓝ to \(rc.to ?? "?"): payment sent, confirming…"
                     : rc.bubble
-                let f = wrapping(line, font: Theme.mono(11, .bold), color: rc.status == "paid" ? Theme.text : Theme.partial)
+                let ok = rc.status == "paid" || rc.status == "pending"   // pending: sent, may still land; not a failure
+                let f = wrapping(line, font: Theme.mono(11, .bold), color: ok ? Theme.text : Theme.partial)
                 if let link = rc.explorer, let url = URL(string: link) {
                     let a = NSMutableAttributedString(attributedString: f.attributedStringValue)
                     a.append(NSAttributedString(string: "  receipt ↗", attributes: [.link: url, .font: Theme.mono(11, .bold)]))

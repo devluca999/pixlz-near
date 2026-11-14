@@ -238,7 +238,9 @@ public struct WorldMap: Sendable {
 
     /// Whether a hop from `a` to `b` stays on the display and out of the keep-out rect.
     public func arcIsClear(from a: CGPoint, to b: CGPoint, geometry g: PixlGeometry, bounds: CGRect) -> Bool {
-        let hop = HopPlan(from: a, to: b, apexHeight: g.apexRange.lowerBound, gravity: g.manifest.physics.gravity * Double(g.scale))
+        let apex = g.apexRange.lowerBound, gravity = g.manifest.physics.gravity * Double(g.scale)
+        guard apex > 0, gravity > 0 else { return false }   // no hop is possible (HopPlan would trap)
+        let hop = HopPlan(from: a, to: b, apexHeight: apex, gravity: gravity)
         let top = visibleTop(at: a)
         return hop.samples().allSatisfy { pt in
             let hb = g.hitbox(at: pt)

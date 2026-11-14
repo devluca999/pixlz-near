@@ -196,7 +196,9 @@ struct TravelSim {
         sim.violations = []
         sim.reconnect(); sim.drain()
         #expect(sim.owners == [phone])
-        #expect(sim[mac].record?.completeCopy == nil)   // the losing copy is stale: no tombstone (P3)
+        // the losing copy is kept as a tombstone of its own (reclaim only by hand, P3)
+        guard case .away(_, 5, _, _, let t?)? = sim[mac].record else { Issue.record("no tombstone"); return }
+        #expect(t.owner.deviceId == mac.deviceId)
     }
 
     @Test func conflictTieGoesToSmallerDeviceId() {
@@ -353,16 +355,5 @@ struct TravelSim {
         #expect(throws: Framing.FramingError.frameTooLarge(0x7FFF_FFFF)) {
             try dec.feed(Data([0x7F, 0xFF, 0xFF, 0xFF]))
         }
-    }
-
-    @Test func pairingKeyIsSymmetricAndCodeBound() {
-        let k1 = Pairing.deriveKey(code: "123456", deviceA: "mac", deviceB: "phone")
-        let k2 = Pairing.deriveKey(code: "123456", deviceA: "phone", deviceB: "mac")
-        let k3 = Pairing.deriveKey(code: "123457", deviceA: "mac", deviceB: "phone")
-        #expect(k1 == k2)
-        #expect(k1 != k3)
-        var rng = SeededRandom(seed: 5)
-        let code = Pairing.makeCode(using: &rng)
-        #expect(code.count == 6 && code.allSatisfy(\.isNumber))
     }
 }

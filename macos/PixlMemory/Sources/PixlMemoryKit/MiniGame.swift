@@ -95,13 +95,14 @@ public struct LaserChase: Sendable {
         case .run, .stalk:
             if dist < Self.pounceRange {
                 phase = .pounce; phaseUntil = t + Self.pounceTime
-                pounceDir = CGVector(dx: dx / dist, dy: dy / dist)
+                // on the dot already (dist 0): no direction, it just lands (never NaN)
+                pounceDir = dist > 0 ? CGVector(dx: dx / dist, dy: dy / dist) : CGVector(dx: 0, dy: 0)
                 velocity = CGVector(dx: pounceDir.dx * Self.pounceSpeed, dy: pounceDir.dy * Self.pounceSpeed)
                 return .pounced
             }
             phase = dist < Self.stalkRange ? .stalk : .run
             let top = phase == .stalk ? Self.runSpeed * 0.35 : Self.runSpeed
-            let want = CGVector(dx: dx / dist * top, dy: dy / dist * top)
+            let want = dist > 0 ? CGVector(dx: dx / dist * top, dy: dy / dist * top) : CGVector(dx: 0, dy: 0)
             let ddx = want.dx - velocity.dx, ddy = want.dy - velocity.dy
             let dv = hypot(ddx, ddy), maxDv = Self.accel * d
             if dv > maxDv { velocity.dx += ddx / dv * maxDv; velocity.dy += ddy / dv * maxDv } else { velocity = want }

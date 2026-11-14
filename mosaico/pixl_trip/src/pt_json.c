@@ -248,14 +248,20 @@ bool pt_json_int(pt_span_t v, int64_t *out)
     if (i >= v.len) {
         return false;
     }
-    int64_t r = 0;
+    /* Out-of-range numbers are rejected, not wrapped: |INT64_MIN| = INT64_MAX + 1. */
+    const uint64_t limit = neg ? (uint64_t)INT64_MAX + 1u : (uint64_t)INT64_MAX;
+    uint64_t r = 0;
     for (; i < v.len; i++) {
         if (v.p[i] < '0' || v.p[i] > '9') {
             return false;
         }
-        r = r * 10 + (v.p[i] - '0');
+        unsigned d = (unsigned)(v.p[i] - '0');
+        if (r > (limit - d) / 10) {
+            return false;
+        }
+        r = r * 10 + d;
     }
-    *out = neg ? -r : r;
+    *out = neg ? (r == (uint64_t)INT64_MAX + 1u ? INT64_MIN : -(int64_t)r) : (int64_t)r;
     return true;
 }
 

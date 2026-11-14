@@ -42,7 +42,7 @@ def test_real_report_verifies(captured):
     assert v.model_signing_address == captured["report"]["model_attestations"][0]["signing_address"].lower()
     assert v.gateway_signing_address == captured["report"]["gateway_attestation"]["signing_address"].lower()
     assert gpu.payloads and gpu.payloads[0]["nonce"] == captured["nonce"]
-    assert any("vllm" in i or "sglang" in i or "@sha256:" in i for i in v.images) or v.images == []
+    assert v.images and any("vllm" in i or "sglang" in i or "@sha256:" in i for i in v.images), v.images
 
 
 def test_wrong_nonce_fails(captured):

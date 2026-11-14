@@ -151,7 +151,27 @@ struct TripRunnerTests {
         r.recheck()
         #expect(sent.map(\.0.type) == [.status, .status] && Set(sent.map(\.1.deviceId)) == ["A-OTHER", "C-THIRD"])
         // the sender says it's away at that epoch: owned here, checks stop, one more soon
-        r.feed(.received(env(.statusReply, epoch: 2, payload: Payload(held: .away, inTrip: false)), from: other))
+        var toMe = Payload(held: .away, inTrip: false)
+        toMe.holderId = me.deviceId
+        r.feed(.received(env(.statusReply, epoch: 2, payload: toMe), from: other))
         #expect(r.owned != nil && !r.pendingCheckActive && r.recheckSoonScheduled)
+    }
+
+    // An untrusted, unpaired device can't make the Pixl here give way; a paired one can.
+    @Test func onlyTrustedOrPairedPeersCanTakeIt() {
+        let stranger = DeviceRef(deviceId: "0-STRANGER", deviceName: "Stranger")
+        let r = TripRunner(me: me, store: FlakyStore(.owned(pixl(owner: me, epoch: 4))), knownSpecies: ["frogg"])
+        r.sender = { _, _ in }
+        var gaveWay = 0
+        r.onGaveWay = { _ in gaveWay += 1 }
+        r.feed(.connected(stranger))
+        r.feed(.received(Envelope(petId: petId, from: stranger.deviceId, to: me.deviceId, type: .statusReply, epoch: 50,
+                                  payload: Payload(held: .owned, inTrip: false), sentAt: Date()), from: stranger))
+        #expect(r.owned != nil && gaveWay == 0)
+        r.isPaired = { $0 == stranger.deviceId }
+        r.feed(.connected(stranger))
+        r.feed(.received(Envelope(petId: petId, from: stranger.deviceId, to: me.deviceId, type: .statusReply, epoch: 50,
+                                  payload: Payload(held: .owned, inTrip: false), sentAt: Date()), from: stranger))
+        #expect(r.owned == nil && gaveWay == 1 && r.canReclaim)
     }
 }

@@ -45,7 +45,7 @@ export function pageReplace(original, text) {
       a.setRangeText(text, s, e, "end");
       a.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: text }));
     }
-    return { ok: a.value.includes(text), kind: "field" };
+    return { ok: a.value.slice(s, s + text.length) === text, kind: "field" };
   }
   const docsFrame = document.querySelector("iframe.docs-texteventtarget-iframe");
   if (location.hostname === "docs.google.com" && docsFrame?.contentDocument) {

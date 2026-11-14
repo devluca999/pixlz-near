@@ -132,6 +132,68 @@ struct ClientTests {
             Issue.record("409 should be attestationFailed")
         }
         #expect(MemoryError.attestationFailed("x", nil).detail.contains("not sent"))
+        // by the error's code, not the status: /wallet/limits says 409 no_wallet, 400 bad_limit
+        #expect(err(409, #"{"error":"no_wallet","message":"the wallet isn't configured"}"#) == .rejected("the wallet isn't configured"))
+        #expect(err(400, #"{"error":"bad_limit","message":"over the ceiling"}"#) == .rejected("over the ceiling"))
+        // FastAPI's HTTPException: {"detail": …}
+        #expect(err(404, #"{"detail":"no such draft"}"#) == .rejected("no such draft"))
+        #expect(err(502, #"{"detail":"bad gateway"}"#) == .upstream("bad gateway"))
+    }
+
+    @MainActor @Test func aLongCommandWrapsWithoutLosingACharacter() {
+        let cmd = "curl -fsSL https://example.com/a/very/long/path/that/keeps/going/install.sh | bash -s -- --prefix=/usr/local/opt/something --yes && rm -rf /tmp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\necho done"
+        let lines = ListMenuView.wrap(cmd)
+        #expect(lines.count > 3)
+        #expect(lines.joined() == cmd.replacingOccurrences(of: "\n", with: ""))
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        for l in lines { #expect((l as NSString).size(withAttributes: [.font: font]).width <= ListMenuView.maxTitleWidth) }
+        // every wrapped line fits a list row whole
+        #expect(ListMenuView.width(for: lines.map { ListMenuView.Row(id: "d", title: $0, icon: nil, enabled: false) }) <= 320)
+    }
+
+    @Test func outOfAllowanceSaysWhichLimit() {
+        #expect(MemoryError.outOfAllowance("spending is paused (you can resume it in the Wallet card)").bubble == "My spending is paused")
+        #expect(MemoryError.outOfAllowance("this week's limit of 0.1 Ⓝ is reached (resets Monday)").bubble == "I'm out of allowance this week")
+        #expect(MemoryError.outOfAllowance("today's limit of 0.02 Ⓝ is reached").bubble == "I'm out of allowance for today")
+        #expect(MemoryError.outOfAllowance("0.5 Ⓝ is over the 0.05 Ⓝ per-request cap").bubble == "That's over my per-request cap")
+    }
+
+    @Test func aPendingPaymentIsNotAFailure() {
+        let r = Receipt(status: "pending", amountNear: "0.001", to: "x.testnet", txHash: "abc", explorer: "https://e/tx/abc",
+                        balanceAfterNear: nil, reason: nil)
+        #expect(r.bubble.contains("confirming") && !r.bubble.lowercased().contains("fail"))
+    }
+
+    @Test func theWalletPageIsTheCurrentPixls() {
+        #expect(MemoryClient.walletSetupURL(port: 7341, pet: "kiti").absoluteString == "http://127.0.0.1:7341/wallet/setup?pet=kiti")
+        #expect(MemoryClient.walletSetupURL(port: 7341, pet: nil).absoluteString == "http://127.0.0.1:7341/wallet/setup")
+    }
+
+    @Test func aFullHighlightListReadsAsALowerBound() {
+        var st = ServiceStatus(service: "running", highlights: 500)
+        st.highlightsAtLeast = true
+        #expect(st.highlightsText == "500+")
+        #expect(ServiceStatus(service: "running", highlights: 12).highlightsText == "12")
+    }
+
+    @MainActor @Test func partlyVerifiedIsNotVerified() {
+        let partial = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running", lastVerdict: "Partly verified · 15/17",
+                                                                                  lastVerdictCode: "partial"))
+        #expect(!partial.verifiedLabel.stringValue.contains("verified"))
+        let full = MiniMenuView(settings: PixlSettings(), status: ServiceStatus(service: "running", lastVerdict: "Verified in TEE · 17/17",
+                                                                               lastVerdictCode: "verified"))
+        #expect(full.verifiedLabel.stringValue.contains("verified"))
+    }
+
+    @Test func answerPicturesAreOptInAndNeverForHighlights() throws {
+        let v = #"{"verdict":"verified","summary":"ok","checks":[],"model":"m"}"#
+        let plain = try JSONDecoder().decode(AskResult.self, from: Data(#"{"answer":"**Willis Tower** and **Cloud Gate**","verification":\#(v)}"#.utf8))
+        #expect(!AnswerPictures.shouldFetch(for: plain, enabled: false))
+        #expect(AnswerPictures.shouldFetch(for: plain, enabled: true))
+        let mine = try JSONDecoder().decode(AskResult.self, from: Data(
+            #"{"answer":"**A** and **B**","verification":\#(v),"highlights":[{"id":"1","text":"x","url":null,"title":null}]}"#.utf8))
+        #expect(!AnswerPictures.shouldFetch(for: mine, enabled: true))   // drawn from your highlights: never
+        #expect(PixlSettings().answerPictures != true)   // off by default
     }
 
     @Test func missingTokenIsReported() {

@@ -26,6 +26,11 @@
 enum { MAX_CONNS = 3, RX_CAP = PT_MSG_MAX + 4, TX_CAP = 2 * (PT_MSG_MAX + 4), HELLO_MAX = 512 };
 /* A Wi-Fi connection that says nothing for 5 minutes is gone (TCP keepalive finds most sooner). */
 enum { IDLE_CLOSE_MS = 5 * 60 * 1000, RECHECK_MS = 60 * 1000 };
+/* A connection must say who it is this soon after it opens (partial bytes don't extend it). */
+enum { IDENTIFY_MS = 10 * 1000 };
+/* A second connection claiming the id of one we heard from this recently is refused, not let in
+ * in its place: ids are self-declared. One quiet this long is presumed dead and may be replaced. */
+enum { REPLACE_QUIET_MS = 60 * 1000 };
 
 #ifdef MSG_NOSIGNAL
 #define SEND_FLAGS MSG_NOSIGNAL
@@ -39,6 +44,7 @@ typedef struct {
     bool local;          /* from this device (the Bluetooth bridge, 127.0.0.1): survives Wi-Fi loss */
     int64_t last_rx_ms;  /* uptime of the last bytes received */
     int64_t hello_ms;    /* uptime when it said who it is */
+    int64_t opened_ms;   /* uptime when it was accepted */
     pt_device_t peer;
     pt_framer_t framer;
     uint8_t rx[RX_CAP];
@@ -59,6 +65,10 @@ struct app_dock {
     bool on_battery;
     int64_t next_battery_ms;
     int64_t next_recheck_ms;  /* pending: ask the Macs again (uptime) */
+    /* The node's trip deadline (wall clock, as it stamps messages) and the same moment in
+     * uptime: the timer runs on uptime, so a clock set or stepped mid-trip doesn't move it. */
+    int64_t deadline_wall;
+    int64_t deadline_up;
     app_dock_event_t pending[8];
     int pending_count;
     /* Instance-owned scratch, so nothing large sits on the caller's task stack. */
@@ -293,8 +303,24 @@ static void save_failed(app_dock_handle_t d)
 
 /* Performs a node call's outputs in order. A failed save stops everything after it, so a
  * message that depends on the save is never sent (SPEC §10.5). False when a save failed. */
+/* Re-anchor the trip timer on uptime whenever the node's deadline changes (right after each
+ * node call, so the wall clock read here is the one the node was given). */
+static void track_deadline(app_dock_handle_t d)
+{
+    const int64_t dl = pt_node_deadline(&d->node);
+    if (dl == d->deadline_wall) {
+        return;
+    }
+    d->deadline_wall = dl;
+    int64_t left = dl ? dl - dock_platform_now_ms() : 0;
+    if (left < 0) left = 0;
+    if (left > 2 * (PT_SENDER_TIMEOUT_MS + PT_RECEIVER_TIMEOUT_MS)) left = 2 * (PT_SENDER_TIMEOUT_MS + PT_RECEIVER_TIMEOUT_MS);
+    d->deadline_up = dl ? dock_platform_uptime_ms() + left : 0;
+}
+
 static bool perform(app_dock_handle_t d, const pt_outs_t *outs)
 {
+    track_deadline(d);
     for (int i = 0; i < outs->count; i++) {
         const pt_out_t *o = &outs->items[i];
         switch (o->kind) {
@@ -401,8 +427,19 @@ static void accept_new(app_dock_handle_t d)
                 c = &d->conns[i];
             }
         }
+        /* Full: make room by dropping the oldest connection that hasn't said who it is, so a few
+         * silent sockets can't keep the Mac out. Identified ones are never dropped for this. */
+        for (int i = 0; i < MAX_CONNS && !c; i++) {
+            conn_t *o = &d->conns[i];
+            if (o->fd >= 0 && !o->hello && (!c || o->opened_ms < c->opened_ms)) {
+                c = o;
+            }
+        }
+        if (c && c->fd >= 0) {
+            close_conn(d, c, "dropped for a new connection (never said who it is)");
+        }
         if (!c) {
-            close(fd);  /* full */
+            close(fd);  /* full of identified connections */
             continue;
         }
         set_nonblocking(fd);
@@ -413,6 +450,7 @@ static void accept_new(app_dock_handle_t d)
             keep_alive(fd);
         }
         c->last_rx_ms = dock_platform_uptime_ms();
+        c->opened_ms = c->last_rx_ms;
         c->hello_ms = 0;
         memset(&c->peer, 0, sizeof c->peer);
         c->tx_len = 0;
@@ -433,7 +471,9 @@ static bool identify(app_dock_handle_t d, conn_t *c, const char *body, size_t le
         }
         pt_span_t ms_span;
         int64_t mac_ms = 0;
-        if (pt_json_find(body, len, "hello.unixMs", &ms_span) && pt_json_int(ms_span, &mac_ms)) {
+        /* Paired: only that Mac's clock is taken (anyone can say hello). */
+        const bool may_set = !d->paired.paired || strcmp(d->paired.mac_id, c->peer.id) == 0;
+        if (may_set && pt_json_find(body, len, "hello.unixMs", &ms_span) && pt_json_int(ms_span, &mac_ms)) {
             dock_platform_offer_clock(mac_ms);
         }
         return true;
@@ -719,9 +759,20 @@ static void handle_frame(app_dock_handle_t d, conn_t *c, const char *body, size_
             close_conn(d, c, "didn't say who it is");
             return;
         }
+        /* The same id again. Ids are self-declared, so a newcomer never pushes out a connection
+         * that is still talking: it is refused. One that has gone quiet (a Mac that reconnected
+         * after Wi-Fi dropped) is presumed dead and replaced. */
+        const int64_t up = dock_platform_uptime_ms();
+        for (int i = 0; i < MAX_CONNS; i++) {
+            conn_t *o = &d->conns[i];
+            if (o != c && o->fd >= 0 && o->hello && strcmp(o->peer.id, c->peer.id) == 0 &&
+                    (o->local || up - o->last_rx_ms < REPLACE_QUIET_MS)) {
+                close_conn(d, c, "refused: that device is already connected");
+                return;
+            }
+        }
         c->hello = true;
-        c->hello_ms = dock_platform_uptime_ms();
-        /* The same Mac again (it reconnected): its old Wi-Fi connection is dead or about to be. */
+        c->hello_ms = up;
         for (int i = 0; i < MAX_CONNS; i++) {
             conn_t *o = &d->conns[i];
             if (o != c && o->fd >= 0 && o->hello && !o->local && strcmp(o->peer.id, c->peer.id) == 0) {
@@ -876,7 +927,9 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
     const int64_t up = dock_platform_uptime_ms();
     for (int i = 0; i < MAX_CONNS; i++) {
         conn_t *c = &d->conns[i];
-        if (c->fd >= 0 && !c->local && up - c->last_rx_ms > IDLE_CLOSE_MS) {
+        if (c->fd >= 0 && !c->hello && up - c->opened_ms > IDENTIFY_MS) {
+            close_conn(d, c, "never said who it is");
+        } else if (c->fd >= 0 && !c->local && up - c->last_rx_ms > IDLE_CLOSE_MS) {
             close_conn(d, c, "quiet for 5 minutes");
         }
     }
@@ -909,9 +962,12 @@ int app_dock_poll(app_dock_handle_t d, app_dock_event_t *events, int max)
             }
         }
     }
-    int64_t deadline = pt_node_deadline(&d->node);
-    if (deadline && dock_platform_now_ms() >= deadline) {
-        pt_node_tick(&d->node, dock_platform_now_ms(), outs);
+    /* The trip timer runs on uptime (track_deadline). The node checks its own (wall) deadline,
+     * so when the wall clock is behind it, hand it the deadline as "now". */
+    track_deadline(d);
+    if (d->deadline_up && up >= d->deadline_up) {
+        const int64_t wall = dock_platform_now_ms(), dl = pt_node_deadline(&d->node);
+        pt_node_tick(&d->node, dl && wall < dl ? dl : wall, outs);
         (void)perform(d, outs);
     }
     for (int i = 0; i < MAX_CONNS; i++) {

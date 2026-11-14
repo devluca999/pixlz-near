@@ -26,18 +26,34 @@ final class AgentChats {
         p.show()
     }
 
-    /// A session finished its turn and Pixlz holds it for your reply: the Pixl asks.
+    /// The session whose "done. Anything else?" prompt is showing.
+    private var doneAskShown: String?
+
+    /// A session finished its turn and Pixlz holds it for your reply: the Pixl asks. A low-key
+    /// prompt: it never takes the keyboard from what you're typing in, never replaces a list
+    /// you're using, and goes when the reply window closes (nil).
     private func doneAsk(_ sid: String?) {
-        guard let sid else { return }
+        guard let sid else {
+            if doneAskShown != nil, app.menu.list?.rows.contains(where: { $0.id == "doneask.reply" }) == true { app.menu.closeList() }
+            doneAskShown = nil
+            return
+        }
         if let p = panels[sid] { p.refresh(); p.focusField(); return }   // the panel's open: it says "Sends now"
+        let mine = app.menu.list?.rows.contains(where: { $0.id == "doneask.reply" }) == true
+        guard app.menu.listPanel == nil || mine else {
+            Debug.log("agents: done prompt not shown (a list is open); it's under Agents")
+            return
+        }
         let project = app.agents.hub.sessions[sid]?.project ?? "Claude Code"
         let secs = Int(app.agents.replyWindow)
+        doneAskShown = sid
         app.menu.showList([ListMenuView.Row(id: "q", title: "\(project): done. Anything else?", icon: "agents", enabled: false),
-                           ListMenuView.Row(id: "reply", title: "Reply", icon: nil, trailing: "\(secs) s"),
-                           ListMenuView.Row(id: "dismiss", title: "Dismiss", icon: nil, trailing: "esc")], near: nil) { [weak self] row in
+                           ListMenuView.Row(id: "doneask.reply", title: "Reply", icon: nil, trailing: "\(secs) s"),
+                           ListMenuView.Row(id: "dismiss", title: "Dismiss", icon: nil, trailing: "esc")], near: nil, key: false) { [weak self] row in
             guard let self else { return }
+            self.doneAskShown = nil
             self.app.menu.closeList()
-            if row.id == "reply" { self.open(sid) } else if row.id == "dismiss" { self.app.agents.letStopGo(sid) }
+            if row.id == "doneask.reply" { self.open(sid) } else if row.id == "dismiss" { self.app.agents.letStopGo(sid) }
         }
     }
 }
