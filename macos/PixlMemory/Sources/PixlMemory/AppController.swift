@@ -1332,7 +1332,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 show("emotion_annoyed", for: 5)
                 notify(.error(e), voice: .sad)
                 switch e {
-                case .attestationFailed, .serviceDown, .noApiKey, .noCredits, .outOfAllowance: showResult(.error(e, app: sel.app))
+                case .attestationFailed, .replyRejected, .serviceDown, .noApiKey, .noCredits, .outOfAllowance: showResult(.error(e, app: sel.app))
                 default: break
                 }
             }

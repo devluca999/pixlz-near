@@ -123,9 +123,11 @@ public final class PolishView: NSView {
         case .error(let e, let app):
             stack.addArrangedSubview(header(frame: "emotion_annoyed", title: e.bubble, subtitle: app ?? "Pixl Memory"))
             stack.addArrangedSubview(wrapping(e.detail, font: .systemFont(ofSize: 12), color: Theme.text))
-            if case .attestationFailed(_, let v?) = e {
+            switch e {
+            case .attestationFailed(_, let v?), .replyRejected(_, let v?):
                 stack.addArrangedSubview(VerdictBadge(verification: v))
                 stack.addArrangedSubview(checksList(v.checks.filter { $0.status != "pass" }, deployment: nil))
+            default: break
             }
             stack.addArrangedSubview(buttonRow([PixelButton(title: "OK", primary: true) { [weak self] in self?.onClose?() }]))
         }

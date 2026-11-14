@@ -137,6 +137,10 @@ def compute_verdict(checks: list[Check], signature_kind: str | None, *, need_sig
 
 
 def summarize(v: Verification) -> str:
+    signed = any(c.id.startswith("signature.") for c in v.checks)
+    if not signed and v.verdict is not Verdict.FAILED and not v.attestation_ok:
+        unproven = [c.label.lower() for c in v.checks if c.status is Status.SKIP] or ["a required check"]
+        return f"Refused: could not prove {', '.join(unproven)}. Nothing was sent."
     if v.verdict is Verdict.FAILED:
         bad = next(c for c in v.checks if c.status is Status.FAIL)
         return f"Not verified: {bad.label.lower()} failed. Treat this result as untrusted."

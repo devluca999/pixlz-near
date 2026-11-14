@@ -132,6 +132,12 @@ struct ClientTests {
             Issue.record("409 should be attestationFailed")
         }
         #expect(MemoryError.attestationFailed("x", nil).detail.contains("not sent"))
+        // A reply that fails its signature is a different story: the text was sent, the reply is discarded.
+        if case .replyRejected(_, let v?)? = err(502, #"{"error":"response_untrusted","message":"sig","text_sent":true,"verification":{"verdict":"failed","summary":"s","checks":[],"model":"m","trust":"rejected"}}"#) {
+            #expect(v.badge == "Reply rejected")
+        } else { Issue.record("response_untrusted should map to replyRejected") }
+        #expect(!MemoryError.replyRejected("x", nil).detail.contains("not sent"))
+        #expect(MemoryError.replyRejected("x", nil).detail.contains("thrown away"))
         // by the error's code, not the status: /wallet/limits says 409 no_wallet, 400 bad_limit
         #expect(err(409, #"{"error":"no_wallet","message":"the wallet isn't configured"}"#) == .rejected("the wallet isn't configured"))
         #expect(err(400, #"{"error":"bad_limit","message":"over the ceiling"}"#) == .rejected("over the ceiling"))

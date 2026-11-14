@@ -6,6 +6,9 @@ public struct Check: Codable, Sendable, Equatable {
     public let label: String
     public let status: String  // pass | warn | fail | skip
     public let detail: String
+    public init(id: String, label: String, status: String, detail: String) {
+        self.id = id; self.label = label; self.status = status; self.detail = detail
+    }
 }
 
 public struct Verification: Codable, Sendable, Equatable {
@@ -15,17 +18,36 @@ public struct Verification: Codable, Sendable, Equatable {
     public let model: String
     public let signatureKind: String?
     public let modelSigningAddress: String?
+    /// enclave_signed | gateway_signed | unsigned | rejected | attested | refused (verify.py `Trust`).
+    public let trust: String?
+    /// Why the preflight refused to send, one line per unproven mandatory property.
+    public let blocking: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case verdict, summary, checks, model
+        case verdict, summary, checks, model, trust, blocking
         case signatureKind = "signature_kind"
         case modelSigningAddress = "model_signing_address"
+    }
+
+    public init(verdict: String, summary: String, checks: [Check], model: String, signatureKind: String? = nil,
+                modelSigningAddress: String? = nil, trust: String? = nil, blocking: [String]? = nil) {
+        self.verdict = verdict; self.summary = summary; self.checks = checks; self.model = model
+        self.signatureKind = signatureKind; self.modelSigningAddress = modelSigningAddress
+        self.trust = trust; self.blocking = blocking
     }
 
     public var passed: Int { checks.filter { $0.status == "pass" || $0.status == "warn" }.count }
 
     public var badge: String {
-        switch verdict {
+        switch trust {
+        case "enclave_signed": return "Verified in TEE"
+        case "gateway_signed": return "Gateway-signed"
+        case "unsigned": return "Attested · reply unsigned"
+        case "rejected": return "Reply rejected"
+        case "refused": return "Not sent"
+        default: break
+        }
+        return switch verdict {
         case "verified": "Verified in TEE"
         case "partial": "Partly verified"
         case "offline": "Offline · nothing sent"
@@ -104,6 +126,8 @@ public enum MemoryError: Error, Equatable, Sendable {
     case noCredits(String)
     case notPrivate(String)
     case attestationFailed(String, Verification?)
+    /// The text reached an attested enclave, but the reply failed its signature checks and was discarded.
+    case replyRejected(String, Verification?)
     case outOfAllowance(String)
     case upstream(String)
     case offline(String)
@@ -119,6 +143,7 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .noCredits: "NEAR AI is out of credits"
         case .notPrivate: "That model isn't in a TEE. Refused."
         case .attestationFailed: "Enclave failed checks. Not sent."
+        case .replyRejected: "Reply failed its signature. Discarded."
         case .outOfAllowance(let why): Self.allowanceBubble(why)
         case .upstream: "NEAR AI hiccup. Try again?"
         case .offline: "No internet. Saving still works."
@@ -135,7 +160,8 @@ public enum MemoryError: Error, Equatable, Sendable {
         case .offline(let m): m + " Nothing was sent. Highlights, notes, memory search and trips between your devices on this Wi-Fi still work."
         case .outOfAllowance(let m) where m.lowercased().contains("paused"): m + " Your text was not sent."
         case .outOfAllowance(let m): m + " Your text was not sent. Top up your Pixl's wallet or wait until the limit resets."
-        case .attestationFailed(let m, _): m + " Your text was not sent."
+        case .attestationFailed(let m, _): m.contains("Nothing was sent") ? m : m + " Your text was not sent."
+        case .replyRejected(let m, _): m + " Your text did reach the attested enclave, but the reply couldn't be proven to come from it, so it was thrown away: not shown, not saved, not paid for."
         }
     }
 

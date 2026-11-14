@@ -319,13 +319,27 @@ func run() throws {
     }
 
     // 4. What the user sees if the enclave fails verification.
-    let failed = PolishView(.error(.attestationFailed("Not verified: model fresh for this request failed. Treat this result as untrusted.", nil), app: "Mail"))
-    failed.fit()
-    let failedCard = SurfaceView.card(failed, look: paper)
-    let bg = Canvas(NSSize(width: failedCard.frame.width + 48, height: failedCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
-    failedCard.frame.origin = NSPoint(x: 24, y: 24)
-    bg.addSubview(failedCard)
-    try png(bg, "\(out)/polish-refused.png")
+    // These are the exact check ids/details the service returns (memory/tests/test_preflight_matrix.py).
+    let gpuDown = Verification(verdict: "partial", summary: "Refused: could not prove nvidia gpu attestation. Nothing was sent.",
+        checks: [Check(id: "model.quote", label: "Model Intel TDX quote", status: "pass", detail: "signed by Intel, TCB UpToDate"),
+                 Check(id: "model.nonce", label: "Model fresh for this request", status: "pass", detail: "our nonce is in the signed report data"),
+                 Check(id: "model.gpu", label: "NVIDIA GPU attestation", status: "skip", detail: "NRAS unreachable: nras.attestation.nvidia.com")],
+        model: "z-ai/glm-5.3-flash", trust: "refused", blocking: ["model.gpu: skip: NRAS unreachable"])
+    let badSig = Verification(verdict: "failed", summary: "Not verified: signed text matches our bytes failed. Treat this result as untrusted.",
+        checks: [Check(id: "signature.hashes", label: "Signed text matches our bytes", status: "fail", detail: "signed hashes differ from our request/response"),
+                 Check(id: "signature.valid", label: "Signature valid", status: "pass", detail: "recovers to 0x7a3f…"),
+                 Check(id: "signature.bound", label: "Signer is the attested model enclave", status: "pass", detail: "attested before the request")],
+        model: "z-ai/glm-5.3-flash", signatureKind: "provider_tee", trust: "rejected")
+    for (err, name) in [(MemoryError.attestationFailed(gpuDown.summary, gpuDown), "polish-refused"),
+                        (MemoryError.replyRejected(badSig.summary, badSig), "polish-reply-rejected")] {
+        let failed = PolishView(.error(err, app: "Mail"))
+        failed.fit()
+        let failedCard = SurfaceView.card(failed, look: paper)
+        let bg = Canvas(NSSize(width: failedCard.frame.width + 48, height: failedCard.frame.height + 48), fill: NSColor(white: 0.93, alpha: 1))
+        failedCard.frame.origin = NSPoint(x: 24, y: 24)
+        bg.addSubview(failedCard)
+        try png(bg, "\(out)/\(name).png")
+    }
 }
 
 /// `pixl-snapshots --icon <dir.iconset>`: the app icon, Frogg on a rounded paper tile with

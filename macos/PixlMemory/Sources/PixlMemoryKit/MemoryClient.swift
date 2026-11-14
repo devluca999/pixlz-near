@@ -185,6 +185,7 @@ public struct MemoryClient: Sendable {
         switch (status, e?.error) {
         case (401, _): return .badToken
         case (_, "attestation_failed"): return .attestationFailed(msg, e?.verification)
+        case (_, "response_untrusted"): return .replyRejected(msg, e?.verification)
         case (409, nil) where e?.verification != nil: return .attestationFailed(msg, e?.verification)
         case (_, "no_wallet"), (_, "bad_limit"): return .rejected(msg)
         case (_, "no_api_key"), (412, _): return .noApiKey(msg)
