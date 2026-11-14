@@ -18,7 +18,10 @@ from typing import Any, Callable
 import httpx
 
 from .verify import (
+    Check,
     DcapQuoteVerifier,
+    Status,
+    Verdict,
     GpuVerifier,
     NrasGpuVerifier,
     QuoteVerifier,
@@ -67,6 +70,20 @@ class AttestationFailed(NearAIError):
     def __init__(self, verification: Verification):
         super().__init__(verification.to_dict()["summary"])
         self.verification = verification
+
+
+class ResponseRejected(NearAIError):
+    """The text was sent to an attested enclave, but the reply failed its signature or binding
+    checks (forged, tampered, wrong signer, wrong model). The reply is discarded, never shown as a result."""
+
+    def __init__(self, verification: Verification):
+        super().__init__(verification.to_dict()["summary"])
+        self.verification = verification
+
+
+def _refused(model: str, nonce: str, check_id: str, label: str, detail: str) -> Verification:
+    return Verification(verdict=Verdict.FAILED, checks=[Check(check_id, label, Status.FAIL, detail)],
+                        model=model, nonce=nonce)
 
 
 @dataclass
@@ -188,7 +205,16 @@ class NearAIClient:
         )
         if r.status_code != 200:
             raise UpstreamError(f"attestation report returned {r.status_code}: {r.text[:200]}")
-        return verify_attestation(r.json(), nonce, model, self.quote_verifier, self.gpu_verifier)
+        try:
+            body = r.json()
+        except ValueError:
+            return _refused(model, nonce, "report.format", "Attestation report readable", "the report is not JSON")
+        if not isinstance(body, dict) or not body:
+            return _refused(model, nonce, "report.format", "Attestation report readable", "the report is empty or not an object")
+        try:
+            return verify_attestation(body, nonce, model, self.quote_verifier, self.gpu_verifier)
+        except Exception as e:   # malformed evidence anywhere: refuse, never crash open
+            return _refused(model, nonce, "report.format", "Attestation report readable", f"malformed evidence: {type(e).__name__}: {e}")
 
     # -- inference --
 
@@ -236,13 +262,21 @@ class NearAIClient:
 
         sig = self._fetch_signature(chat_id, model)
         sig_checks, kind = verify_signature(sig, model, req_bytes, resp_bytes, attestation)
+        # x-no-aliasing is set, so the reply must name the exact model whose enclave we attested.
+        if str(got_model).strip().lower() != model.lower():
+            sig_checks.append(Check("response.model", "Reply is from the attested model", Status.FAIL,
+                                    f"reply names {got_model!r}, we attested {model!r}"))
+        verification = combine(attestation, sig_checks, kind)
+        if verification.signature_failed:
+            # A forged, tampered or mis-signed reply never becomes a usable result.
+            raise ResponseRejected(verification)
         return VerifiedCompletion(
             content=content,
             chat_id=chat_id,
             inference_id=r.headers.get("inference-id"),
             model=got_model,
             usage=usage,
-            verification=combine(attestation, sig_checks, kind),
+            verification=verification,
             tool_results=tools,
         )
 

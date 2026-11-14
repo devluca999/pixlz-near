@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import polish
-from .nearai import AttestationFailed, NearAIClient, NoApiKey, NoCredits, NotPrivateModel, Offline, UpstreamError
+from .nearai import AttestationFailed, NearAIClient, ResponseRejected, NoApiKey, NoCredits, NotPrivateModel, Offline, UpstreamError
 from .store import Store
 from .config import WalletConfigError
 from .wallet import Wallet, Wallets
@@ -73,6 +73,7 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             raise HTTPException(400, str(e)) from None
 
     app = FastAPI(title="Pixl Memory", version="0.1.0", docs_url=None, redoc_url=None)
+    app.state.near_client = client
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"chrome-extension://[a-p]{32}",
@@ -94,6 +95,16 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             raise HTTPException(401, "missing or wrong token (see `pixl-memory token`)")
 
     guarded = [Depends(auth)]
+
+    def refused(e: AttestationFailed) -> JSONResponse:
+        return JSONResponse({"error": "attestation_failed", "message": str(e), "text_sent": False,
+                             "verification": e.verification.to_dict()}, status_code=409)
+
+    def untrusted(e: ResponseRejected) -> JSONResponse:
+        # The text did reach an attested enclave, but the reply failed its signature checks: it is
+        # discarded (not returned, not saved as a draft, not paid for from the Pixl's wallet).
+        return JSONResponse({"error": "response_untrusted", "message": str(e), "text_sent": True,
+                             "verification": e.verification.to_dict()}, status_code=502)
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -162,8 +173,9 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
             return JSONResponse({"error": "not_private", "message": str(e)}, status_code=400)
         except AttestationFailed as e:
             # The text was never sent. Show the user why.
-            return JSONResponse({"error": "attestation_failed", "message": str(e),
-                                 "verification": e.verification.to_dict()}, status_code=409)
+            return refused(e)
+        except ResponseRejected as e:
+            return untrusted(e)
         except NoCredits as e:
             return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
         except Offline as e:
@@ -213,8 +225,9 @@ def create_app(store: Store, client: NearAIClient, token: str, default_model: st
         except NotPrivateModel as e:
             return JSONResponse({"error": "not_private", "message": str(e)}, status_code=400)
         except AttestationFailed as e:
-            return JSONResponse({"error": "attestation_failed", "message": str(e),
-                                 "verification": e.verification.to_dict()}, status_code=409)
+            return refused(e)
+        except ResponseRejected as e:
+            return untrusted(e)
         except NoCredits as e:
             return JSONResponse({"error": "no_credits", "message": str(e)}, status_code=402)
         except Offline as e:

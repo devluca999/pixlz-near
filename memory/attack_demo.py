@@ -16,6 +16,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import subprocess
+
+import httpx
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -52,9 +54,18 @@ def captured() -> dict:
     return json.loads(FIXTURE.read_text())
 
 
-def polish_with(tmp: Path, fake: FakeNear, **kw):
+def polish_with(tmp: Path, fake: FakeNear, gpu_down: bool = False, **kw):
     tc, store = make(tmp, fake, **kw)
+    if gpu_down:   # NRAS unreachable: the GPU check can't run, so it can't pass
+        class Down:
+            def verify(self, payload):
+                raise httpx.ConnectError("nras.attestation.nvidia.com unreachable")
+        _client_of(tc).gpu_verifier = Down()
     return tc.post("/polish", json={"text": "my private medical note"}), fake, store
+
+
+def _client_of(tc):
+    return tc.app.state.near_client
 
 
 def text_sent(fake: FakeNear) -> bool:
@@ -63,7 +74,7 @@ def text_sent(fake: FakeNear) -> bool:
 
 def failed_check(body: dict) -> str:
     v = body.get("verification") or {}
-    bad = [c for c in v.get("checks", []) if c["status"] == "fail"]
+    bad = [c for c in v.get("checks", []) if c["status"] in ("fail", "skip")]
     return f"{bad[0]['label']}: {bad[0]['detail']}" if bad else body.get("message", "")
 
 
@@ -81,6 +92,7 @@ def enclave_attacks(tmp: Path) -> None:
         ("GPU not in confidential mode (NVIDIA attestation fails)", {}, dict(gpu_ok=False)),
         ("Remove the model's TEE evidence entirely",
          dict(tamper=lambda r: r.__setitem__("model_attestations", [])), {}),
+        ("Make NVIDIA's attestation service unreachable (GPU unverifiable)", {}, dict(gpu_down=True)),
     ]
     for i, (name, fake_kw, make_kw) in enumerate(cases):
         r, fake, _ = polish_with(tmp / f"e{i}", FakeNear(captured(), **fake_kw), **make_kw)
@@ -106,7 +118,8 @@ def model_and_reply_attacks(tmp: Path) -> None:
     r, fake, _ = polish_with(tmp / "s", FakeNear(captured(), sign_with=Account.create()))
     v = r.json().get("verification", {})
     record("Reply signed by a key that wasn't attested", "BLOCKED",
-           v.get("verdict") == "failed", f"verdict {v.get('verdict')!r}, shown as untrusted. {failed_check(r.json())}")
+           r.status_code == 502 and "suggestion" not in r.json() and v.get("trust") == "rejected",
+           f"HTTP {r.status_code}, reply discarded (not shown, saved or paid for). {failed_check(r.json())}")
 
     class AlteredReply(FakeNear):
         def handler(self, request):
@@ -119,7 +132,8 @@ def model_and_reply_attacks(tmp: Path) -> None:
     r, fake, _ = polish_with(tmp / "a", AlteredReply(captured()))
     v = r.json().get("verification", {})
     record("Alter the reply in transit after the enclave signed it", "BLOCKED",
-           v.get("verdict") == "failed", f"verdict {v.get('verdict')!r}. {failed_check(r.json())}")
+           r.status_code == 502 and "suggestion" not in r.json() and v.get("trust") == "rejected",
+           f"HTTP {r.status_code}, reply discarded. {failed_check(r.json())}")
 
 
 # --- 2. Frogg's wallet: a compromised app holds Frogg's key ------------------------------------

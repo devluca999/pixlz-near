@@ -35,6 +35,24 @@ class Status(StrEnum):
     SKIP = "skip"  # could not be checked
 
 
+# Every one of these must be present and PASS (or WARN: passed with a caveat) before a single
+# byte of the user's text leaves the Mac. Anything else (FAIL, SKIP, or simply missing) refuses.
+MANDATORY_CHECKS = (
+    "gateway.quote", "gateway.debug", "gateway.nonce", "gateway.signer", "gateway.rtmr3", "gateway.compose",
+    "model.quote", "model.debug", "model.nonce", "model.signer", "model.rtmr3", "model.compose", "model.gpu",
+)
+
+
+class Trust(StrEnum):
+    """What the user may rely on, from strongest to none. Never promoted from a weaker state."""
+    ENCLAVE_SIGNED = "enclave_signed"   # attested model enclave signed our exact request+reply bytes
+    GATEWAY_SIGNED = "gateway_signed"   # NEAR's attested gateway signed them; model enclave attested, didn't sign
+    UNSIGNED = "unsigned"               # enclave attested before sending, but the reply carried no usable signature
+    REJECTED = "rejected"               # a signature or binding check failed: the reply is discarded
+    ATTESTED = "attested"               # preflight only: every mandatory check passed, text may be sent
+    REFUSED = "refused"                 # preflight only: text may not be sent
+
+
 class Verdict(StrEnum):
     VERIFIED = "verified"
     PARTIAL = "partial"
@@ -64,14 +82,48 @@ class Verification:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["summary"] = summarize(self)
+        d["may_send"] = self.attestation_ok
+        d["trust"] = str(self.trust)
+        d["blocking"] = self.blocking_reasons()
         return d
+
+    def blocking_reasons(self) -> list[str]:
+        """Why the preflight refuses to send, empty when it allows it. An allow-list: every
+        mandatory check must be present and passing, and no other preflight check may fail or skip."""
+        pre = [c for c in self.checks if not c.id.startswith("signature.")]
+        by_id = {c.id: c for c in pre}
+        out = []
+        for cid in MANDATORY_CHECKS:
+            c = by_id.get(cid)
+            if c is None:
+                out.append(f"{cid}: not checked")
+            elif c.status not in (Status.PASS, Status.WARN):
+                out.append(f"{cid}: {c.status}: {c.detail}")
+        out += [f"{c.id}: {c.status}: {c.detail}" for c in pre
+                if c.id not in MANDATORY_CHECKS and c.status in (Status.FAIL, Status.SKIP)]
+        if not self.model_signing_address:
+            out.append("no attested model signing key")
+        return out
 
     @property
     def attestation_ok(self) -> bool:
-        """True when no attestation check failed (signature checks excluded) and the GPU
-        evidence was actually checked: a skipped GPU check never lets text out."""
-        return not any(c.status is Status.FAIL or (c.status is Status.SKIP and c.id.endswith("gpu"))
-                       for c in self.checks if not c.id.startswith("signature."))
+        """The send decision. True only when every mandatory preflight property is proven."""
+        return not self.blocking_reasons()
+
+    @property
+    def signature_failed(self) -> bool:
+        return any(c.status is Status.FAIL for c in self.checks if c.id.startswith(("signature.", "response.")))
+
+    @property
+    def trust(self) -> Trust:
+        signed = any(c.id.startswith("signature.") for c in self.checks)
+        if not signed:
+            return Trust.ATTESTED if self.attestation_ok else Trust.REFUSED
+        if not self.attestation_ok or self.signature_failed:
+            return Trust.REJECTED
+        if any(c.id.startswith("signature.") and c.status is Status.SKIP for c in self.checks):
+            return Trust.UNSIGNED
+        return Trust.ENCLAVE_SIGNED if self.signature_kind == "provider_tee" else Trust.GATEWAY_SIGNED
 
 
 def compute_verdict(checks: list[Check], signature_kind: str | None, *, need_signature: bool) -> Verdict:
@@ -99,8 +151,9 @@ def summarize(v: Verification) -> str:
             parts.append("could not check " + ", ".join(skipped))
         return "Partly verified: " + "; ".join(parts) + "."
     if v.signature_kind == "provider_tee":
-        return "Verified: the reply was signed inside an attested Intel TDX + NVIDIA GPU enclave running this model."
-    return "Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and bound to this session's nonce."
+        return ("Verified: the reply was signed by a key bound inside an attested Intel TDX + NVIDIA GPU enclave "
+                "that NEAR AI serves this model from.")
+    return "Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and bound to this request's nonce."
 
 
 # --- pluggable external verifiers (faked in tests) -------------------------------------------
@@ -365,15 +418,19 @@ def verify_attestation(
 ) -> Verification:
     """Verify a full /v1/attestation/report response for `model`."""
     checks: list[Check] = []
+    if not isinstance(response, dict):
+        response = {}
     gw = response.get("gateway_attestation")
     gw_addr = None
-    if gw:
+    if isinstance(gw, dict) and gw:
         c, gw_addr = verify_report(gw, nonce, "gateway", quote_verifier, None)
         checks += c
     else:
         checks.append(Check("gateway.quote", "Gateway Intel TDX quote", Status.FAIL, "no gateway attestation"))
 
-    candidates = [m for m in response.get("model_attestations") or [] if m.get("model_name", model) == model]
+    # A report must name the model it is for: one with no name can't stand in for ours.
+    candidates = [m for m in response.get("model_attestations") or []
+                  if isinstance(m, dict) and m.get("model_name") == model]
     model_addr = None
     images: list[str] = []
     if not candidates:

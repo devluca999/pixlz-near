@@ -140,11 +140,12 @@ def test_text_never_sent_when_attestation_fails(tmp_path, captured):
 
 def test_signature_from_unattested_key_marks_failed(tmp_path, captured):
     fake = FakeNear(captured, sign_with=Account.create())
-    tc, _ = make(tmp_path, fake)
+    tc, store = make(tmp_path, fake)
     r = tc.post("/polish", json={"text": "hello"})
-    assert r.status_code == 200
+    assert r.status_code == 502 and r.json()["error"] == "response_untrusted"
+    assert "suggestion" not in r.json() and store.list_drafts(10) == []   # discarded, never a usable result
     v = r.json()["verification"]
-    assert v["verdict"] == "failed"
+    assert v["verdict"] == "failed" and v["trust"] == "rejected"
     assert {c["id"]: c["status"] for c in v["checks"]}["signature.bound"] == "fail"
 
 
@@ -344,8 +345,9 @@ def test_a_tampered_stream_fails_its_signature(tmp_path, captured):
         return resp
     fake.handler = tamper
     tc, _ = make(tmp_path, fake)
-    body = tc.post("/ask", json={"question": "how do tree frogs climb?", "web": True}).json()
-    assert body["verification"]["verdict"] != "verified"
+    r = tc.post("/ask", json={"question": "how do tree frogs climb?", "web": True})
+    assert r.status_code == 502 and "answer" not in r.json()
+    assert r.json()["verification"]["trust"] == "rejected"
 
 
 def test_ask_without_web_does_not_offer_the_search_tool(tmp_path, captured):
