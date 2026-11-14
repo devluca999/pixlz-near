@@ -26,7 +26,7 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
 | Network | NEAR **testnet** for the demo. Mainnet is the same code path behind one flag, `PIXL_ENABLE_MAINNET` (off by default; see [Testnet now, mainnet by flag](#testnet-now-mainnet-by-flag)) |
 | Your keys | Your NEAR account key is never on the Mac. Only the pet's own key and your NEAR AI API key (in `.env`, git-ignored) are |
-| Tests | 691 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
+| Tests | 693 automated tests plus 6,592 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
 | Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
 
 ## What to verify, and where
@@ -208,13 +208,13 @@ Only what you type in a chat panel can reach a session. Nothing the Pixl's AI, m
 
 | Part | Status | Tests (all passing on 2026-11-13) |
 |---|---|---|
-| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 240: `cd memory && uv run pytest` (104 of them the fail-closed matrix in `tests/test_preflight_matrix.py`) |
+| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 242: `cd memory && uv run pytest` (104 of them the fail-closed matrix in `tests/test_preflight_matrix.py`) |
 | Frogg's wallet on NEAR testnet | Live: every answer pays its cost on chain | Included above (against a simulated chain) |
 | `macos/PixlMemory/`: the Mac app | Built | 246: `swift test --package-path macos/PixlMemory`, plus an in-app click self-test: `scripts/build-mac-app.sh --selftest` |
 | `PixlzCore/`: shared Swift core (pet state, behaviour, physics, trip protocol) | Built | 180: `swift test --package-path PixlzCore` |
 | `extension/`: Chrome highlight → save → backlink, and the bridge to the Mac app | Built | 25: `cd extension && node --test` |
 | `mosaico/pixl_trip/`: the trip protocol and pairing in C | Built, run on a real Mosaico | 323 checks: `make -C mosaico/pixl_trip test` |
-| `mosaico/pixlz_dock/`: the Mosaico app | Built, run on a real Mosaico | 6,252 checks: `make -C mosaico/pixlz_dock/tests` |
+| `mosaico/pixlz_dock/`: the Mosaico app | Built, run on a real Mosaico | 6,269 checks: `make -C mosaico/pixlz_dock/tests` |
 | `scripts/check-secrets.sh` | Runs on every commit when enabled | `sh scripts/check-secrets.sh --all` |
 
 **What the Mac app does.** Frogg perches on the active window, hops when you switch windows, and follows you to another Space. Each Pixl moves in its own way: Kiti walks, Mochi trots, Silky climbs walls and hangs on silk, Boo glides, and Slugg crawls along screen edges and window sides (he never hops) and leaves a slime trail that fades. Calm, Roam or Chaos sets how much they wander. They never move while you type and never sit over your text cursor. Pixls sleep when you're away (Frogg in his pond) and wake by the rules in [`docs/SPEC.md`](docs/SPEC.md) §6.2. Click to poke, double-click or right-click for the menu, drag to pick up and toss. Shortcuts: ⌃⌥P settings, ⌃⌥Space Ask, ⌃⌥H hide. They hide when an app goes full screen.
