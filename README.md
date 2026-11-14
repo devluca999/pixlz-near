@@ -2,9 +2,11 @@
 
 ![Frogg, Kiti, Mochi, Boo, Silky and Slugg, each with its menu open](docs/screenshots/pixlz-lineup.png)
 
-Pixl Memory puts Frogg, a pixel-art frog, on your Mac. Frogg edits your writing with a private AI model. Select text in any app, click Frogg and choose **Polish this**. Your text goes only to a model running inside a NEAR AI Cloud TEE (Intel TDX + NVIDIA confidential GPUs). Your Mac checks the enclave's hardware attestation **before** the text leaves, and every reply comes back with a verdict: which enclave answered, whether the answer was made for this request, and whether its signature matches.
+**Your AI assistant should be able to prove where your private text goes. Pixlz makes it prove it, every time, before it sends anything.**
 
-Frogg also has **its own NEAR account**. It pays for its own inference from a small balance its owner gives it. The app holds only Frogg's key, never yours, so that balance is the most Frogg can ever spend.
+Pixl Memory puts Frogg, a pixel-art frog, on your Mac. Select text in any app, click Frogg and choose **Polish this**. Before a single byte of your text leaves the Mac, the local service makes NEAR AI Cloud prove that the model runs in a genuine, production Intel TDX + NVIDIA confidential-GPU enclave, fresh for this request, reachable only over the TLS key bound in that enclave's quote. 14 properties must each be proven: if one fails **or can't be checked**, nothing is sent. The reply must then carry the enclave's signature over the exact bytes sent and received, or it's thrown away.
+
+Frogg also has **his own NEAR testnet account**, a sub-account of yours holding only what you gave him. Each private answer is logged with a small payment from his balance, never yours: the app holds only his key. (The payment is an on-chain receipt sized to the request's cost; NEAR AI bills the inference itself in its own credits.)
 
 Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI** (primary), Agent Economy, AI Security & Defense.
 
@@ -20,12 +22,25 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | | |
 |---|---|
 | What it is | A desktop pet for macOS that edits and answers privately, saves highlights with links back to the page, and travels to other devices |
-| NEAR pieces | NEAR AI Cloud private inference with attestation checked on the Mac; a NEAR testnet account per pet that pays per request |
+| NEAR pieces | NEAR AI Cloud private inference, its attestation checked on the Mac before sending; a NEAR testnet sub-account per pet that logs every request with an on-chain payment |
 | Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
 | Network | NEAR **testnet only**; the config refuses mainnet |
 | Your keys | Your NEAR account key is never on the Mac. Only the pet's own key and your NEAR AI API key (in `.env`, git-ignored) are |
 | Tests | 691 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
 | Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
+
+## What to verify, and where
+
+| Claim | Enforced in | Check it yourself |
+|---|---|---|
+| No text leaves before 14 attestation properties are proven; a skip counts as a failure | `memory/src/pixl_memory/verify.py` (`MANDATORY_CHECKS`), `nearai.py` (`chat`) | `cd memory && uv run pixl-memory attest` (live, free, no key) · `uv run pytest tests/test_preflight_matrix.py` (104 cases assert the completion endpoint is never called) |
+| The completion goes only to the TLS key bound in the gateway's Intel-signed quote | `nearai.py` (`TlsPin`) | `uv run pytest -m live -k tls` (accepts the attested key, rejects any other) |
+| NVIDIA's GPU verdict is signature-checked, not just trusted | `verify.py` (`verify_es384_jwt`) | `uv run pytest tests/test_nras_signature.py` |
+| A reply that fails its signature is discarded: not shown, saved or paid for | `nearai.py` (`ResponseRejected`), `server.py` | `uv run python attack_demo.py` (23/23) |
+| The pet's wallet can't touch the owner's funds | NEAR protocol: the owner's key is never on the Mac | [Frogg's wallet](#froggs-wallet) and the testnet receipts linked there |
+| Caps and the one-payee rule | **App code** (`wallet.py`), not an on-chain contract | `uv run pytest tests/test_wallet.py` |
+
+What attestation does **not** prove, and what you still trust (Intel, NVIDIA, NEAR's gateway hop): [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md). A 90-second and a 5-minute path for judges: [`docs/hackathon/JUDGE-WALKTHROUGH.md`](docs/hackathon/JUDGE-WALKTHROUGH.md).
 
 ## The problem
 
@@ -126,7 +141,7 @@ The local service on its own is documented in [`memory/README.md`](memory/README
 
 ## Frogg's wallet
 
-**Why a pet has a wallet:** Frogg pays for the private inference it does for you, one request at a time, from a purse with a hard bottom. You set a weekly limit or pause it in the Wallet bubble. Every payment has an on-chain receipt.
+**Why a pet has a wallet:** give an AI agent money without giving it the keys to yours. Frogg's purse has a hard bottom: a sub-account holding only what you sent it. Each private request is logged with a payment from that purse, sized to the request's NEAR AI cost, to one allowlisted account, so every answer has an on-chain receipt. (NEAR AI bills the inference itself in its own credits; the transfer is the receipt, not the purchase.) You set a weekly limit or pause it in the Wallet bubble.
 
 **The design: a plain NEAR sub-account that the owner funds.** Live on testnet: the owner account `pixlz-petz-faucet.testnet` created `frogg.pixlz-petz-faucet.testnet`, and Frogg pays `pixlz-petz.testnet` ([first payment](https://testnet.nearblocks.io/txns/GzuymmDA5kERz74Rj28GAs8KaSUqAiM8DtgvkBui9fzm)).
 
@@ -284,7 +299,7 @@ Borsh and base58 for NEAR transactions are written in `near.py`; no NEAR library
 - The hackathon code, tests and docs were written with **Claude Code** (Anthropic, Claude Opus 5.5), directed and reviewed by the owner.
 - The pixel art was designed in Claude Design and exported by a script.
 - The demo video's narration is a synthetic voice ([Chatterbox](https://github.com/resemble-ai/chatterbox), run locally by `showcase/narrate.py`). The cut, captions and the device render in its last scene were made by scripts in `showcase/`.
-- `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response, captured on 2026-11-08.
+- `memory/tests/fixtures/attestation_report.json` is a real NEAR AI Cloud attestation response (with the TLS fingerprint binding), captured on 2026-11-14.
 
 ## The demo video
 
@@ -296,7 +311,8 @@ The video's last scene shows a Mosaico, a Mac and an iPhone side by side. That s
 
 - **Entry points:** `memory/src/pixl_memory/` (the service: `verify.py` and `tdx.py` check attestation, `nearai.py` calls NEAR AI, `near.py` and `wallet.py` pay), `macos/PixlMemory/Sources/PixlMemory/AppController.swift` (the app), `PixlzCore/Sources/` (shared logic), `extension/`, `mosaico/pixl_trip/src/`.
 - **Specs:** [`docs/SPEC.md`](docs/SPEC.md) is how a Pixl behaves on every platform; [`docs/DECISIONS.md`](docs/DECISIONS.md) records decisions by number (D1, D2, …), which code comments cite.
-- **Rules the code enforces:** testnet only; text is never sent before attestation passes; Frogg pays only the allowlisted payee; API keys come only from `.env`.
+- **Rules the code enforces:** testnet only; text is never sent unless all 14 mandatory attestation checks pass (`verify.MANDATORY_CHECKS`; a skip is a failure); the completion is pinned to the attested gateway's TLS key; a reply that fails its signature is discarded; Frogg pays only the allowlisted payee (app code, not on chain); API keys come only from `.env`.
+- **Trust model in one file:** [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md), including a threat ledger marking each defense real or simulated.
 - **Run every test:** the commands in [What's built and how it's tested](#whats-built-and-how-its-tested). None needs a key except `uv run pytest -m live`.
 
 ## Repository layout
