@@ -169,7 +169,7 @@ for permission.
   can read a trip packet (the Pixl's name, skin and state) or claim another device's name. No text,
   keys or highlights travel with a Pixl. Signing every frame with the pairing key is the next step.
   It is not claimed.
-- The iPhone app is a plan (`docs/IOS-PLAN.md`), not part of this submission.
+- The iPhone app is a plan, not part of this submission.
 
 ## 8. Test results (2026-11-13, this Mac)
 
