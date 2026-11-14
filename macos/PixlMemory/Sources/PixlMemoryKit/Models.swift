@@ -55,6 +55,52 @@ public struct Verification: Codable, Sendable, Equatable {
         }
     }
 
+    /// One hop of "where your text went", for the privacy inspector.
+    public struct Hop: Equatable, Sendable {
+        public let name: String
+        public let mark: String  // ✔ proven · ! proven with a caveat · ✖ failed · – not checked
+    }
+
+    /// This Mac → gateway TEE → model TEE → GPUs → signed reply, each marked from its checks.
+    public var trustPath: [Hop] {
+        func mark(_ match: (Check) -> Bool) -> String {
+            let cs = checks.filter(match)
+            if cs.isEmpty { return "–" }
+            if cs.contains(where: { $0.status == "fail" }) { return "✖" }
+            if cs.contains(where: { $0.status == "skip" }) { return "–" }
+            return cs.contains(where: { $0.status == "warn" }) ? "!" : "✔"
+        }
+        let sig: String = switch trust {
+            case "enclave_signed": "✔"
+            case "gateway_signed", "unsigned": "!"
+            case "rejected": "✖"
+            default: mark { $0.id.hasPrefix("signature.") }
+        }
+        return [Hop(name: "This Mac", mark: "✔"),
+                Hop(name: "Gateway TEE", mark: mark { $0.id.hasPrefix("gateway.") }),
+                Hop(name: "Model TEE", mark: mark { $0.id.hasPrefix("model.") && $0.id != "model.gpu" }),
+                Hop(name: "GPUs", mark: mark { $0.id == "model.gpu" }),
+                Hop(name: "Signed reply", mark: trust == "refused" ? "–" : sig)]
+    }
+
+    /// Plain words for where the text went and what protects it. Never conflates at-rest and in-use.
+    public var plainWords: String {
+        switch trust {
+        case "enclave_signed":
+            "Your text went over HTTPS to NEAR AI's attested gateway, then to the model's enclave (Intel TDX + NVIDIA confidential GPUs), which signed this exact reply. The result is kept encrypted on this Mac. Nothing you wrote goes on chain."
+        case "gateway_signed":
+            "The enclaves were attested before your text left. This reply was signed by NEAR AI's attested gateway, not by the model's enclave itself: a weaker proof. Nothing you wrote goes on chain."
+        case "unsigned":
+            "The enclaves were attested before your text left, but no signature for this reply arrived, so it can't be tied to them."
+        case "rejected":
+            "Your text reached the attested enclave, but this reply couldn't be proven to come from it, so it was thrown away."
+        case "refused":
+            "The enclave couldn't prove everything it must, so your text stayed on this Mac."
+        default:
+            summary
+        }
+    }
+
     /// The deployment line from the model's signed deployment log, if present.
     public var deployment: String? {
         checks.first { $0.id == "model.deploy" && $0.status == "pass" }?.detail

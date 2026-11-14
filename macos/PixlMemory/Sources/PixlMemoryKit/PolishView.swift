@@ -109,7 +109,9 @@ public final class PolishView: NSView {
             let card = SuggestionCard(text: r.suggestion, width: innerWidth)
             card.onDropped = { [weak self] in self?.onDropped?(r) }
             stack.addArrangedSubview(card)
+            inspected = v
             let details = checksList(v.checks, deployment: v.deployment)
+            inspected = nil
             self.details = details
             details.isHidden = !showDetails
             let copy = PixelButton(title: "Copy", primary: false) { [weak self] in self?.onCopy?(r.suggestion) }
@@ -126,7 +128,9 @@ public final class PolishView: NSView {
             switch e {
             case .attestationFailed(_, let v?), .replyRejected(_, let v?):
                 stack.addArrangedSubview(VerdictBadge(verification: v))
+                inspected = v
                 stack.addArrangedSubview(checksList(v.checks.filter { $0.status != "pass" }, deployment: nil))
+                inspected = nil
             default: break
             }
             stack.addArrangedSubview(buttonRow([PixelButton(title: "OK", primary: true) { [weak self] in self?.onClose?() }]))
@@ -193,11 +197,29 @@ public final class PolishView: NSView {
         return row
     }
 
+    /// When set, checksList leads with the privacy inspector (trust path + plain words) for it.
+    private var inspected: Verification?
+
     private func checksList(_ checks: [Check], deployment: String?) -> NSView {
         let col = NSStackView()
         col.orientation = .vertical
         col.alignment = .leading
         col.spacing = 3
+        if let v = inspected {
+            col.addArrangedSubview(caption(v.trust == "refused" ? "WHERE YOUR TEXT WOULD HAVE GONE" : "WHERE YOUR TEXT WENT"))
+            let path = NSMutableAttributedString()
+            for (i, h) in v.trustPath.enumerated() {
+                let color = h.mark == "✔" ? Theme.verified : h.mark == "!" ? Theme.partial : h.mark == "✖" ? Theme.failed : Theme.textMuted
+                if i > 0 { path.append(NSAttributedString(string: " → ", attributes: [.font: Theme.mono(10), .foregroundColor: Theme.textMuted])) }
+                path.append(NSAttributedString(string: "\(h.mark) ", attributes: [.font: Theme.mono(11, .bold), .foregroundColor: color]))
+                path.append(NSAttributedString(string: h.name, attributes: [.font: Theme.mono(10, .bold), .foregroundColor: Theme.text]))
+            }
+            let p = wrapping("", font: Theme.mono(10), color: Theme.text)
+            p.attributedStringValue = path
+            col.addArrangedSubview(p)
+            col.addArrangedSubview(wrapping(v.plainWords, font: .systemFont(ofSize: 11), color: Theme.textMuted))
+            col.addArrangedSubview(caption("CHECKS"))
+        }
         for c in checks {
             let mark: String, color: NSColor
             switch c.status {

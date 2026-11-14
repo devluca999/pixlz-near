@@ -138,6 +138,17 @@ struct ClientTests {
         } else { Issue.record("response_untrusted should map to replyRejected") }
         #expect(!MemoryError.replyRejected("x", nil).detail.contains("not sent"))
         #expect(MemoryError.replyRejected("x", nil).detail.contains("thrown away"))
+        // The privacy inspector's path: a skipped GPU check is never shown as proven.
+        let gpuSkipped = Verification(verdict: "partial", summary: "s", checks: [
+            Check(id: "gateway.quote", label: "", status: "pass", detail: ""),
+            Check(id: "model.quote", label: "", status: "warn", detail: ""),
+            Check(id: "model.gpu", label: "", status: "skip", detail: "")], model: "m", trust: "refused")
+        #expect(gpuSkipped.trustPath.map(\.mark) == ["✔", "✔", "!", "–", "–"])
+        #expect(gpuSkipped.plainWords.contains("stayed on this Mac"))
+        let signed = Verification(verdict: "verified", summary: "s", checks: [
+            Check(id: "model.gpu", label: "", status: "pass", detail: ""),
+            Check(id: "signature.valid", label: "", status: "pass", detail: "")], model: "m", trust: "enclave_signed")
+        #expect(signed.trustPath.last?.mark == "✔" && signed.plainWords.contains("encrypted on this Mac"))
         // by the error's code, not the status: /wallet/limits says 409 no_wallet, 400 bad_limit
         #expect(err(409, #"{"error":"no_wallet","message":"the wallet isn't configured"}"#) == .rejected("the wallet isn't configured"))
         #expect(err(400, #"{"error":"bad_limit","message":"over the ceiling"}"#) == .rejected("over the ceiling"))

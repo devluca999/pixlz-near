@@ -321,7 +321,9 @@ func run() throws {
     // 4. What the user sees if the enclave fails verification.
     // These are the exact check ids/details the service returns (memory/tests/test_preflight_matrix.py).
     let gpuDown = Verification(verdict: "partial", summary: "Refused: could not prove nvidia gpu attestation. Nothing was sent.",
-        checks: [Check(id: "model.quote", label: "Model Intel TDX quote", status: "pass", detail: "signed by Intel, TCB UpToDate"),
+        checks: [Check(id: "gateway.quote", label: "Gateway Intel TDX quote", status: "pass", detail: "signed by Intel, TCB UpToDate"),
+                 Check(id: "gateway.nonce", label: "Gateway fresh for this request", status: "pass", detail: "our nonce is in the signed report data"),
+                 Check(id: "model.quote", label: "Model Intel TDX quote", status: "pass", detail: "signed by Intel, TCB UpToDate"),
                  Check(id: "model.nonce", label: "Model fresh for this request", status: "pass", detail: "our nonce is in the signed report data"),
                  Check(id: "model.gpu", label: "NVIDIA GPU attestation", status: "skip", detail: "NRAS unreachable: nras.attestation.nvidia.com")],
         model: "z-ai/glm-5.3-flash", trust: "refused", blocking: ["model.gpu: skip: NRAS unreachable"])
