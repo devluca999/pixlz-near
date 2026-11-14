@@ -419,8 +419,23 @@ extension ShowcaseScenes {
     static var memoryScenes: [ShowcaseScene] { [m1, m2, m3, w1] }
 
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "../../../../showcase/demo").standardized
-    static let articleURL = URL(string: "http://127.0.0.1:8766/glass-frogs.html")!
-    static let highlight = "The skin on a glass frog's belly is so clear that you can watch its heart beat and its stomach fill."
+    /// The demo article M1–M3 use: glass frogs by default; PIXL_SHOWCASE_ARTICLE picks another
+    /// (showcase/demo/site/), so takes can vary for different posts.
+    struct DemoArticle { let file: String; let highlight: String; let question: String; let link: String }
+    static let articles: [String: DemoArticle] = [
+        "glass-frogs": DemoArticle(file: "glass-frogs.html",
+            highlight: "The skin on a glass frog's belly is so clear that you can watch its heart beat and its stomach fill.",
+            question: "What did that article say about glass frog skin?", link: "glass frog"),
+        "chain-signatures": DemoArticle(file: "chain-signatures.html",
+            highlight: "A NEAR account can sign a transaction for Bitcoin or Ethereum without ever holding a private key for that chain.",
+            question: "What did that article say about signing for other chains?", link: "NEAR account"),
+        "blockchain": DemoArticle(file: "what-is-a-blockchain.html",
+            highlight: "A blockchain is a shared ledger that thousands of computers keep in sync, so no single one of them can quietly rewrite the past.",
+            question: "What did that article say a blockchain is?", link: "shared ledger"),
+    ]
+    static var article: DemoArticle { articles[ProcessInfo.processInfo.environment["PIXL_SHOWCASE_ARTICLE"] ?? ""] ?? articles["glass-frogs"]! }
+    static var articleURL: URL { URL(string: "http://127.0.0.1:8766/\(article.file)")! }
+    static var highlight: String { article.highlight }
     static var server: Process?
     static let chromeID = "com.google.Chrome", textEditID = "com.apple.TextEdit"
 
@@ -573,7 +588,7 @@ extension ShowcaseScenes {
             d.app.menu.showAsk()
             guard let card = d.app.menu.askCard else { return }
             keepAskInFrame(d)
-            let q = "What did that article say about glass frog skin?"
+            let q = article.question
             for ch in q { card.input.stringValue.append(ch); try? await Task.sleep(for: .milliseconds(38)) }
             try? await Task.sleep(for: .milliseconds(250))
             d.app.frogg.frameName = "emotion_curious"
@@ -645,7 +660,7 @@ extension ShowcaseScenes {
 
     static func firstHighlightRow(in v: NSView?) -> NSView? {
         guard let v else { return nil }
-        if v.accessibilityRole() == .link, (v.accessibilityLabel() ?? "").contains("glass frog") { return v }
+        if v.accessibilityRole() == .link, (v.accessibilityLabel() ?? "").localizedCaseInsensitiveContains(article.link) { return v }
         for s in v.subviews { if let r = firstHighlightRow(in: s) { return r } }
         return nil
     }

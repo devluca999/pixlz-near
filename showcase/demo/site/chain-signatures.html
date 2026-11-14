@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Chain signatures: one NEAR account, every chain</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{margin:0;background:#f6f5f1;color:#1d211c;font:19px/1.65 Georgia,serif}
+  header{background:#1b2433;color:#e9f6ec;padding:40px 0 30px}
+  .w{max-width:720px;margin:0 auto;padding:0 28px}
+  h1{font:700 40px/1.15 -apple-system,Helvetica,sans-serif;margin:0 0 10px}
+  .by{font:14px -apple-system,Helvetica,sans-serif;opacity:.75}
+  h2{font:700 24px -apple-system,Helvetica,sans-serif;margin:34px 0 8px}
+  p{margin:0 0 18px}
+  .note{font:13px -apple-system,Helvetica,sans-serif;color:#6a7066;border-top:1px solid #ddd;padding-top:12px;margin-top:30px}
+</style></head>
+<body>
+<header><div class="w"><h1>Chain signatures: one NEAR account, every chain</h1>
+<div class="by">Explainer · Pixlz demo page (written for the video; not a real publication)</div></div></header>
+<main class="w">
+<p>Most people who use more than one blockchain end up with a drawer full of wallets: one for Bitcoin, one for Ethereum, one for each new chain. Chain signatures are NEAR's answer to that drawer.</p>
+<h2>Signing for other chains</h2>
+<p>A NEAR account can sign a transaction for Bitcoin or Ethereum without ever holding a private key for that chain. It asks a network of nodes to sign for it, and no single node ever holds the whole key.</p>
+<p>Each NEAR account can derive many addresses on other chains, one per path it chooses. The same account always gets the same address for the same path, so it can receive funds there and spend them later.</p>
+<h2>Why it matters for apps</h2>
+<p>An app built on NEAR can hold assets on several chains and move them under one set of rules, written once in a NEAR contract, instead of running a separate wallet for every chain it touches.</p>
+<h2>What it doesn't do</h2>
+<p>It doesn't make other chains faster or cheaper. A Bitcoin transaction signed this way is still an ordinary Bitcoin transaction, with Bitcoin's fees and confirmation times.</p>
+<p class="note">A demo page for Pixlz, served from this Mac only.</p>
+</main></body></html>
