@@ -121,7 +121,7 @@ class Wallet:
         self.key_path = data_dir / "frogg_key.json" if cfg.pet == "frogg" else data_dir / "keys" / f"{cfg.pet}.json"
         self.store = store
         self.limits = Limits(store, self.policy, cfg.pet)
-        self.rpc = rpc or Rpc(cfg.rpc_url)
+        self.rpc = rpc or Rpc(cfg.rpc_url, explorer=cfg.explorer_base)
 
     # -- what this Pixl spent (its own account's payments only) --
 

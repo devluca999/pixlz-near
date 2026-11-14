@@ -21,7 +21,7 @@ CRYPTO = "https://esm.sh/@near-js/crypto@2.5.1"
 
 def render(cfg: WalletConfig, public_key: str | None, amount_near: str = "1") -> str:
     data = json.dumps({"parent": cfg.parent, "frogg": cfg.frogg, "publicKey": public_key, "rpc": cfg.rpc_url,
-                       "amount": amount_near, "explorer": "https://testnet.nearblocks.io"}).replace("</", "<\\/")
+                       "amount": amount_near, "explorer": cfg.explorer_base, "network": cfg.network}).replace("</", "<\\/")
     e = html.escape
     key_html = (f"<code>{e(public_key)}</code>" if public_key else
                 "<b>Not created yet.</b> Run <code>cd memory &amp;&amp; uv run pixl-memory wallet init</code>, then reload.")
@@ -45,13 +45,13 @@ input {{ font:inherit; border:3px solid var(--ink); padding:6px; width:7em; }}
 .bad {{ color:var(--bad); }} .muted {{ color:var(--muted); }}
 </style></head>
 <body><main>
-<h1>Create Frogg's wallet (testnet)</h1>
+<h1>Create Frogg's wallet ({e(cfg.network)})</h1>
 <p>Frogg gets its own account under yours and pays for its private inference from the amount you give it. That amount is the most it can ever spend; nothing on this Mac can touch your account.</p>
 <div class="card"><dl>
   <dt>Your account (signs once, in Meteor)</dt><dd id="parent">{e(cfg.parent)} <span id="pbal" class="muted"></span></dd>
   <dt>Frogg's account (created by this transaction)</dt><dd>{e(cfg.frogg)} <span id="fstate" class="muted"></span></dd>
   <dt>Frogg's public key (its private half stays on this Mac)</dt><dd>{key_html}</dd>
-  <dt>Amount to give Frogg (testnet NEAR)</dt><dd><input id="amount" value="{e(amount_near)}" inputmode="decimal"> Ⓝ</dd>
+  <dt>Amount to give Frogg ({e(cfg.network)} NEAR)</dt><dd><input id="amount" value="{e(amount_near)}" inputmode="decimal"> Ⓝ</dd>
 </dl></div>
 <div class="card">
   <p><b>What Meteor will ask you to approve:</b> one transaction from <b>{e(cfg.parent)}</b> to <b>{e(cfg.frogg)}</b> with three actions:
@@ -91,7 +91,7 @@ $("connect").onclick = async () => {{
   try {{
     log("Loading Meteor…");
     const [{{ setupWalletSelector }}, {{ setupMeteorWallet }}] = await Promise.all([import("{WS}"), import("{METEOR}")]);
-    const selector = await setupWalletSelector({{ network: "testnet", modules: [setupMeteorWallet()] }});
+    const selector = await setupWalletSelector({{ network: C.network, modules: [setupMeteorWallet()] }});
     wallet = await selector.wallet("meteor-wallet");
     log("Approve the connection in Meteor…");
     const accounts = await wallet.signIn({{ contractId: undefined, methodNames: [] }});

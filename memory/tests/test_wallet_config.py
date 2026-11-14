@@ -65,3 +65,24 @@ def test_payee_defaults_to_the_parent_and_cant_be_frogg(tmp_path):
 def test_bad_caps_and_rpc_are_rejected(tmp_path, extra, msg):
     with pytest.raises(WalletConfigError, match=msg):
         WalletConfig.from_env(env(tmp_path, extra))
+
+
+def test_mainnet_is_off_unless_the_owner_turns_it_on(tmp_path):
+    """Mainnet runs the same code path; it stays off (testnet default) unless PIXL_ENABLE_MAINNET=true."""
+    main = "NEAR_NETWORK=mainnet\nFROGG_PARENT_ACCOUNT=owner.near\nFROGG_ACCOUNT=frogg.owner.near\n"
+    (tmp_path / ".env").write_text(main)
+    with pytest.raises(WalletConfigError, match="PIXL_ENABLE_MAINNET"):
+        WalletConfig.from_env(tmp_path / ".env")
+    (tmp_path / ".env").write_text(main + "PIXL_ENABLE_MAINNET=false\n")
+    with pytest.raises(WalletConfigError, match="PIXL_ENABLE_MAINNET"):
+        WalletConfig.from_env(tmp_path / ".env")
+    (tmp_path / ".env").write_text(main + "PIXL_ENABLE_MAINNET=true\n")
+    w = WalletConfig.from_env(tmp_path / ".env")
+    assert (w.network, w.rpc_url, w.payee) == ("mainnet", "https://rpc.mainnet.near.org", "owner.near")
+    assert w.explorer == "https://nearblocks.io/address/frogg.owner.near"
+    # with mainnet on, testnet names and a testnet RPC are still refused for it, and vice versa
+    with pytest.raises(WalletConfigError, match=r"\.near"):
+        WalletConfig.validated("mainnet", PARENT, FROGG, allow_mainnet=True)
+    (tmp_path / ".env").write_text(main + "PIXL_ENABLE_MAINNET=true\nNEAR_RPC_URL=https://rpc.testnet.near.org\n")
+    with pytest.raises(WalletConfigError, match="mainnet endpoint"):
+        WalletConfig.from_env(tmp_path / ".env")

@@ -186,8 +186,10 @@ def _definitely_rejected(msg: str) -> bool:
 
 
 class Rpc:
-    def __init__(self, url: str = DEFAULT_RPC, http: httpx.Client | None = None):
+    def __init__(self, url: str = DEFAULT_RPC, http: httpx.Client | None = None, explorer: str | None = None):
         self.url = url
+        # receipts link to the explorer of the network this RPC serves
+        self.explorer = explorer or ("https://nearblocks.io" if "mainnet" in url else EXPLORER)
         self.http = http or httpx.Client(timeout=30)
         self._last_nonce: dict[tuple[str, str], int] = {}
 
@@ -251,8 +253,8 @@ class Rpc:
             # it failed: it may still execute. Only an explicit rejection is a failure.
             if _definitely_rejected(str(e)):
                 raise
-            raise TransferUnknown(str(e), tx_hash, f"{EXPLORER}/txns/{tx_hash}") from e
+            raise TransferUnknown(str(e), tx_hash, f"{self.explorer}/txns/{tx_hash}") from e
         status = r.get("status") or {}
         if isinstance(status, dict) and "Failure" in status:
             raise RpcError(f"transfer failed on chain: {json.dumps(status['Failure'])[:200]}")
-        return {"tx_hash": (r.get("transaction") or {}).get("hash", tx_hash), "explorer": f"{EXPLORER}/txns/{tx_hash}"}
+        return {"tx_hash": (r.get("transaction") or {}).get("hash", tx_hash), "explorer": f"{self.explorer}/txns/{tx_hash}"}

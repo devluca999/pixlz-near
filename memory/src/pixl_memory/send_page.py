@@ -19,10 +19,16 @@ from .setup_page import METEOR, TX, WS
 ACCOUNT_RE = r"^(([a-z\d]+[-_])*[a-z\d]+\.)+testnet$|^[0-9a-f]{64}$"
 
 
+def account_re(network: str) -> str:
+    """Account ids on `network` (testnet: *.testnet; mainnet: *.near), or a 64-hex implicit account."""
+    return ACCOUNT_RE if network == "testnet" else r"^(([a-z\d]+[-_])*[a-z\d]+\.)+near$|^[0-9a-f]{64}$"
+
+
 def render(cfg: WalletConfig, pets: list[str]) -> str:
-    data = json.dumps({"owner": cfg.parent, "rpc": cfg.rpc_url, "explorer": "https://testnet.nearblocks.io",
-                       "pets": pets, "accountRe": ACCOUNT_RE}).replace("</", "<\\/")
+    data = json.dumps({"owner": cfg.parent, "rpc": cfg.rpc_url, "explorer": cfg.explorer_base, "network": cfg.network,
+                       "pets": pets, "accountRe": account_re(cfg.network)}).replace("</", "<\\/")
     e = html.escape
+    net, sfx = cfg.network, cfg.suffix
     pet_buttons = "".join(f'<button class="pet" data-to="{e(p)}">Top up {e(p.split(".")[0].capitalize())}</button>' for p in pets)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -45,12 +51,12 @@ input {{ font:inherit; border:3px solid var(--ink); padding:6px; width:100%; max
 .bad {{ color:var(--bad); }} .muted {{ color:var(--muted); }}
 </style></head>
 <body><main>
-<h1>Send NEAR (testnet)</h1>
-<p>Send testnet NEAR from <b>your</b> account to a friend, or top up one of your Pixls. Meteor signs it in its own window: this Mac never sees your keys, and Pixl Memory can't change the recipient or the amount after you approve.</p>
+<h1>Send NEAR ({e(net)})</h1>
+<p>Send {e(net)} NEAR from <b>your</b> account to a friend, or top up one of your Pixls. Meteor signs it in its own window: this Mac never sees your keys, and Pixl Memory can't change the recipient or the amount after you approve.</p>
 <div class="card"><dl>
   <dt>From (your account, signs in Meteor)</dt><dd>{e(cfg.parent)} <span id="bal" class="muted"></span></dd>
-  <dt>To (a .testnet account)</dt><dd><input id="to" placeholder="friend.testnet" autocomplete="off" spellcheck="false"> <span id="tostate" class="muted"></span></dd>
-  <dt>Amount (testnet NEAR)</dt><dd><input id="amount" value="0.1" inputmode="decimal"> Ⓝ</dd>
+  <dt>To (a {e(sfx)} account)</dt><dd><input id="to" placeholder="friend{e(sfx)}" autocomplete="off" spellcheck="false"> <span id="tostate" class="muted"></span></dd>
+  <dt>Amount ({e(net)} NEAR)</dt><dd><input id="amount" value="0.1" inputmode="decimal"> Ⓝ</dd>
 </dl>{pet_buttons}</div>
 <div class="card">
   <p><b>What Meteor will ask you to approve:</b> one transaction from <b>{e(cfg.parent)}</b> to the account above, with one action: <i>Transfer</i> of the amount above. Nothing else.</p>
@@ -79,10 +85,10 @@ view(C.owner).then((b) => $("bal").textContent = b === null ? "(not found)" : `�
 const checkTo = async () => {{
   const to = $("to").value.trim();
   if (!to) {{ $("tostate").textContent = ""; return null; }}
-  if (!RE.test(to)) {{ $("tostate").textContent = "· not a testnet account id"; return null; }}
+  if (!RE.test(to)) {{ $("tostate").textContent = `· not a ${{C.network}} account id`; return null; }}
   if (to === C.owner) {{ $("tostate").textContent = "· that's you"; return null; }}
   const b = await view(to).catch(() => null);
-  $("tostate").textContent = b === null ? "· doesn't exist on testnet (NEAR would refuse)" : `· exists, ${{fmt(b)}} Ⓝ`;
+  $("tostate").textContent = b === null ? `· doesn't exist on ${{C.network}} (NEAR would refuse)` : `· exists, ${{fmt(b)}} Ⓝ`;
   return b === null ? null : to;
 }};
 $("to").addEventListener("change", checkTo);
@@ -92,7 +98,7 @@ $("connect").onclick = async () => {{
   try {{
     log("Loading Meteor…");
     const [{{ setupWalletSelector }}, {{ setupMeteorWallet }}] = await Promise.all([import("{WS}"), import("{METEOR}")]);
-    const selector = await setupWalletSelector({{ network: "testnet", modules: [setupMeteorWallet()] }});
+    const selector = await setupWalletSelector({{ network: C.network, modules: [setupMeteorWallet()] }});
     wallet = await selector.wallet("meteor-wallet");
     log("Approve the connection in Meteor…");
     const accounts = await wallet.signIn({{ contractId: undefined, methodNames: [] }});
@@ -104,7 +110,7 @@ $("connect").onclick = async () => {{
 $("send").onclick = async () => {{
   try {{
     const to = await checkTo();
-    if (!to) throw new Error("Enter an existing .testnet account to send to");
+    if (!to) throw new Error(`Enter an existing ${{C.network}} account to send to`);
     const amount = toYocto($("amount").value.trim());
     const {{ actionCreators }} = await import("{TX}");
     log(`Approve in Meteor: send ${{$("amount").value}} Ⓝ from ${{C.owner}} to ${{to}}…`);

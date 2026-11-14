@@ -251,7 +251,7 @@ def test_setup_page_shows_only_public_data(tmp_path, captured):
     html = page.text
     assert PARENT in html and FROGG in html and w.key().public_key in html
     assert w.key().secret_key not in html and json.loads(w.key_path.read_text())["private_key"] not in html
-    assert "createAccount" in html and "fullAccessKey" in html and 'network: "testnet"' in html
+    assert "createAccount" in html and "fullAccessKey" in html and 'network: C.network' in html and '"network": "testnet"' in html
     assert tc.get("/wallet/setup", headers={"Host": "evil.example"}).status_code == 421
 
 
@@ -279,7 +279,7 @@ def test_send_page_asks_the_owners_wallet_for_one_plain_transfer(tmp_path, captu
     assert PARENT in html and FROGG in html                     # owner signs; Frogg offered as a top-up target
     assert w.key().secret_key not in html and json.loads(w.key_path.read_text())["private_key"] not in html
     assert "actionCreators.transfer(amount)" in html and "addKey" not in html and "functionCall" not in html
-    assert 'network: "testnet"' in html and "signerId: C.owner" in html
+    assert 'network: C.network' in html and '"network": "testnet"' in html and "signerId: C.owner" in html
     assert tc.get("/wallet/send", headers={"Host": "evil.example"}).status_code == 421
     from pixl_memory.send_page import ACCOUNT_RE
     ok = re.compile(ACCOUNT_RE)

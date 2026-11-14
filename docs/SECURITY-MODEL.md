@@ -142,7 +142,7 @@ for permission.
 - **Retries:** a transfer whose outcome is unknown (timeout, unreadable reply after sending) is
   recorded `pending` with its hash and still counts toward the caps. It is not retried
   automatically, so there's no duplicate payment. Nonces never repeat in a process (`near.py`).
-- **Rejected replies are not paid for.** Testnet only: mainnet RPCs and non-sub-account Pixls are
+- **Rejected replies are not paid for.** Testnet by default: mainnet (same code path) is refused unless `PIXL_ENABLE_MAINNET=true`; a mismatched RPC or a non-sub-account Pixl is
   refused at startup.
 
 ## 6. Local service and browser

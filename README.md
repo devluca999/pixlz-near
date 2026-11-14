@@ -24,7 +24,7 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | What it is | A desktop pet for macOS that edits and answers privately, saves highlights with links back to the page, and travels to other devices |
 | NEAR pieces | NEAR AI Cloud private inference, its attestation checked on the Mac before sending; a NEAR testnet sub-account per pet that logs every request with an on-chain payment |
 | Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
-| Network | NEAR **testnet only**; the config refuses mainnet |
+| Network | NEAR **testnet** for the demo. Mainnet is the same code path behind one flag, `PIXL_ENABLE_MAINNET` (off by default; see [Testnet now, mainnet by flag](#testnet-now-mainnet-by-flag)) |
 | Your keys | Your NEAR account key is never on the Mac. Only the pet's own key and your NEAR AI API key (in `.env`, git-ignored) are |
 | Tests | 691 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
 | Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
@@ -157,7 +157,9 @@ Every Pixl can have its own wallet the same way (`pixl-memory wallet init --pet 
 
 **How it's built** (`memory/src/pixl_memory/near.py`, `wallet.py`): Frogg's ed25519 key is generated on the Mac by `pixl-memory wallet init` and stored in `~/Library/Application Support/PixlMemory/frogg_key.json` with mode 0600. Transactions are signed in about 100 lines of Python, checked byte for byte against `near-api-js` in the tests.
 
-**Owner setup** (testnet only):
+**Testnet now, mainnet by flag.** <a id="testnet-now-mainnet-by-flag"></a>The demo runs on testnet so judges can try it without real funds. Nothing in the design is testnet-specific: networks are one table in `memory/src/pixl_memory/config.py` (account suffix, RPC, explorer), and mainnet uses the same sub-account wallet, caps, payee rule, receipts and send page. It stays **off** unless the owner sets `PIXL_ENABLE_MAINNET=true` and `NEAR_NETWORK=mainnet` with `.near` accounts in `.env`; without the flag the service refuses mainnet at startup (test `test_mainnet_is_off_unless_the_owner_turns_it_on`, attack log row 18). Mainnet hasn't been exercised with real funds.
+
+**Owner setup** (testnet):
 
 1. `cd memory && uv run pixl-memory wallet init` creates Frogg's key and prints its public half.
 2. Create Frogg's account under yours with the NEAR CLI (your key stays in your keychain):
@@ -313,7 +315,7 @@ The video's last scene shows a Mosaico, a Mac and an iPhone side by side. That s
 
 - **Entry points:** `memory/src/pixl_memory/` (the service: `verify.py` and `tdx.py` check attestation, `nearai.py` calls NEAR AI, `near.py` and `wallet.py` pay), `macos/PixlMemory/Sources/PixlMemory/AppController.swift` (the app), `PixlzCore/Sources/` (shared logic), `extension/`, `mosaico/pixl_trip/src/`.
 - **Specs:** [`docs/SPEC.md`](docs/SPEC.md) is how a Pixl behaves on every platform; [`docs/DECISIONS.md`](docs/DECISIONS.md) records decisions by number (D1, D2, …), which code comments cite.
-- **Rules the code enforces:** testnet only; text is never sent unless all 14 mandatory attestation checks pass (`verify.MANDATORY_CHECKS`; a skip is a failure); the completion is pinned to the attested gateway's TLS key; a reply that fails its signature is discarded; Frogg pays only the allowlisted payee (app code, not on chain); API keys come only from `.env`.
+- **Rules the code enforces:** testnet by default (mainnet only with `PIXL_ENABLE_MAINNET=true`); text is never sent unless all 14 mandatory attestation checks pass (`verify.MANDATORY_CHECKS`; a skip is a failure); the completion is pinned to the attested gateway's TLS key; a reply that fails its signature is discarded; Frogg pays only the allowlisted payee (app code, not on chain); API keys come only from `.env`.
 - **Trust model in one file:** [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md), including a threat ledger marking each defense real or simulated.
 - **Run every test:** the commands in [What's built and how it's tested](#whats-built-and-how-its-tested). None needs a key except `uv run pytest -m live`.
 
