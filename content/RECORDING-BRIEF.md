@@ -42,7 +42,7 @@ yet.** That's the biggest gap.
 - **Never on screen:** `.env` or its contents, `NEAR_AI_API_KEY`, `pixl-memory token` output,
   `~/Library/Application Support/PixlMemory/*_key.json` (Frogg's key), `store.key`, any wallet
   seed or `near` CLI keychain prompt, real email addresses or inboxes, Claude Code transcripts from
-  real projects, the macOS user name in paths (`/Users/Luca_M/…`: `cd` into the repo first and
+  real projects, the macOS user name in paths (`/Users/<name>/…`: `cd` into the repo first and
   keep paths relative).
 - **Decide once, then apply everywhere:** the owner account names. `pixlz-petz-faucet.testnet` and
   `pixlz-petz.testnet` are already public in the README. `sylversurferr.testnet` is a test fixture

@@ -27,3 +27,9 @@ VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and b
   image          nearaidev/compose-manager-launcher@sha256:079a14b41deb11e0e27f9b69648e8b3d89bd6fb9ccf6071643b8f447fa415085
 
 ======================= 2 passed, 1 deselected in 6.86s ========================
+
+# Real NearAIClient.chat() against the live service with a dummy API key (free; message "ping"):
+# live attest passed all 14 mandatory checks, the completion POST was made on a pinned connection
+# (TLS key matched the gateway's attested SPKI), and NEAR AI answered 401 for the dummy key:
+#   pinned calls: [('POST', ['chat', 'completions'], 401)]
+# Not yet run: the signature step of a real paid completion.

@@ -54,7 +54,7 @@ masters export a 4:5 crop too (`showcase/shorts/tools/render.sh` already makes b
 - **Proof:** E01 (live), `docs/hackathon/evidence/live-attest-2026-11-13.txt`.
 - **Available:** `F3/take-1.mov` (brain → attestation card), `docs/screenshots/polish-panel-checks.png`.
 - **New shots:** E01, E02a, E05 (checks expanded).
-- **VO:** "Every AI says it's private. Can it prove it? This command asks NEAR AI's servers for a fresh, signed hardware report, with no account and no API key. My Mac checks thirteen things: that Intel signed it, that debug mode is off, that it's fresh for this request, that the signing key lives inside, the exact software that's running, and that NVIDIA vouches for the GPUs. All thirteen pass, or my text never leaves. It doesn't make the AI local. It makes the promise checkable."
+- **VO:** "Every AI says it's private. Can it prove it? This command asks NEAR AI's servers for a fresh, signed hardware report, with no account and no API key. My Mac checks fourteen things: that Intel signed it, that debug mode is off, that it's fresh for this request, that the signing key lives inside, the exact software that's running, that the TLS connection is the attested one, and that NVIDIA vouches for the GPUs. All fourteen pass, or my text never leaves. It doesn't make the AI local. It makes the promise checkable."
 - **Storyboard:** 1) promise card, 0–3 s · 2) E01 typed command, 3–6 s · 3) E01 ✔ lines scroll; each property lights up with a plain-word label, 6–30 s · 4) E02a one ✘ → "Refused. Nothing was sent.", 30–38 s · 5) E05 the same checks in the app panel, 38–45 s · 6) end card with the command, 45–50 s.
 - **On-screen text:** "13 required checks" · "1 fails → nothing sent" · "try it: `cd memory && uv run pixl-memory attest`".
 - **Thumbnail:** a terminal of green ✔ with Frogg holding a magnifier; "PROVE IT."
@@ -68,7 +68,7 @@ masters export a 4:5 crop too (`showcase/shorts/tools/render.sh` already makes b
 - **Proof:** E04a (diff), E04b (old build says "Partly verified", exit 0), E02a/b (new build refuses, real network), E03 (`104 passed`, `23/23`).
 - **Available:** `docs/ATTACKS.md` row 7, `docs/screenshots/polish-refused.png` (app view, rendered).
 - **New shots:** E02, E03, E04.
-- **VO:** "I tried to trick my desktop pet into leaking private text. The trick: block NVIDIA's attestation service, so the GPU can't be verified. In the old version, that check was just marked 'skipped', and my text still went out. To an enclave that passed every other check, but still. So I changed one rule: thirteen properties are mandatory, and skipped counts as failed. Same attack today: refused, nothing sent. Then I wrote ninety-seven test cases against a simulated cloud to make sure it stays that way."
+- **VO:** "I tried to trick my desktop pet into leaking private text. The trick: block NVIDIA's attestation service, so the GPU can't be verified. In the old version, that check was just marked 'skipped', and my text still went out. To an enclave that passed every other check, but still. So I changed one rule: fourteen properties are mandatory, and skipped counts as failed. Same attack today: refused, nothing sent. Then I wrote a hundred and four test cases against a simulated cloud to make sure it stays that way."
 - **Storyboard:** 1) Frogg looking smug, 0–2 s · 2) E02 `/etc/hosts` line, 2–6 s · 3) E04b "PARTIAL: Partly verified" plus a red stamp "BEFORE: text sent", 6–14 s · 4) E04a diff zoom on `SKIP`, 14–22 s · 5) E02a "Refused… Nothing was sent." plus a green stamp "AFTER", 22–30 s · 6) E02b app card, 30–35 s · 7) E03 `104 passed` / `23/23` with the SIMULATED label, 35–42 s · 8) undo and VERIFIED again, 42–46 s.
 - **On-screen text:** "BEFORE: GPU unverified → sent anyway" · "AFTER: skipped = failed" · "SIMULATED NEAR AI CLOUD" (on E03 only).
 - **Thumbnail:** split screen: "PARTLY VERIFIED → SENT" (red) / "NOT SENT" (green), Frogg in the middle.
@@ -92,7 +92,7 @@ masters export a 4:5 crop too (`showcase/shorts/tools/render.sh` already makes b
 
 - **Hook:** a wide shot: Frogg leaps off the MacBook screen and lands on a tiny cube display.
 - **Arc:** the leap (one unbroken take) → there's only ever one Frogg (a checksum handover) → he comes back → Mac to Mac too → the honest limit.
-- **Tech:** Bonjour (`_pixlz._tcp`) or BLE finds the device; the trip protocol hands over state with a checksum, so he's never lost or duplicated; an untrusted device has to ask first; a 6-digit pairing code (X25519 + HKDF). **Limit:** the trip channel isn't encrypted (plaintext on the LAN), so a device on your network could read it; signing frames is next. The iPhone is planned, not built.
+- **Tech:** Bonjour (`_pixlz._tcp`) or BLE finds the device; the trip protocol hands over state with a checksum, and only commits once the receiver acknowledges it, with a reclaimable copy left behind; an untrusted device has to ask first; a 6-digit pairing code (X25519 + HKDF). **Limit:** the trip channel isn't encrypted (plaintext on the LAN), so a device on your network could read it; signing frames is next. The iPhone is planned, not built.
 - **Proof:** E07 (unbroken), H01, O03.
 - **Available:** `showcase/takes/intro-frogg.mp4`, `showcase/shorts/raw/clip1–4`, `showcase/takes/D1/wide-1.mov` (a render; label it).
 - **New shots:** E07, H01, O03, O08.
@@ -261,7 +261,7 @@ VO, storyboard (seconds), on-screen text, thumbnail, length and platform, and CT
 | 0–6 | H10 desk push-in; Frogg on the window | "This is Frogg. He lives on your Mac." |
 | 6–12 | F1 fly snack (existing) | — (sound effects only) |
 | 12–24 | E05 select → polish → card dropped in | "He rewrites what you select. But only after he's checked where it's going." |
-| 24–34 | E01 ✔ lines, punched in | "A fresh hardware proof from NEAR AI Cloud. Thirteen required checks: Intel, NVIDIA, the exact code running." |
+| 24–34 | E01 ✔ lines, punched in | "A fresh hardware proof from NEAR AI Cloud. Fourteen required checks: Intel, NVIDIA, the exact code running." |
 | 34–44 | E02a/b refusal | "If one can't be proven, your text doesn't leave. Not even once." Chip: "real network · NVIDIA blocked locally" |
 | 44–56 | E06 explorer receipt | "He has his own testnet wallet, under mine, and records every request's cost on chain. A stolen key can only spend his balance." Chip: "limits enforced in the app" |
 | 56–72 | E07 one-take trip | "And he travels: Mac to Mosaico and back, one take." Chip: "local Wi-Fi · link not encrypted yet" |

@@ -117,6 +117,9 @@ for permission.
   (checked above), then forwards to the model enclave.
 - **Web search sends the model's search query to NEAR's search provider**, server-side. The search
   results are inside the signed stream.
+- **Pictures for answers (opt-in, off by default)** sends the names an answer lists to Wikipedia
+  from the Mac, not your question. It is skipped for answers drawn from your highlights.
+  Clicking a source or backlink opens it in your browser like any link.
 - **Tests use a simulated NEAR AI Cloud.** `test_preflight_matrix.py` and `attack_demo.py` prove the
   client's decision logic, not the security of real hardware. Live evidence:
   `docs/hackathon/evidence/live-attest-2026-11-13.txt` (all 14 mandatory checks pass, 8 × GH100,
@@ -229,10 +232,10 @@ fake chain), **D** = documented only, not tested.
 | Cross-origin request | Site POSTs to the service | No CORS grant | Extension-only CORS | S | Blocked | — | attack #22 |
 | DNS rebinding | Hostname → 127.0.0.1 | Refused | Host allow-list | S | Blocked | — | attack #21 |
 | Leaked API key | Key in a commit | Refused at commit | pre-commit hook | S (real hook) | Blocked | Hook is opt-in per clone | attack #23 |
-| Prompt injection via saved highlights | Poisoned highlight steers the model | Can't exfiltrate or pay | Highlights only reach the attested enclave; no tool or payment path from model output | D | Contained | Can steer the answer's content | — |
-| Malicious retrieved content (web search) | Search results inject instructions | Same as above | Results are in the signed stream; shown as sources | D | Contained | Can steer the answer | — |
+| Prompt injection via saved highlights | Poisoned highlight steers the model | Can't exfiltrate or pay | Highlights only reach the attested enclave; actions (open app/URL, save) are parsed from what *you* type, never from model output; payments never depend on model output | D | Contained | Can steer the answer's content. Answer pictures are skipped when highlights were used | `AnswerPictures.shouldFetch` |
+| Malicious retrieved content (web search) | Search results inject instructions | Same as above | Results are in the signed stream; shown as sources | D | Mostly contained | Can steer the answer. **With Pictures for answers on (opt-in, off by default)**, the names the answer lists are sent to `en.wikipedia.org`, so injected text could choose what goes there (the question and highlights are not sent) | `AnswerPictures.swift` |
 | Manipulated backlink | `fragment_url` points elsewhere | Shown as a link | Stored as text, opened by the browser | D | User-visible | Open links you trust | — |
-| Unauthorized pairing | Stranger pairs a Mosaico | Needs the 6-digit code on both screens | X25519 + commitment + HKDF | R (device) | Blocked | — | `make -C mosaico/pixl_trip test` |
+| Unauthorized pairing | Stranger pairs a Mosaico | Needs the 6-digit code on both screens | X25519 + commitment + HKDF | S (host C tests; the protocol has run on a real Mosaico, not re-run today) | Blocked | — | `make -C mosaico/pixl_trip test` |
 | Unauthenticated trip commands / spoofing | LAN device claims a paired name | Can't take the Pixl without trust | Trust/pair gate; a reclaimable copy stays | S | Partly | Transport unsigned, unencrypted | PixlzCore travel tests |
 | Malformed transport packets | Fuzzed frames | No crash, trip aborts | Checksums, state machine | S | Handled | — | `mosaico/pixl_trip` tests (323) |
 | Claude Code hook abuse | Model output messaging sessions | Only typed chat text reaches a session | Hook gating | S | Blocked | — | `AgentSafetyTests` (Swift) |
