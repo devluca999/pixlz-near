@@ -27,6 +27,7 @@ typedef enum {
     APP_MENU_CHAT,     /**< One session's chat: drag to scroll, tap to go back; green Reply when it can. */
     APP_MENU_QUICK,    /**< Quick replies: Continue · Yes · No · Run the tests. */
     APP_MENU_HEARD,    /**< What the Mac heard: red discard, green send it as the reply. */
+    APP_MENU_PAGE_4,   /**< Size · Back (page 3's More). */
 } app_menu_mode_t;
 
 typedef enum {
@@ -36,6 +37,7 @@ typedef enum {
     APP_MENU_BUBBLE_ANSWERS, APP_MENU_BUBBLE_MEMORY, APP_MENU_BUBBLE_CALL,
     APP_MENU_BUBBLE_BRING, APP_MENU_BUBBLE_EXIT, APP_MENU_BUBBLE_AGENTS, APP_MENU_BUBBLE_UNPAIR, APP_MENU_BUBBLE_PAIR,
     APP_MENU_BUBBLE_Q0, APP_MENU_BUBBLE_Q1, APP_MENU_BUBBLE_Q2, APP_MENU_BUBBLE_Q3,
+    APP_MENU_BUBBLE_SIZE,
 } app_menu_bubble_t;
 
 /** Bubble slots at the middle of each screen edge. */
@@ -62,6 +64,7 @@ typedef enum {
     APP_MENU_ACTION_DICTATE_STOP,  /**< it came up: send what was said */
     APP_MENU_ACTION_DICTATE_CANCEL,/**< it came up after sliding off the mic: throw it away */
     APP_MENU_ACTION_DICTATE_SEND,  /**< green on the heard screen */
+    APP_MENU_ACTION_SIZE,          /**< Cycle the Pixl's size: 1x, 2x, 3x, 4x, then 1x (menu stays open). */
 } app_menu_action_kind_t;
 
 /** Agents rows: the session id and, while it waits, its request id (the dock's sizes). */
@@ -95,6 +98,7 @@ typedef struct {
     bool agents_paired;      /**< Paired with the Mac whose sessions these are: Allow works. */
     bool paired;             /**< Paired with a Mac: Unpair on page 3. */
     bool can_swap;           /**< The Pixl is here and not in a trip: Swap works. */
+    int size;                /**< The Pixl's size step shown on Size, 1..4 (0 reads as 1). */
 } app_menu_context_t;
 
 typedef struct {

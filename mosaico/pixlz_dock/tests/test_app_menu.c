@@ -83,10 +83,17 @@ static void test_pages(void)
     CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3);
     CHECK(app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_UNLOCK);
     CHECK(app_menu_read(m).slots[1].bubble == APP_MENU_BUBBLE_EXIT && app_menu_read(m).slots[2].bubble == APP_MENU_BUBBLE_PAIR);
-    // Back from page 3 is page 2.
+    // More on page 3 is page 4: Size cycles 2x, 3x, 4x, 1x and the page stays open; Back is page 3.
     tap(m, s.slots[3].x, s.slots[3].y);
-    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_2);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_4 && app_menu_read(m).slots[0].bubble == APP_MENU_BUBBLE_SIZE);
+    for (int want = 2; want <= 5; want++) {
+        tap(m, 240, s.slots[0].y);
+        app_menu_action_t z = app_menu_take_action(m);
+        CHECK(z.kind == APP_MENU_ACTION_SIZE && z.arg == (want > 4 ? 1 : want));
+        CHECK(app_menu_read(m).mode == APP_MENU_PAGE_4);
+    }
     tap(m, s.slots[3].x, s.slots[3].y);
+    CHECK(app_menu_read(m).mode == APP_MENU_PAGE_3);
     tap(m, 240, s.slots[0].y);
     a = app_menu_take_action(m);
     CHECK(a.kind == APP_MENU_ACTION_LOCK && a.arg == 0);

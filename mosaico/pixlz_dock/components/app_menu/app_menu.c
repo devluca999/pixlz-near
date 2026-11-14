@@ -162,6 +162,9 @@ static void page(app_menu_handle_t m, app_menu_bubble_t bubbles[APP_MENU_SLOTS],
         } else {
             bubbles[2] = APP_MENU_BUBBLE_PAIR, enabled[2] = c->agents_connected;   /* needs a Mac to ask */
         }
+        bubbles[3] = APP_MENU_BUBBLE_MORE, enabled[3] = true;
+    } else if (m->mode == APP_MENU_PAGE_4) {
+        bubbles[0] = APP_MENU_BUBBLE_SIZE, enabled[0] = true;
         bubbles[3] = APP_MENU_BUBBLE_BACK, enabled[3] = true;
     }
 }
@@ -196,6 +199,15 @@ static void act(app_menu_handle_t m, app_menu_action_kind_t kind, int arg)
 {
     set_action(m, kind, arg);
     app_menu_close(m);
+}
+
+/* Size: the action, and the page stays open (with the next size on its label) so a few taps
+ * try every size. The runtime cycles the same way: 1, 2, 3, 4, then 1. */
+static void act_keep_open(app_menu_handle_t m, app_menu_action_kind_t kind)
+{
+    int size = m->context.size < 1 || m->context.size > 4 ? 1 : m->context.size;
+    m->context.size = size % 4 + 1;
+    set_action(m, kind, m->context.size);
 }
 
 /* Sending a reply: the action, then back to that session's chat (it shows what happened). */
@@ -234,9 +246,10 @@ static void tap_page(app_menu_handle_t m, int32_t x, int32_t y)
     case APP_MENU_BUBBLE_LOCK: act(m, APP_MENU_ACTION_LOCK, 1); break;
     case APP_MENU_BUBBLE_UNLOCK: act(m, APP_MENU_ACTION_LOCK, 0); break;
     case APP_MENU_BUBBLE_BRING: act(m, APP_MENU_ACTION_BRING, 0); break;
-    case APP_MENU_BUBBLE_MORE: show(m, m->mode == APP_MENU_PAGE_1 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_3); break;
+    case APP_MENU_BUBBLE_MORE: show(m, m->mode == APP_MENU_PAGE_1 ? APP_MENU_PAGE_2 : m->mode == APP_MENU_PAGE_2 ? APP_MENU_PAGE_3 : APP_MENU_PAGE_4); break;
     case APP_MENU_BUBBLE_AGENTS: show(m, APP_MENU_AGENTS); break;
-    case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
+    case APP_MENU_BUBBLE_BACK: show(m, m->mode == APP_MENU_PAGE_4 ? APP_MENU_PAGE_3 : m->mode == APP_MENU_PAGE_3 ? APP_MENU_PAGE_2 : APP_MENU_PAGE_1); break;
+    case APP_MENU_BUBBLE_SIZE: act_keep_open(m, APP_MENU_ACTION_SIZE); break;
     case APP_MENU_BUBBLE_EXIT: show(m, APP_MENU_EXIT); break;
     case APP_MENU_BUBBLE_UNPAIR: act(m, APP_MENU_ACTION_UNPAIR, 0); break;
     case APP_MENU_BUBBLE_PAIR: act(m, APP_MENU_ACTION_PAIR_REQUEST, 0); break;

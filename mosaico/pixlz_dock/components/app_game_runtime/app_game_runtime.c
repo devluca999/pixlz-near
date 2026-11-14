@@ -79,6 +79,21 @@ static uint8_t scale_for(const pixl_pet_t *pet)
     return (uint8_t)(s < 1 ? 1 : s);
 }
 
+/* The size the owner picked on the menu (page 4, Size): 1x is the scale above, up to 4x. */
+static uint8_t s_size = 1;
+
+/* scale_for(pet) times the chosen size, kept small enough that the Pixl fits the screen. */
+static uint8_t sized_scale(const pixl_pet_t *pet)
+{
+    unsigned w = pet->frames[PIXL_F_IDLE_0].w, h = pet->frames[PIXL_F_IDLE_0].h;
+    unsigned s = (unsigned)scale_for(pet) * s_size;
+    unsigned max_w = w ? (GAME_WIDTH - 40u) / w : 16u, max_h = h ? (GAME_HEIGHT - 120u) / h : 16u;
+    if (s > max_w) s = max_w;
+    if (s > max_h) s = max_h;
+    if (s > 16u) s = 16u;
+    return (uint8_t)(s < 1 ? 1 : s);
+}
+
 static int look_index(const char *id)
 {
     for (int i = 0; i < PIXL_PET_COUNT; i++) {
@@ -93,7 +108,7 @@ static app_game_config_t config_for(int look, uint32_t seed)
 {
     const pixl_pet_t *pet = &pixl_pets[look];
     app_game_config_t c = {
-        GAME_WIDTH, GAME_HEIGHT, scale_for(pet),
+        GAME_WIDTH, GAME_HEIGHT, sized_scale(pet),
         pet->frames[PIXL_F_IDLE_0].w, pet->frames[PIXL_F_IDLE_0].h, seed,
         pet->movement == PIXL_MOVE_FLOAT ? APP_GAME_MOVE_FLOAT :
         pet->movement == PIXL_MOVE_WALK ? APP_GAME_MOVE_WALK : APP_GAME_MOVE_HOP,
@@ -253,6 +268,7 @@ static void open_menu(host_state_t *state)
     ctx.agents_paired = d.agents_paired;
     ctx.paired = d.paired;
     ctx.can_swap = d.owns_pet && !d.in_trip && here;   /* the record changes with the look */
+    ctx.size = s_size;
     app_menu_open(state->menu, &ctx);
     push_agents(state);
 }
@@ -394,6 +410,17 @@ static void apply_menu(host_state_t *state, app_menu_action_t a)
             state->scale = c.scale;
             state->last_line = -1;
             app_game_set_look(state->game, &c);
+        }
+        break;
+    case APP_MENU_ACTION_SIZE:
+        if (a.arg >= 1 && a.arg <= 4) {
+            s_size = (uint8_t)a.arg;
+            const app_game_config_t c = config_for(state->look, 0);
+            state->scale = c.scale;
+            app_game_set_look(state->game, &c);
+            char line[24];
+            snprintf(line, sizeof line, "Size %dx", a.arg);
+            say_banner(state, line);
         }
         break;
     case APP_MENU_ACTION_NONE: break;
@@ -849,6 +876,11 @@ static const char *bubble_label(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_Q1: return "Yes";
     case APP_MENU_BUBBLE_Q2: return "No";
     case APP_MENU_BUBBLE_Q3: return "Tests";
+    case APP_MENU_BUBBLE_SIZE: {
+        static char size_label[16];
+        snprintf(size_label, sizeof size_label, "Size %ux", (unsigned)s_size);
+        return size_label;
+    }
     default: return "";
     }
 }
@@ -864,6 +896,7 @@ static Color bubble_colour(app_menu_bubble_t b)
     case APP_MENU_BUBBLE_AGENTS: return shade(255, 176, 60, 100);    /* amber */
     case APP_MENU_BUBBLE_UNPAIR: return shade(150, 160, 200, 100);   /* slate */
     case APP_MENU_BUBBLE_PAIR: return shade(110, 180, 245, 100);     /* blue */
+    case APP_MENU_BUBBLE_SIZE: return shade(124, 217, 58, 100);      /* Pixlz green */
     case APP_MENU_BUBBLE_Q0: return shade(140, 215, 120, 100);       /* green: carry on */
     case APP_MENU_BUBBLE_Q1: return shade(110, 180, 245, 100);
     case APP_MENU_BUBBLE_Q2: return shade(240, 115, 105, 100);
