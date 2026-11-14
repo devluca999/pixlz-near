@@ -37,7 +37,7 @@ protections against different attackers. Pixlz uses both and never presents one 
 
 ## 2. The preflight: what must be proven before any text is sent
 
-`memory/src/pixl_memory/verify.py` → `MANDATORY_CHECKS`. Every one of these must be present and
+`memory/src/pixl_memory/verify.py` → `MANDATORY_CHECKS`. Every one of these 14 must be present and
 `pass` (or `warn`: passed with a caveat shown to the user). A `fail`, a `skip` (could not be
 checked) or a missing check refuses. The decision is made in the local service
 (`NearAIClient.chat`, `nearai.py`), not in the UI, and every path that sends text (Polish, Ask,
@@ -45,10 +45,11 @@ Ask with web search) goes through `chat()`.
 
 | Check id | Property | How |
 |---|---|---|
+| `gateway.tls` | The gateway's TLS key is in its quote | The report is requested with `include_tls_fingerprint=true`; `report_data[:32]` must equal sha256(signing address ‖ sha256(TLS SPKI)). The completion's connection is then **pinned** to that key (§3) |
 | `gateway.quote`, `model.quote` | Quote signed by Intel; TCB not revoked | dcap-qvl verifies the quote's signature chain and TCB against Intel PCS collateral. `UpToDate` passes; `OutOfDate`/`SWHardeningNeeded`/config-needed are a visible **warn**; anything else fails |
 | `*.debug` | Production TD | `TD_ATTRIBUTES` debug bit is 0 |
 | `*.nonce` | Fresh for this request | Our random 32-byte nonce is in the signed `report_data`. A new nonce for every request, no cached verdicts |
-| `*.signer` | Signing key bound to the enclave | The reported signing address is the first 32 bytes of the signed `report_data` |
+| `*.signer` | Signing key bound to the enclave | `report_data[:32]` = sha256(address ‖ TLS fingerprint) (or the padded address on reports without one) |
 | `*.rtmr3` | Runtime event log is genuine | Replaying the event log reproduces RTMR3 from the quote |
 | `*.compose` | Deployed config is the one shown | sha256(app_compose) matches MRCONFIGID and the compose-hash event |
 | `model.gpu` | GPUs are in confidential mode | Evidence nonce must match ours. NVIDIA NRAS verdict: overall true, secure boot on, debug off, every `x-nvidia-*` check true, no warning, not expired, our nonce on every token. **Every token's ES384 signature is verified against NVIDIA's JWKS** |
@@ -73,6 +74,11 @@ for permission.
 
 `verify_signature` + `NearAIClient.chat`:
 
+0. **TLS pin.** The completion goes out on a brand-new connection. An httpcore trace hook
+   (`TlsPin`, `nearai.py`) checks the server certificate's SPKI hash against the attested gateway
+   fingerprint during the handshake and raises before the request headers are written. If no
+   checked handshake happened for this request (a reused connection), it also refuses. Live test:
+   `pytest -m live -k tls` accepts the attested key and rejects any other.
 1. The request body is serialized once (`encode_body`). Those exact bytes are sent and hashed.
 2. The raw response bytes are kept before parsing. For web search, the raw SSE stream is kept.
 3. `GET /v1/signature/{chat_id}` is retried on 404 for up to 8 s.
@@ -101,20 +107,19 @@ for permission.
 - **Upstream verifiers are trusted.** Intel PCS collateral (via dcap-qvl) and NVIDIA NRAS. NRAS
   token signatures are checked against NVIDIA's JWKS, fetched over TLS from
   `nras.attestation.nvidia.com`. NVIDIA's root CA is not in the JWKS, so it isn't pinned here.
-- **TLS isn't bound to the attested gateway.** The preflight and the completion POST are two HTTPS
-  requests to `cloud-api.near.ai`, linked only by TLS and DNS. Someone who controls that hostname's
-  TLS could answer the preflight correctly (it's a replayable proof only for *their* nonce, so they
-  would need a real enclave) and route the completion elsewhere. The reply signature then fails
-  and the reply is discarded, but **the text has already been sent**. NEAR publishes an attested
-  OHTTP key (`ohttp_attestation` in the report). Encrypting the request to it would close this.
-  Not implemented yet.
+- **TLS is bound to the attested gateway; the hop after it is NEAR's.** Since 2026-11-13 the
+  completion is pinned to the TLS key in the gateway's quote. A server with any other key (hijacked
+  DNS, a mis-issued certificate) is refused in the handshake, before any byte is written. The
+  gateway → model hop runs inside NEAR's infrastructure. Each model instance's report binds its own
+  TLS key, which is shown but not something the Mac connects to. NEAR also publishes an attested
+  OHTTP key, which would encrypt the request end to end to the enclave. Not used yet.
 - **The gateway sees plaintext.** TLS ends in NEAR's gateway, which is itself an attested TDX VM
   (checked above), then forwards to the model enclave.
 - **Web search sends the model's search query to NEAR's search provider**, server-side. The search
   results are inside the signed stream.
 - **Tests use a simulated NEAR AI Cloud.** `test_preflight_matrix.py` and `attack_demo.py` prove the
   client's decision logic, not the security of real hardware. Live evidence:
-  `docs/hackathon/evidence/live-attest-2026-11-13.txt` (all 13 mandatory checks pass, 8 × GH100,
+  `docs/hackathon/evidence/live-attest-2026-11-13.txt` (all 14 mandatory checks pass, 8 × GH100,
   TCB UpToDate, NVIDIA token signatures valid).
 
 ## 5. The Pixl's wallet
@@ -141,12 +146,12 @@ for permission.
 
 | Attack | Defense | Test |
 |---|---|---|
-| A web page calls `127.0.0.1:7341` | Bearer token (0600 file), constant-time compare | `attack_demo` #19 |
-| DNS rebinding | `Host` must be `127.0.0.1`/`localhost`, else 421 | #20 |
-| Cross-origin from a site | CORS only for `chrome-extension://` origins | #21 |
+| A web page calls `127.0.0.1:7341` | Bearer token (0600 file), constant-time compare | `attack_demo` #20 |
+| DNS rebinding | `Host` must be `127.0.0.1`/`localhost`, else 421 | #23 |
+| Cross-origin from a site | CORS only for `chrome-extension://` origins | #23 |
 | Prompt injection from saved highlights | Highlights go only to the attested enclave as quoted context. Ask can't make the service send anywhere else or pay anyone else | Limitation: a poisoned highlight can still steer the *answer* |
 | Malicious backlink (`fragment_url`) | Stored as text; opened by the browser like any link | Limitation: open links you trust |
-| Committing secrets | pre-commit hook | #22 |
+| Committing secrets | pre-commit hook | #23 |
 
 ## 7. Device trips (Mac ↔ Mac, Mac ↔ Mosaico)
 
@@ -167,8 +172,8 @@ for permission.
 
 | Suite | Result |
 |---|---|
-| `memory`: `uv run pytest -q` | 227 passed (includes 97 preflight-matrix and 5 NRAS-signature tests) |
-| `memory`: `uv run python attack_demo.py` | 22/22 behaved as expected (`docs/ATTACKS.md`) |
+| `memory`: `uv run pytest -q` | 240 passed (includes 104 preflight-matrix, 6 NRAS-signature and 5 TLS-pin tests); live: attest + TLS pin, 2 passed |
+| `memory`: `uv run python attack_demo.py` | 23/23 behaved as expected (`docs/ATTACKS.md`) |
 | `memory`: live attest-only (`pixl-memory attest`) | VERIFIED, all mandatory checks pass |
 | `macos/PixlMemory`: `swift test` | 197 + 12 + 37 passed |
 | `PixlzCore`: `swift test` | 157 + 23 passed |
@@ -198,4 +203,36 @@ request, and no draft was saved.
 | Two verified candidates with different signers | NO |
 | Empty / `null` / `[]` / `{}` / non-JSON / wrongly typed report | NO |
 | Network failure or timeout during preflight | NO |
+| Gateway TLS fingerprint missing or swapped in the report | NO |
+| Completion server presents a TLS key other than the attested one (`test_tls_pin.py`) | NO: stopped in the handshake |
 | Reply signed by the wrong key, tampered, garbage signature, forged gateway signature, other model | Sent (preflight passed), **reply discarded** |
+
+## 9. Threat ledger
+
+Env: **R** = real (live network / hardware), **S** = simulated upstream (fake NEAR AI Cloud,
+fake chain), **D** = documented only, not tested.
+
+| Attack | Threat model | Expected property | Method | Env | Result | Residual exposure | Test |
+|---|---|---|---|---|---|---|---|
+| Malicious inference provider (no TEE) | Model not served from NEAR's fleet | Text never sent | `owned_by` must be `nearai`; model report must exist and verify | S | Blocked | — | attack #8, matrix `missing_model_attestation` |
+| Compromised gateway / fake enclave | Forged quote, debug TD, swapped compose, forged signer | Nothing sent | 14-check allow-list | S + R (live pass) | Blocked | Measurements not pinned to reproducible builds | matrix, attack #1–7 |
+| Malformed attestation | Garbage / truncated / wrong types | Nothing sent, no crash | catch-all → refused | S | Blocked | — | `test_empty_or_malformed_report_sends_nothing` |
+| Replay | Old genuine report | Nothing sent | Fresh nonce in `report_data`, GPU evidence, NRAS tokens | S | Blocked | — | `test_replay_of_an_old_genuine_report_sends_nothing` |
+| Attestation service outage | NRAS down / slow | Nothing sent | skip ≠ pass | S | Blocked (was **sent** before the fix) | Availability: no polish while NVIDIA is down | matrix `nras_*` |
+| Forged NVIDIA verdict | Edited / alg:none / foreign-key JWT | GPU check fails | ES384 vs NVIDIA JWKS | S + R | Blocked | JWKS trusted via TLS; root CA not pinned | `test_nras_signature.py` |
+| DNS/TLS hijack of `cloud-api.near.ai` | Attacker's server for the completion | No byte written | SPKI pin from the gateway quote | S (handshake) + R (live pin) | Blocked | Gateway → model hop is NEAR's | `test_tls_pin.py`, attack #10 |
+| Tampered / mis-signed reply | Reply altered or signed by another key | Reply discarded | Signature over exact bytes + attested signer + model name | S | Blocked (discarded) | Text was already sent to the attested enclave | `test_bad_signature_never_yields_a_usable_result` |
+| Local malware (same user) | Reads files, calls the API | — | Out of scope for software on the same account | D | Not prevented | Can read `store.key`, `.env`, the pet key, the token; can drain the pet's balance (not the owner's) | SECURITY-MODEL §1, §5 |
+| Stolen pet wallet key | Key file exfiltrated | Owner funds safe | Sub-account holds only the funded balance | S | Limited | Pet balance | attack #17 |
+| Inflated price / payment loop | Compromised request path | Caps hold | App-code caps before signing; pending counts | S | Blocked | Caps not on chain | attack #12–15 |
+| Malicious web page | Calls `127.0.0.1:7341` | Refused | Bearer token | S | Blocked | — | attack #20 |
+| Cross-origin request | Site POSTs to the service | No CORS grant | Extension-only CORS | S | Blocked | — | attack #22 |
+| DNS rebinding | Hostname → 127.0.0.1 | Refused | Host allow-list | S | Blocked | — | attack #21 |
+| Leaked API key | Key in a commit | Refused at commit | pre-commit hook | S (real hook) | Blocked | Hook is opt-in per clone | attack #23 |
+| Prompt injection via saved highlights | Poisoned highlight steers the model | Can't exfiltrate or pay | Highlights only reach the attested enclave; no tool or payment path from model output | D | Contained | Can steer the answer's content | — |
+| Malicious retrieved content (web search) | Search results inject instructions | Same as above | Results are in the signed stream; shown as sources | D | Contained | Can steer the answer | — |
+| Manipulated backlink | `fragment_url` points elsewhere | Shown as a link | Stored as text, opened by the browser | D | User-visible | Open links you trust | — |
+| Unauthorized pairing | Stranger pairs a Mosaico | Needs the 6-digit code on both screens | X25519 + commitment + HKDF | R (device) | Blocked | — | `make -C mosaico/pixl_trip test` |
+| Unauthenticated trip commands / spoofing | LAN device claims a paired name | Can't take the Pixl without trust | Trust/pair gate; a reclaimable copy stays | S | Partly | Transport unsigned, unencrypted | PixlzCore travel tests |
+| Malformed transport packets | Fuzzed frames | No crash, trip aborts | Checksums, state machine | S | Handled | — | `mosaico/pixl_trip` tests (323) |
+| Claude Code hook abuse | Model output messaging sessions | Only typed chat text reaches a session | Hook gating | S | Blocked | — | `AgentSafetyTests` (Swift) |

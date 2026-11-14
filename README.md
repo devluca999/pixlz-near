@@ -11,7 +11,7 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | | | |
 |---|---|---|
 | ![Frogg perched on a Mail window, bubble: Verified in TEE, 17/17](docs/screenshots/frogg-perched.png) | ![The polish panel: word diff, verdict, and the card you drag into your text](docs/screenshots/polish-panel.png) | ![Refused: the enclave failed verification, so the text was never sent](docs/screenshots/polish-refused.png) |
-| **1. Select text, click Frogg.** He sits on the window you're working in. | **2. A private edit, verified.** A real NEAR AI Cloud reply: word diff, 17 of 17 checks passed, a card to drag into your text. | **3. Or refused.** If the enclave fails verification, your text is never sent. |
+| **1. Select text, click Frogg.** He sits on the window you're working in. | **2. A private edit, verified.** A real NEAR AI Cloud reply: word diff, 17 of 17 checks passed, a card to drag into your text. | **3. Or refused.** If the enclave fails verification, or a check can't run, your text is never sent. (Rendered from the app's view with sample check data.) |
 
 > Published for NEAR Hackathon judging. No license is granted. See [`LICENSE`](LICENSE).
 
@@ -24,7 +24,7 @@ Built for the **NEAR Hackathon** (November 2026). Tracks: **Privacy & Private AI
 | Runs on | macOS (Apple silicon), Chrome, and an ESP-Mosaico display |
 | Network | NEAR **testnet only**; the config refuses mainnet |
 | Your keys | Your NEAR account key is never on the Mac. Only the pet's own key and your NEAR AI API key (in `.env`, git-ignored) are |
-| Tests | 678 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
+| Tests | 691 automated tests plus 6,575 checks in the Mosaico C code, all passing ([full list](#whats-built-and-how-its-tested)) |
 | Start here | [Try it in 5 minutes](#try-it-in-5-minutes) |
 
 ## The problem
@@ -40,7 +40,7 @@ git clone https://github.com/devluca999/pixlz-near && cd pixlz-near
 cd memory && uv run pixl-memory attest
 ```
 
-This runs 14 checks against the live NEAR AI Cloud: the Intel TDX quote and its TCB, your fresh nonce inside the signed quote, the signing key bound to the quote, the RTMR3 replay, the measured docker-compose, NVIDIA GPU attestation (with every NVIDIA token's signature checked) and the deployment log. 13 of them are mandatory: if any fails, **or can't be checked**, the app sends nothing. What this proves and what it doesn't: [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md). It needs [uv](https://docs.astral.sh/uv/) (`brew install uv`), which installs Python 3.12 and every dependency.
+This runs 15 checks against the live NEAR AI Cloud: the gateway's TLS key bound in its quote, the Intel TDX quote and its TCB, your fresh nonce inside the signed quote, the signing key bound to the quote, the RTMR3 replay, the measured docker-compose, NVIDIA GPU attestation (with every NVIDIA token's signature checked) and the deployment log. 14 of them are mandatory: if any fails, **or can't be checked**, the app sends nothing. What this proves and what it doesn't: [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md). It needs [uv](https://docs.astral.sh/uv/) (`brew install uv`), which installs Python 3.12 and every dependency.
 
 **2. See the attacks it blocks.**
 
@@ -48,7 +48,7 @@ This runs 14 checks against the live NEAR AI Cloud: the Intel TDX quote and its 
 uv run python attack_demo.py
 ```
 
-22 attacks against the real code (NEAR AI Cloud and the chain are simulated): forged, stale and debug enclaves; models outside a TEE; NVIDIA's attestation service made unreachable; tampered or unattested replies (thrown away, never shown); a compromised app holding Frogg's key; a malicious web page; a key leaked in a commit. All are blocked. One (a stolen key file) is limited to Frogg's own balance. The log is in [`docs/ATTACKS.md`](docs/ATTACKS.md).
+23 attacks against the real code (NEAR AI Cloud and the chain are simulated): forged, stale and debug enclaves; models outside a TEE; NVIDIA's attestation service made unreachable; tampered or unattested replies (thrown away, never shown); a compromised app holding Frogg's key; a malicious web page; a key leaked in a commit. All are blocked. One (a stolen key file) is limited to Frogg's own balance. The log is in [`docs/ATTACKS.md`](docs/ATTACKS.md).
 
 **3. Install the Mac app.**
 
@@ -101,8 +101,8 @@ More: [the cards in light](docs/screenshots/cards-light.png) and [dark](docs/scr
         Frogg's wallet  frogg.pixlz-petz-faucet.testnet  ── transfer(cost) ─▶ pixlz-petz.testnet (allowlisted)
 ```
 
-1. **Attest first.** The local service sends a fresh nonce, then checks the Intel TDX quote, NVIDIA's GPU attestation and that the signing key belongs to the attested enclave. If any of the 13 mandatory checks fails or can't be run (NVIDIA's service down, say), your text is never sent.
-2. **Then send.** The completion request goes out, and the exact bytes of the request and response are kept.
+1. **Attest first.** The local service sends a fresh nonce, then checks the Intel TDX quote, NVIDIA's GPU attestation and that the signing key belongs to the attested enclave. If any of the 14 mandatory checks fails or can't be run (NVIDIA's service down, say), your text is never sent.
+2. **Then send.** The completion request goes out on a connection pinned to the TLS key in the gateway's attested quote, and the exact bytes of the request and response are kept.
 3. **Check the reply.** The response signature must recover to the key the attestation vouched for, over the exact bytes sent and received. If it doesn't, the reply is thrown away: not shown, not saved, not paid for.
 4. **Pay.** Frogg pays the request's real cost with a NEAR testnet transfer to one allowlisted account. This is an accounting transfer: NEAR AI bills the inference itself in its own off-chain credits. The receipt (model, cost, verdict) stays in the local encrypted store. Only the amount and the transaction go on chain.
 
@@ -189,7 +189,7 @@ Only what you type in a chat panel can reach a session. Nothing the Pixl's AI, m
 
 | Part | Status | Tests (all passing on 2026-11-13) |
 |---|---|---|
-| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 227: `cd memory && uv run pytest` (97 of them the fail-closed matrix in `tests/test_preflight_matrix.py`) |
+| `memory/`: local service, attestation checks, encrypted store, web search, wallet, CLI | Working | 240: `cd memory && uv run pytest` (104 of them the fail-closed matrix in `tests/test_preflight_matrix.py`) |
 | Frogg's wallet on NEAR testnet | Live: every answer pays its cost on chain | Included above (against a simulated chain) |
 | `macos/PixlMemory/`: the Mac app | Built | 246: `swift test --package-path macos/PixlMemory`, plus an in-app click self-test: `scripts/build-mac-app.sh --selftest` |
 | `PixlzCore/`: shared Swift core (pet state, behaviour, physics, trip protocol) | Built | 180: `swift test --package-path PixlzCore` |
@@ -229,13 +229,14 @@ Frogg's NEAR key isn't an API key. It's stored outside the repository, in `~/Lib
 
 ## Security fixes after the first submission (2026-11-13)
 
-A self-audit found that when NVIDIA's attestation service was unreachable, the GPU check came back "skipped" and the text **was still sent**. Now the preflight is an allow-list: 13 named properties must each be proven, or nothing leaves the Mac. Other fixes from the audit:
+A self-audit found that when NVIDIA's attestation service was unreachable, the GPU check came back "skipped" and the text **was still sent**. Now the preflight is an allow-list: 14 named properties must each be proven, or nothing leaves the Mac. Other fixes from the audit:
 
 - A reply whose signature, byte binding or model name doesn't check out is thrown away (HTTP 502 `response_untrusted`), not shown as a result.
 - Every NVIDIA attestation token's ES384 signature is checked against NVIDIA's published keys.
+- The completion is pinned to the TLS key bound in the gateway's Intel-signed quote. Any other server is refused in the TLS handshake, before a byte is written.
 - Malformed reports are refused cleanly.
 
-`memory/tests/test_preflight_matrix.py` (97 tests) asserts on the wire that the completion endpoint is never called and the private text never appears in any outgoing request. Putting the old rule back makes 13 of them fail. Details, limits and the remaining trust are in [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md).
+`memory/tests/test_preflight_matrix.py` (104 tests) asserts on the wire that the completion endpoint is never called and the private text never appears in any outgoing request. Putting the old rule back makes 13 of them fail. Details, limits and the remaining trust are in [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md).
 
 ## Baseline vs hackathon work
 

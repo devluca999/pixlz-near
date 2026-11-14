@@ -1,4 +1,4 @@
-# captured 2026-11-14T02:45Z with: cd memory && uv run pixl-memory attest  (no API key used, nothing sent, no spend)
+# captured 2026-11-14T02:54Z with: cd memory && uv run pixl-memory attest  (no API key used, nothing sent, no spend)
 Attesting z-ai/glm-5.3-flash on https://cloud-api.near.ai/v1 …
 
 VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and bound to this request's nonce.
@@ -7,6 +7,7 @@ VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and b
   ✔ Gateway production TD                  TD debug bit off
   ✔ Gateway fresh for this request         our nonce is in the signed report data
   ✔ Gateway signing key bound              0xb98a789cdc4817275f5155593ba73ef2a957e779 is bound in the quote
+  ✔ Gateway TLS key bound                  TLS key sha256 73862c254372091c… is in the signed quote; the request is pinned to it
   ✔ Gateway event log replay               10 runtime events reproduce RTMR3
   ✔ Gateway app config measured            compose sha256 2643bc7ae47ecf4c… matches MRCONFIGID
   ✔ Model Intel TDX quote                  signed by Intel, TCB UpToDate
@@ -25,3 +26,4 @@ VERIFIED: Verified: the model enclave is attested (Intel TDX + NVIDIA GPU) and b
   image          nearaidev/compose-manager@sha256:a0c073085684e12e19f31bb279fc8da663a374199bfecc47b04167ae79eaa766
   image          nearaidev/compose-manager-launcher@sha256:079a14b41deb11e0e27f9b69648e8b3d89bd6fb9ccf6071643b8f447fa415085
 
+======================= 2 passed, 1 deselected in 6.86s ========================
