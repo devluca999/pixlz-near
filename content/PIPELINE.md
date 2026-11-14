@@ -171,3 +171,17 @@ enclave, shown as "Partly verified" (`bf53f98`). After: refused, nothing sent (`
 `uv run python attack_demo.py` → 23/23. Simulated: both suites. Live: E02. Limits: proves the
 client's decision; it doesn't prove the hardware is secure. Shots: E02, E03, E04. Video: V3.
 Cut: `v3-leak` (new shorts cut) and `wide-v8`.
+
+## Quality gates added 2026-11-14 (after a round with sprite glitches and rushed narration)
+
+- **Narration pace:** about 160 words a minute, a natural read. `showcase/shorts/tools/vo.py` only nudges a
+  line 0.95×–1.08× (pitch kept) and keeps the raw read beside it. The earlier 190 wpm with up to 1.45×
+  stretch sounded rushed; never go back to it. Check `vo/<cut>/meta.json` (`wpm` per line) before mixing.
+- **Sprite audit:** `showcase/shorts/tools/sprite_audit.sh` renders every 2nd frame of each cut with
+  sprite logging on and fails on poses the app never shows:
+  - Frogg's `perch_1` (the wall-cling climb pose) while sitting on an edge.
+  - Slugg rotated, or Slugg on hop/leap frames: Slugg never hops. His corners are the app's
+    climb → `wrapout` stretch → crawl loop, never a rotated crawl frame.
+  A missing sprite frame now throws instead of silently drawing `idle_0`.
+- **Animations of real behaviour** carry an on-screen label ("ANIMATION OF A REAL TEST CASE") when the
+  scene is drawn rather than recorded from the app.
